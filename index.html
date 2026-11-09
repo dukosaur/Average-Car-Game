@@ -967,10 +967,10 @@
         position: absolute;
         top: 50%;
         left: 50%;
-        width: 52px;
-        height: 52px;
-        margin-top: -26px;
-        margin-left: -26px;
+        width: 44px;
+        height: 44px;
+        margin-top: -22px;
+        margin-left: -22px;
         border-radius: 50%;
         border: 2px solid #00f0ff;
         box-shadow: 0 0 14px #00f0ff;
@@ -983,33 +983,90 @@
         100% { transform: scale(2.6); opacity: 0; }
       }
 
-      .waypoint-pin-disc {
-        width: 32px;
-        height: 32px;
+      .waypoint-pin-dot {
+        width: 18px;
+        height: 18px;
         border-radius: 50%;
-        background: linear-gradient(135deg, #00e5ff, #0088ff);
-        border: 2px solid #ffffff;
-        box-shadow: 0 4px 16px rgba(0, 210, 255, 0.65);
+        background: #00f0ff;
+        border: 2.5px solid #ffffff;
+        box-shadow: 0 0 16px rgba(0, 240, 255, 0.95), 0 2px 8px rgba(0, 0, 0, 0.8);
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 15px;
-        color: #0d1117;
-        font-weight: 900;
+        pointer-events: auto;
+        transition: transform 0.15s ease;
       }
 
-      .waypoint-tag-pill {
-        margin-top: 4px;
+      .map-waypoint-marker:hover .waypoint-pin-dot {
+        transform: scale(1.25);
+        box-shadow: 0 0 22px #00f0ff;
+      }
+
+      .waypoint-inner-core {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: #ffffff;
+      }
+
+      /* Road Hover Destination Preview Dot & Tooltip */
+      .map-road-hover-dot {
+        position: absolute;
+        transform: translate(-50%, -50%);
+        pointer-events: none;
+        z-index: 21;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        transition: opacity 0.15s ease;
+      }
+
+      .map-road-hover-dot.hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .road-hover-ring {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 26px;
+        height: 26px;
+        margin-top: -13px;
+        margin-left: -13px;
+        border-radius: 50%;
+        border: 1.5px dashed rgba(0, 240, 255, 0.85);
+        animation: spinHoverRing 6s linear infinite;
+      }
+
+      @keyframes spinHoverRing {
+        100% { transform: rotate(360deg); }
+      }
+
+      .road-hover-center {
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+        background: #00f0ff;
+        border: 1.5px solid #ffffff;
+        box-shadow: 0 0 10px rgba(0, 240, 255, 0.9);
+      }
+
+      .road-hover-label {
+        margin-top: 18px;
         background: rgba(13, 17, 24, 0.94);
-        border: 1px solid #00f0ff;
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        border: 1px solid rgba(0, 240, 255, 0.6);
         border-radius: 4px;
         padding: 2px 7px;
-        font-size: 9px;
+        font-size: 8.5px;
         font-weight: 900;
         letter-spacing: 0.08em;
         color: #00f0ff;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
         white-space: nowrap;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.7);
+        text-transform: uppercase;
       }
 
       /* Map Header GPS Route HUD */
@@ -1417,11 +1474,19 @@
             <!-- 3. Floating Landmark POI Badges -->
             <div class="map-landmarks-layer" id="map-landmarks-layer"></div>
 
-            <!-- 4. Active GPS Destination Waypoint Marker -->
-            <div class="map-waypoint-marker hidden" id="map-waypoint-marker">
+            <!-- 4. Active GPS Destination Waypoint Marker (FH6 Minimalist Glowing Target Dot) -->
+            <div class="map-waypoint-marker hidden" id="map-waypoint-marker" title="Waypoint (Click to Clear)">
               <div class="waypoint-pulse-ring"></div>
-              <div class="waypoint-pin-disc">🎯</div>
-              <div class="waypoint-tag-pill" id="map-waypoint-tag">WAYPOINT • 0m</div>
+              <div class="waypoint-pin-dot">
+                <div class="waypoint-inner-core"></div>
+              </div>
+            </div>
+
+            <!-- Road Hover Destination Preview Dot -->
+            <div class="map-road-hover-dot hidden" id="map-road-hover-dot">
+              <div class="road-hover-ring"></div>
+              <div class="road-hover-center"></div>
+              <div class="road-hover-label" id="road-hover-label">SET DESTINATION</div>
             </div>
 
             <!-- 5. Real-Time Player Vehicle Chevron Marker -->
@@ -1442,7 +1507,7 @@
           <div class="map-hints">
             <span class="hint-item"><span class="key-hint">Left Drag</span> Pan Map</span>
             <span class="hint-item"><span class="key-hint">Scroll</span> Zoom</span>
-            <span class="hint-item"><span class="key-hint">Click Map / Pin</span> Set Route</span>
+            <span class="hint-item"><span class="key-hint">Hover Road</span> Click to Set Destination</span>
             <span class="hint-item"><span class="key-hint">Space</span> Recenter</span>
             <span class="hint-item"><span class="key-hint">X</span> Clear</span>
             <span class="hint-item"><span class="key-hint">M</span> / <span class="key-hint">Esc</span> Close</span>
@@ -1467,7 +1532,14 @@
       </div>
       <!-- In-Game HUD GPS Waypoint Indicator -->
       <div id="hud-gps-indicator" class="hud-gps-indicator hidden">
-        <span class="hud-gps-icon">🎯</span>
+        <svg class="hud-gps-reticle" width="16" height="16" viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="12" r="8.5" stroke="#00f0ff" stroke-width="2.2" opacity="0.9" />
+          <circle cx="12" cy="12" r="3" fill="#00f0ff" />
+          <line x1="12" y1="1" x2="12" y2="4.5" stroke="#00f0ff" stroke-width="2" stroke-linecap="round" />
+          <line x1="12" y1="19.5" x2="12" y2="23" stroke="#00f0ff" stroke-width="2" stroke-linecap="round" />
+          <line x1="1" y1="12" x2="4.5" y2="12" stroke="#00f0ff" stroke-width="2" stroke-linecap="round" />
+          <line x1="19.5" y1="12" x2="23" y2="12" stroke="#00f0ff" stroke-width="2" stroke-linecap="round" />
+        </svg>
         <div class="hud-gps-info">
           <span class="hud-gps-name" id="hud-gps-name">DESTINATION</span>
           <span class="hud-gps-dist" id="hud-gps-dist">0m</span>

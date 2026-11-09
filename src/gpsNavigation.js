@@ -24,6 +24,7 @@ export class GPSNavigationSystem {
     this.activePath = [];       // Array of 3D node points [{ x, y, z }, ...]
     this.remainingDistance = 0; // in meters
     this.onRouteUpdated = null; // Callback for UI / Map sync
+    this.lastRouteBroadcastTime = 0;
 
     // 3D Chevron Road Mesh System
     this.maxChevrons = 60;
@@ -191,6 +192,11 @@ export class GPSNavigationSystem {
     };
 
     const path = this.calculateAStarPath(carPos, { x: wx, z: wz });
+    if (path.length > 0) {
+      // Connect smoothly from the car's exact position to the destination
+      path.unshift({ x: carPos.x, y: carPos.y, z: carPos.z });
+      path.push({ x: wx, y: yVal, z: wz });
+    }
     this.activePath = path;
 
     // Calculate total path distance
@@ -199,6 +205,7 @@ export class GPSNavigationSystem {
       totalD += Math.hypot(path[i + 1].x - path[i].x, path[i + 1].z - path[i].z);
     }
     this.remainingDistance = totalD;
+    this.lastRouteBroadcastTime = performance.now();
 
     if (this.onRouteUpdated) {
       this.onRouteUpdated(this.activeWaypoint, this.activePath, this.remainingDistance);
@@ -262,7 +269,7 @@ export class GPSNavigationSystem {
 
   /**
    * Called every animation frame to update remaining distance, progress along route,
-   * and project the 3D chevron arrows onto the road surface ahead of the vehicle.
+   * dynamically re-route, and project the 3D chevron arrows onto the road surface ahead.
    */
   update(carPos) {
     if (!this.activeWaypoint || !this.activePath.length || !carPos) {
@@ -289,13 +296,32 @@ export class GPSNavigationSystem {
       }
     }
 
-    // Trim path behind car if car has driven past older points
-    if (closestIdx > 2 && closestIdx < this.activePath.length - 2) {
-      this.activePath = this.activePath.slice(closestIdx - 1);
-      closestIdx = 1;
+    let routeNeedsSync = false;
+
+    // Dynamic Re-Routing: If car deviated from calculated path (> 18m), recalculate route from current position!
+    if (closestDist > 18.0) {
+      const newPath = this.calculateAStarPath(carPos, this.activeWaypoint);
+      if (newPath.length > 0) {
+        newPath.unshift({ x: carPos.x, y: carPos.y, z: carPos.z });
+        newPath.push({ x: this.activeWaypoint.x, y: this.activeWaypoint.y, z: this.activeWaypoint.z });
+        this.activePath = newPath;
+        closestIdx = 0;
+        routeNeedsSync = true;
+      }
+    } else {
+      // Dynamic Progression: Trim path points behind the car so the route shrinks as you drive
+      if (closestIdx > 0) {
+        this.activePath = this.activePath.slice(closestIdx);
+        this.activePath[0] = { x: carPos.x, y: carPos.y, z: carPos.z };
+        closestIdx = 0;
+        routeNeedsSync = true;
+      } else if (this.activePath.length > 0) {
+        // Keep the leading vertex locked to the car's exact position
+        this.activePath[0] = { x: carPos.x, y: carPos.y, z: carPos.z };
+      }
     }
 
-    // Calculate remaining distance
+    // Calculate remaining distance along active path
     let remDist = distToTarget;
     if (this.activePath.length > 1) {
       let dSum = 0;
@@ -305,6 +331,15 @@ export class GPSNavigationSystem {
       remDist = dSum;
     }
     this.remainingDistance = remDist;
+
+    // Notify listeners (world map blue ribbon, top bar HUD, driving HUD)
+    const now = performance.now();
+    if (routeNeedsSync || (now - this.lastRouteBroadcastTime > 100)) {
+      this.lastRouteBroadcastTime = now;
+      if (this.onRouteUpdated) {
+        this.onRouteUpdated(this.activeWaypoint, this.activePath, this.remainingDistance);
+      }
+    }
 
     // 3. Project 3D Chevron Arrows along the road ahead of the car
     let visibleCount = 0;

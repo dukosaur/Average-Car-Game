@@ -40,11 +40,14 @@ export class WorldMapController {
     this.gpsTargetDistEl = document.getElementById('gps-target-dist');
     this.mapGpsCancelBtnEl = document.getElementById('map-gps-cancel-btn');
     this.waypointMarkerEl = document.getElementById('map-waypoint-marker');
-    this.waypointTagEl = document.getElementById('map-waypoint-tag');
+    this.roadHoverDotEl = document.getElementById('map-road-hover-dot');
+    this.roadHoverLabelEl = document.getElementById('road-hover-label');
     this.hudGpsIndicatorEl = document.getElementById('hud-gps-indicator');
     this.hudGpsNameEl = document.getElementById('hud-gps-name');
     this.hudGpsDistEl = document.getElementById('hud-gps-dist');
     this.hudGpsCancelBtnEl = document.getElementById('hud-gps-cancel');
+
+    this.hoveredRoad = null;
 
     // World to Map Pixel Calibration (from Blender 2048x1920 orthographic satellite render)
     this.bounds = {
@@ -109,6 +112,59 @@ export class WorldMapController {
     const wx = (px / this.bounds.imgW) * this.bounds.spanX + this.bounds.minX;
     const wz = (py / this.bounds.imgH) * this.bounds.spanZ + this.bounds.minZ;
     return { x: wx, z: wz };
+  }
+
+  getRouteDisplayName(routeId) {
+    const names = {
+      hwy: 'ISLA EXPRESSWAY',
+      touge: 'LA GRAN CALDERA TOUGE',
+      overpass: 'CROSS-VALLEY OVERPASS',
+      valley: 'SOUTH COAST RUN',
+      sw_shortcut: 'FOOTHILL SHORTCUT',
+    };
+    return names[routeId] || 'ROAD WAYPOINT';
+  }
+
+  /**
+   * Snaps a world coordinate (wx, wz) to the closest point on any road spline.
+   * Returns distance, projected 3D point, and route details.
+   */
+  getClosestRoadPoint(wx, wz) {
+    if (!this.routesData || !this.routesData.routes) return null;
+    let minDist = Infinity;
+    let closestPoint = null;
+    let closestRoute = null;
+
+    const routes = this.routesData.routes.filter((r) => r.id !== 'overpass_bridge');
+    for (const route of routes) {
+      const pts = route.points;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const p1 = pts[i];
+        const p2 = pts[i + 1];
+        const x1 = p1[0], z1 = p1.length > 2 ? p1[2] : p1[1];
+        const x2 = p2[0], z2 = p2.length > 2 ? p2[2] : p2[1];
+
+        const dx = x2 - x1;
+        const dz = z2 - z1;
+        const lenSq = dx * dx + dz * dz;
+        let t = lenSq > 0 ? ((wx - x1) * dx + (wz - z1) * dz) / lenSq : 0;
+        t = Math.max(0, Math.min(1, t));
+
+        const projX = x1 + t * dx;
+        const projZ = z1 + t * dz;
+        const dist = Math.hypot(wx - projX, wz - projZ);
+
+        if (dist < minDist) {
+          minDist = dist;
+          const y1 = p1.length > 2 ? p1[1] : 0;
+          const y2 = p2.length > 2 ? p2[1] : 0;
+          closestPoint = { x: projX, y: y1 + t * (y2 - y1), z: projZ };
+          closestRoute = route;
+        }
+      }
+    }
+
+    return { dist: minDist, point: closestPoint, route: closestRoute };
   }
 
   async loadMapMetadata() {
@@ -259,20 +315,21 @@ export class WorldMapController {
   }
 
   /**
-   * Renders compact, non-intrusive landmark pins with sleek hover tooltips & Track Route buttons
+   * Renders compact, non-intrusive landmark pins with sleek SVG icons & Track Route buttons
    */
   renderLandmarks(landmarks) {
     if (!this.landmarksLayerEl || !landmarks) return;
     this.landmarksLayerEl.innerHTML = '';
 
-    const iconMap = {
-      festival: '🏁',
-      bridge: '🌉',
-      mountain: '🏔️',
-      speedway: '⚡',
-      overpass: '🌉',
-      scenic: '🌲',
-      canyon: '🏜️',
+    const ICONS = {
+      festival: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>`,
+      bridge: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 19h18M3 15h18M6 5v14M18 5v14M6 5l12 10M18 5L6 15"/></svg>`,
+      mountain: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20h18L13 4l-4 7-2-3-4 12z"/></svg>`,
+      speedway: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`,
+      overpass: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2v20M7 7l10 10M17 7L7 17"/></svg>`,
+      canyon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 22 22 22"/><circle cx="12" cy="16" r="2" fill="currentColor"/></svg>`,
+      scenic: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 22 22 22"/></svg>`,
+      default: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>`,
     };
 
     for (const lm of landmarks) {
@@ -283,12 +340,15 @@ export class WorldMapController {
       pin.style.top = `${p.y.toFixed(1)}px`;
       pin.innerHTML = `
         <div class="poi-disc" title="${lm.name}">
-          <span class="poi-icon">${iconMap[lm.type] || '📍'}</span>
+          <span class="poi-icon">${ICONS[lm.type] || ICONS.default}</span>
         </div>
         <div class="poi-tooltip">
           <div class="poi-title">${lm.name}</div>
           <div class="poi-desc">${lm.desc || ''}</div>
-          <button class="poi-track-btn" data-x="${lm.x}" data-z="${lm.z}">📍 TRACK ROUTE</button>
+          <button class="poi-track-btn" data-x="${lm.x}" data-z="${lm.z}">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/></svg>
+            <span>TRACK ROUTE</span>
+          </button>
         </div>
       `;
 
@@ -324,6 +384,9 @@ export class WorldMapController {
   clearGpsWaypoint() {
     if (this.gpsNav) {
       this.gpsNav.clearWaypoint();
+    }
+    if (this.hoveredRoad) {
+      this.hoveredRoad = null;
     }
   }
 
@@ -393,7 +456,7 @@ export class WorldMapController {
     centerPath.setAttribute('opacity', '0.96');
     this.gpsGroupEl.appendChild(centerPath);
 
-    // 2. Position Waypoint Marker on Map
+    // 2. Position Waypoint Marker on Map (FH6 Minimalist Glowing Target Dot - NO TEXT TAG)
     const pWp = this.worldToMapPx(waypoint.x, waypoint.z);
     if (this.waypointMarkerEl) {
       this.waypointMarkerEl.style.left = `${pWp.x.toFixed(1)}px`;
@@ -402,10 +465,6 @@ export class WorldMapController {
     }
 
     const distStr = remDist >= 1000 ? `${(remDist / 1000).toFixed(1)} KM` : `${Math.round(remDist)} M`;
-
-    if (this.waypointTagEl) {
-      this.waypointTagEl.textContent = `${waypoint.name} • ${distStr}`;
-    }
 
     // 3. Update Map Top Bar GPS HUD
     if (this.mapGpsHudEl) {
@@ -460,7 +519,7 @@ export class WorldMapController {
       });
     }
 
-    // Viewport Pointer Dragging (Pan) & Click to Set Waypoint
+    // Viewport Pointer Interaction: Drag Pan & Road Hover / Road Click Only
     if (this.viewportEl) {
       this.viewportEl.addEventListener('click', (e) => {
         if (e.target.closest('.map-poi-pin')) return;
@@ -485,17 +544,53 @@ export class WorldMapController {
       });
 
       this.viewportEl.addEventListener('pointermove', (e) => {
-        if (!this.isDragging) return;
-        const dx = e.clientX - this.lastPointerX;
-        const dy = e.clientY - this.lastPointerY;
-        this.lastPointerX = e.clientX;
-        this.lastPointerY = e.clientY;
-        this.pointerDist += Math.hypot(dx, dy);
+        if (this.isDragging) {
+          const dx = e.clientX - this.lastPointerX;
+          const dy = e.clientY - this.lastPointerY;
+          this.lastPointerX = e.clientX;
+          this.lastPointerY = e.clientY;
+          this.pointerDist += Math.hypot(dx, dy);
 
-        this.targetPanX += dx;
-        this.targetPanY += dy;
-        this.velX = dx;
-        this.velY = dy;
+          this.targetPanX += dx;
+          this.targetPanY += dy;
+          this.velX = dx;
+          this.velY = dy;
+          if (this.roadHoverDotEl) this.roadHoverDotEl.classList.add('hidden');
+          return;
+        }
+
+        // Road Hover Check (Only when map is open and routes are loaded)
+        if (!this.isOpen || !this.routesData) return;
+        const rect = this.viewportEl.getBoundingClientRect();
+        const mapPxX = (e.clientX - rect.left - this.panX) / this.scale;
+        const mapPxY = (e.clientY - rect.top - this.panY) / this.scale;
+        const world = this.mapPxToWorld(mapPxX, mapPxY);
+
+        const roadMatch = this.getClosestRoadPoint(world.x, world.z);
+        if (roadMatch && roadMatch.dist <= 8.5) {
+          this.hoveredRoad = roadMatch;
+          const hp = this.worldToMapPx(roadMatch.point.x, roadMatch.point.z);
+          if (this.roadHoverDotEl) {
+            this.roadHoverDotEl.style.left = `${hp.x.toFixed(1)}px`;
+            this.roadHoverDotEl.style.top = `${hp.y.toFixed(1)}px`;
+            this.roadHoverDotEl.classList.remove('hidden');
+          }
+          if (this.roadHoverLabelEl) {
+            const routeName = this.getRouteDisplayName(roadMatch.route.id);
+            this.roadHoverLabelEl.textContent = `SET DESTINATION • ${routeName}`;
+          }
+          this.viewportEl.style.cursor = 'crosshair';
+        } else {
+          this.hoveredRoad = null;
+          if (this.roadHoverDotEl) this.roadHoverDotEl.classList.add('hidden');
+          this.viewportEl.style.cursor = '';
+        }
+      });
+
+      this.viewportEl.addEventListener('pointerleave', () => {
+        this.hoveredRoad = null;
+        if (this.roadHoverDotEl) this.roadHoverDotEl.classList.add('hidden');
+        if (this.viewportEl) this.viewportEl.style.cursor = '';
       });
 
       const endDrag = (e) => {
@@ -506,20 +601,18 @@ export class WorldMapController {
           this.viewportEl.releasePointerCapture(e.pointerId);
         } catch (_) {}
 
-        // Click-to-Waypoint: If user clicked without dragging, set destination marker & route
+        // Road Click to Waypoint: ONLY set waypoint if clicking on the road!
         if (this.pointerDist < 6 &&
             !e.target.closest('.map-poi-pin') &&
             !e.target.closest('.poi-track-btn') &&
-            !e.target.closest('.map-controls-card') &&
+            !e.target.closest('.map-actions-group') &&
             !e.target.closest('.map-waypoint-marker') &&
             !e.target.closest('.map-gps-hud')) {
-          const rect = this.viewportEl.getBoundingClientRect();
-          const screenX = e.clientX - rect.left;
-          const screenY = e.clientY - rect.top;
-          const mapPxX = (screenX - this.panX) / this.scale;
-          const mapPxY = (screenY - this.panY) / this.scale;
-          const world = this.mapPxToWorld(mapPxX, mapPxY);
-          this.setGpsWaypoint(world.x, world.z, 'CUSTOM WAYPOINT', 'custom');
+          if (this.hoveredRoad && this.hoveredRoad.dist <= 8.5) {
+            const pt = this.hoveredRoad.point;
+            const routeName = this.getRouteDisplayName(this.hoveredRoad.route.id);
+            this.setGpsWaypoint(pt.x, pt.z, routeName, 'road');
+          }
         }
       };
 
@@ -612,15 +705,39 @@ export class WorldMapController {
         this.input.right = false;
         this.input.handbrake = true;
       }
+      // Immediately place player vehicle marker at current 3D position
+      if (this.vehicle && this.vehicle.rootGroup) {
+        const pos = this.vehicle.rootGroup.position;
+        const p = this.worldToMapPx(pos.x, pos.z);
+        if (this.playerMarkerEl) {
+          this.playerMarkerEl.style.left = `${p.x.toFixed(1)}px`;
+          this.playerMarkerEl.style.top = `${p.y.toFixed(1)}px`;
+        }
+        if (this.coordValEl) {
+          this.coordValEl.textContent = `X: ${pos.x.toFixed(1)}m | Z: ${pos.z.toFixed(1)}m`;
+        }
+      }
       // Instantly center on player car when opening
       this.centerOnPlayer(0.85);
       // Snap pan to target to prevent jarring jumps
       this.panX = this.targetPanX;
       this.panY = this.targetPanY;
       this.scale = this.targetScale;
+
+      // Immediately sync active GPS route from current car position
+      if (this.gpsNav && this.gpsNav.activeWaypoint) {
+        this.onGpsRouteUpdated(this.gpsNav.activeWaypoint, this.gpsNav.activePath, this.gpsNav.remainingDistance);
+      }
     } else {
       if (this.input) {
         this.input.handbrake = false;
+      }
+      if (this.roadHoverDotEl) {
+        this.roadHoverDotEl.classList.add('hidden');
+      }
+      this.hoveredRoad = null;
+      if (this.viewportEl) {
+        this.viewportEl.style.cursor = '';
       }
     }
   }
