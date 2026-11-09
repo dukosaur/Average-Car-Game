@@ -11,15 +11,17 @@
  */
 
 export class WorldMapController {
-  constructor(vehicle, input) {
+  constructor(vehicle, input, gpsNav = null) {
     this.vehicle = vehicle;
     this.input = input;
+    this.gpsNav = gpsNav;
 
     // DOM Elements
     this.overlayEl = document.getElementById('world-map-overlay');
     this.viewportEl = document.getElementById('map-viewport');
     this.planeEl = document.getElementById('map-plane');
     this.roadsGroupEl = document.getElementById('map-roads-group');
+    this.gpsGroupEl = document.getElementById('map-gps-group');
     this.landmarksLayerEl = document.getElementById('map-landmarks-layer');
     this.playerMarkerEl = document.getElementById('map-player-marker');
     this.playerArrowEl = document.getElementById('map-player-arrow');
@@ -31,6 +33,18 @@ export class WorldMapController {
     this.zoomLabelEl = document.getElementById('map-zoom-label');
     this.closeBtnEl = document.getElementById('map-close-btn');
     this.hudMapBtnEl = document.getElementById('hud-map-btn');
+
+    // GPS Navigation UI Elements
+    this.mapGpsHudEl = document.getElementById('map-gps-hud');
+    this.gpsTargetNameEl = document.getElementById('gps-target-name');
+    this.gpsTargetDistEl = document.getElementById('gps-target-dist');
+    this.mapGpsCancelBtnEl = document.getElementById('map-gps-cancel-btn');
+    this.waypointMarkerEl = document.getElementById('map-waypoint-marker');
+    this.waypointTagEl = document.getElementById('map-waypoint-tag');
+    this.hudGpsIndicatorEl = document.getElementById('hud-gps-indicator');
+    this.hudGpsNameEl = document.getElementById('hud-gps-name');
+    this.hudGpsDistEl = document.getElementById('hud-gps-dist');
+    this.hudGpsCancelBtnEl = document.getElementById('hud-gps-cancel');
 
     // World to Map Pixel Calibration (from Blender 2048x1920 orthographic satellite render)
     this.bounds = {
@@ -60,6 +74,7 @@ export class WorldMapController {
     this.dragStartY = 0;
     this.lastPointerX = 0;
     this.lastPointerY = 0;
+    this.pointerDist = 0;
     this.velX = 0;
     this.velY = 0;
 
@@ -87,6 +102,15 @@ export class WorldMapController {
     return { x: px, y: py };
   }
 
+  /**
+   * Converts Map Plane pixel coordinates (0-2048, 0-1920) back to 3D world coordinates (X, Z)
+   */
+  mapPxToWorld(px, py) {
+    const wx = (px / this.bounds.imgW) * this.bounds.spanX + this.bounds.minX;
+    const wz = (py / this.bounds.imgH) * this.bounds.spanZ + this.bounds.minZ;
+    return { x: wx, z: wz };
+  }
+
   async loadMapMetadata() {
     try {
       const resp = await fetch('/assets/map_routes.json?v=4');
@@ -94,6 +118,14 @@ export class WorldMapController {
         this.routesData = await resp.json();
         this.renderVectorRoads(this.routesData.routes);
         this.renderLandmarks(this.routesData.landmarks);
+
+        // Initialize GPS graph if GPS navigation system was injected
+        if (this.gpsNav) {
+          this.gpsNav.initGraph(this.routesData);
+          this.gpsNav.onRouteUpdated = (waypoint, path, remDist) => {
+            this.onGpsRouteUpdated(waypoint, path, remDist);
+          };
+        }
       }
     } catch (e) {
       console.warn('Could not load map_routes.json, using fallback route renderer:', e);
@@ -114,14 +146,16 @@ export class WorldMapController {
     const toPathD = (pts, closed) => {
       let d = '';
       for (let i = 0; i < pts.length; i++) {
-        const p = this.worldToMapPx(pts[i][0], pts[i][1]);
+        const wx = pts[i][0];
+        const wz = pts[i].length > 2 ? pts[i][2] : pts[i][1];
+        const p = this.worldToMapPx(wx, wz);
         d += (i === 0 ? `M ${p.x.toFixed(1)} ${p.y.toFixed(1)} ` : `L ${p.x.toFixed(1)} ${p.y.toFixed(1)} `);
       }
       if (closed) d += 'Z';
       return d;
     };
 
-    // 1. RENDER GROUND ROUTES (Clean Forza Cartography: No Goofy Neon Glows)
+    // 1. RENDER GROUND ROUTES (Clean Forza Cartography: Bold & Readable)
     for (const route of groundRoutes) {
       if (!route.points || route.points.length < 2) continue;
       const isHwy = route.type === 'highway';
@@ -132,7 +166,7 @@ export class WorldMapController {
       casing.setAttribute('d', d);
       casing.setAttribute('fill', 'none');
       casing.setAttribute('stroke', '#0c1017');
-      casing.setAttribute('stroke-width', isHwy ? '8.8' : '6.2');
+      casing.setAttribute('stroke-width', isHwy ? '11.5' : '8.5');
       casing.setAttribute('stroke-linecap', 'round');
       casing.setAttribute('stroke-linejoin', 'round');
       casing.setAttribute('opacity', '0.96');
@@ -143,7 +177,7 @@ export class WorldMapController {
       core.setAttribute('d', d);
       core.setAttribute('fill', 'none');
       core.setAttribute('stroke', '#ffffff');
-      core.setAttribute('stroke-width', isHwy ? '5.4' : '3.6');
+      core.setAttribute('stroke-width', isHwy ? '7.0' : '5.0');
       core.setAttribute('stroke-linecap', 'round');
       core.setAttribute('stroke-linejoin', 'round');
       core.setAttribute('opacity', '0.98');
@@ -155,8 +189,8 @@ export class WorldMapController {
         divider.setAttribute('d', d);
         divider.setAttribute('fill', 'none');
         divider.setAttribute('stroke', '#1e2632');
-        divider.setAttribute('stroke-width', '1.0');
-        divider.setAttribute('stroke-dasharray', '6, 10');
+        divider.setAttribute('stroke-width', '1.2');
+        divider.setAttribute('stroke-dasharray', '8, 12');
         divider.setAttribute('opacity', '0.80');
         this.roadsGroupEl.appendChild(divider);
       }
@@ -172,7 +206,7 @@ export class WorldMapController {
       shadowPath.setAttribute('d', d);
       shadowPath.setAttribute('fill', 'none');
       shadowPath.setAttribute('stroke', '#000000');
-      shadowPath.setAttribute('stroke-width', '14.0');
+      shadowPath.setAttribute('stroke-width', '18.0');
       shadowPath.setAttribute('stroke-linecap', 'butt');
       shadowPath.setAttribute('stroke-linejoin', 'round');
       shadowPath.setAttribute('filter', 'url(#bridge-drop-shadow)');
@@ -183,7 +217,7 @@ export class WorldMapController {
       deckCasing.setAttribute('d', d);
       deckCasing.setAttribute('fill', 'none');
       deckCasing.setAttribute('stroke', '#0e131b');
-      deckCasing.setAttribute('stroke-width', '11.8');
+      deckCasing.setAttribute('stroke-width', '15.0');
       deckCasing.setAttribute('stroke-linecap', 'butt');
       deckCasing.setAttribute('stroke-linejoin', 'round');
       this.roadsGroupEl.appendChild(deckCasing);
@@ -193,7 +227,7 @@ export class WorldMapController {
       parapet.setAttribute('d', d);
       parapet.setAttribute('fill', 'none');
       parapet.setAttribute('stroke', '#475569');
-      parapet.setAttribute('stroke-width', '8.6');
+      parapet.setAttribute('stroke-width', '10.8');
       parapet.setAttribute('stroke-linecap', 'butt');
       this.roadsGroupEl.appendChild(parapet);
 
@@ -202,28 +236,30 @@ export class WorldMapController {
       bridgeCore.setAttribute('d', d);
       bridgeCore.setAttribute('fill', 'none');
       bridgeCore.setAttribute('stroke', '#ffffff');
-      bridgeCore.setAttribute('stroke-width', '5.4');
+      bridgeCore.setAttribute('stroke-width', '7.0');
       bridgeCore.setAttribute('stroke-linecap', 'butt');
       this.roadsGroupEl.appendChild(bridgeCore);
 
       // E. Bridge Abutment Joints at Ends
-      const pStart = this.worldToMapPx(bridge.points[0][0], bridge.points[0][1]);
-      const pEnd = this.worldToMapPx(bridge.points[bridge.points.length - 1][0], bridge.points[bridge.points.length - 1][1]);
+      const p0 = bridge.points[0];
+      const p1 = bridge.points[bridge.points.length - 1];
+      const pStart = this.worldToMapPx(p0[0], p0.length > 2 ? p0[2] : p0[1]);
+      const pEnd = this.worldToMapPx(p1[0], p1.length > 2 ? p1[2] : p1[1]);
       for (const p of [pStart, pEnd]) {
         const joint = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
         joint.setAttribute('cx', p.x.toFixed(1));
         joint.setAttribute('cy', p.y.toFixed(1));
-        joint.setAttribute('r', '4.5');
+        joint.setAttribute('r', '5.5');
         joint.setAttribute('fill', '#334155');
         joint.setAttribute('stroke', '#ffffff');
-        joint.setAttribute('stroke-width', '1.2');
+        joint.setAttribute('stroke-width', '1.5');
         this.roadsGroupEl.appendChild(joint);
       }
     }
   }
 
   /**
-   * Renders compact, non-intrusive landmark pins with sleek hover tooltips (keeps roads 100% visible)
+   * Renders compact, non-intrusive landmark pins with sleek hover tooltips & Track Route buttons
    */
   renderLandmarks(landmarks) {
     if (!this.landmarksLayerEl || !landmarks) return;
@@ -252,8 +288,19 @@ export class WorldMapController {
         <div class="poi-tooltip">
           <div class="poi-title">${lm.name}</div>
           <div class="poi-desc">${lm.desc || ''}</div>
+          <button class="poi-track-btn" data-x="${lm.x}" data-z="${lm.z}">📍 TRACK ROUTE</button>
         </div>
       `;
+
+      // Track button inside tooltip sets route directly
+      const trackBtn = pin.querySelector('.poi-track-btn');
+      if (trackBtn) {
+        trackBtn.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          this.setGpsWaypoint(lm.x, lm.z, lm.name, lm.type);
+        });
+      }
+
       pin.addEventListener('click', (e) => {
         e.stopPropagation();
         if (this.landmarksLayerEl) {
@@ -262,8 +309,116 @@ export class WorldMapController {
         }
         pin.classList.add('active');
         this.centerOnWorld(lm.x, lm.z, 1.8);
+        this.setGpsWaypoint(lm.x, lm.z, lm.name, lm.type);
       });
       this.landmarksLayerEl.appendChild(pin);
+    }
+  }
+
+  setGpsWaypoint(wx, wz, name = 'WAYPOINT', type = 'custom') {
+    if (this.gpsNav) {
+      this.gpsNav.setWaypoint(wx, wz, name, type);
+    }
+  }
+
+  clearGpsWaypoint() {
+    if (this.gpsNav) {
+      this.gpsNav.clearWaypoint();
+    }
+  }
+
+  /**
+   * Called whenever the GPS pathfinder updates the active route
+   */
+  onGpsRouteUpdated(waypoint, path, remDist) {
+    if (!this.gpsGroupEl) return;
+    this.gpsGroupEl.innerHTML = '';
+
+    if (!waypoint || !path || path.length < 2) {
+      if (this.waypointMarkerEl) this.waypointMarkerEl.classList.add('hidden');
+      if (this.mapGpsHudEl) this.mapGpsHudEl.classList.add('hidden');
+      if (this.hudGpsIndicatorEl) this.hudGpsIndicatorEl.classList.add('hidden');
+      return;
+    }
+
+    // 1. Draw Vibrant Forza Blue Route Ribbon in SVG
+    let d = '';
+    for (let i = 0; i < path.length; i++) {
+      const p = this.worldToMapPx(path[i].x, path[i].z);
+      d += (i === 0 ? `M ${p.x.toFixed(1)} ${p.y.toFixed(1)} ` : `L ${p.x.toFixed(1)} ${p.y.toFixed(1)} `);
+    }
+
+    // A. Outer Luminous Halo / Glow
+    const glowPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    glowPath.setAttribute('d', d);
+    glowPath.setAttribute('fill', 'none');
+    glowPath.setAttribute('stroke', '#00d2ff');
+    glowPath.setAttribute('stroke-width', '16.0');
+    glowPath.setAttribute('stroke-linecap', 'round');
+    glowPath.setAttribute('stroke-linejoin', 'round');
+    glowPath.setAttribute('opacity', '0.80');
+    glowPath.setAttribute('filter', 'url(#gps-route-glow)');
+    this.gpsGroupEl.appendChild(glowPath);
+
+    // B. Contrast Casing Border
+    const casingPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    casingPath.setAttribute('d', d);
+    casingPath.setAttribute('fill', 'none');
+    casingPath.setAttribute('stroke', '#00263f');
+    casingPath.setAttribute('stroke-width', '12.5');
+    casingPath.setAttribute('stroke-linecap', 'round');
+    casingPath.setAttribute('stroke-linejoin', 'round');
+    casingPath.setAttribute('opacity', '0.92');
+    this.gpsGroupEl.appendChild(casingPath);
+
+    // C. Vibrant Forza Cyan Ribbon Core
+    const ribbonPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    ribbonPath.setAttribute('d', d);
+    ribbonPath.setAttribute('fill', 'none');
+    ribbonPath.setAttribute('stroke', '#00f7ff');
+    ribbonPath.setAttribute('stroke-width', '8.8');
+    ribbonPath.setAttribute('stroke-linecap', 'round');
+    ribbonPath.setAttribute('stroke-linejoin', 'round');
+    ribbonPath.setAttribute('opacity', '1.0');
+    this.gpsGroupEl.appendChild(ribbonPath);
+
+    // D. White Bright Centerline Stripe
+    const centerPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    centerPath.setAttribute('d', d);
+    centerPath.setAttribute('fill', 'none');
+    centerPath.setAttribute('stroke', '#ffffff');
+    centerPath.setAttribute('stroke-width', '3.8');
+    centerPath.setAttribute('stroke-linecap', 'round');
+    centerPath.setAttribute('stroke-linejoin', 'round');
+    centerPath.setAttribute('opacity', '0.96');
+    this.gpsGroupEl.appendChild(centerPath);
+
+    // 2. Position Waypoint Marker on Map
+    const pWp = this.worldToMapPx(waypoint.x, waypoint.z);
+    if (this.waypointMarkerEl) {
+      this.waypointMarkerEl.style.left = `${pWp.x.toFixed(1)}px`;
+      this.waypointMarkerEl.style.top = `${pWp.y.toFixed(1)}px`;
+      this.waypointMarkerEl.classList.remove('hidden');
+    }
+
+    const distStr = remDist >= 1000 ? `${(remDist / 1000).toFixed(1)} KM` : `${Math.round(remDist)} M`;
+
+    if (this.waypointTagEl) {
+      this.waypointTagEl.textContent = `${waypoint.name} • ${distStr}`;
+    }
+
+    // 3. Update Map Top Bar GPS HUD
+    if (this.mapGpsHudEl) {
+      if (this.gpsTargetNameEl) this.gpsTargetNameEl.textContent = waypoint.name;
+      if (this.gpsTargetDistEl) this.gpsTargetDistEl.textContent = distStr;
+      this.mapGpsHudEl.classList.remove('hidden');
+    }
+
+    // 4. Update HUD Gameplay Indicator
+    if (this.hudGpsIndicatorEl) {
+      if (this.hudGpsNameEl) this.hudGpsNameEl.textContent = waypoint.name;
+      if (this.hudGpsDistEl) this.hudGpsDistEl.textContent = distStr;
+      this.hudGpsIndicatorEl.classList.remove('hidden');
     }
   }
 
@@ -285,7 +440,27 @@ export class WorldMapController {
       this.zoomOutBtnEl.addEventListener('click', () => this.setZoomByFactor(0.77));
     }
 
-    // Viewport Pointer Dragging (Pan)
+    // GPS Cancel Buttons & Waypoint Click
+    if (this.mapGpsCancelBtnEl) {
+      this.mapGpsCancelBtnEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.clearGpsWaypoint();
+      });
+    }
+    if (this.hudGpsCancelBtnEl) {
+      this.hudGpsCancelBtnEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.clearGpsWaypoint();
+      });
+    }
+    if (this.waypointMarkerEl) {
+      this.waypointMarkerEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.clearGpsWaypoint();
+      });
+    }
+
+    // Viewport Pointer Dragging (Pan) & Click to Set Waypoint
     if (this.viewportEl) {
       this.viewportEl.addEventListener('click', (e) => {
         if (e.target.closest('.map-poi-pin')) return;
@@ -302,6 +477,7 @@ export class WorldMapController {
         this.dragStartY = e.clientY;
         this.lastPointerX = e.clientX;
         this.lastPointerY = e.clientY;
+        this.pointerDist = 0;
         this.velX = 0;
         this.velY = 0;
         this.viewportEl.classList.add('dragging');
@@ -314,6 +490,7 @@ export class WorldMapController {
         const dy = e.clientY - this.lastPointerY;
         this.lastPointerX = e.clientX;
         this.lastPointerY = e.clientY;
+        this.pointerDist += Math.hypot(dx, dy);
 
         this.targetPanX += dx;
         this.targetPanY += dy;
@@ -328,6 +505,22 @@ export class WorldMapController {
         try {
           this.viewportEl.releasePointerCapture(e.pointerId);
         } catch (_) {}
+
+        // Click-to-Waypoint: If user clicked without dragging, set destination marker & route
+        if (this.pointerDist < 6 &&
+            !e.target.closest('.map-poi-pin') &&
+            !e.target.closest('.poi-track-btn') &&
+            !e.target.closest('.map-controls-card') &&
+            !e.target.closest('.map-waypoint-marker') &&
+            !e.target.closest('.map-gps-hud')) {
+          const rect = this.viewportEl.getBoundingClientRect();
+          const screenX = e.clientX - rect.left;
+          const screenY = e.clientY - rect.top;
+          const mapPxX = (screenX - this.panX) / this.scale;
+          const mapPxY = (screenY - this.panY) / this.scale;
+          const world = this.mapPxToWorld(mapPxX, mapPxY);
+          this.setGpsWaypoint(world.x, world.z, 'CUSTOM WAYPOINT', 'custom');
+        }
       };
 
       this.viewportEl.addEventListener('pointerup', endDrag);
@@ -459,9 +652,18 @@ export class WorldMapController {
       }
     }
 
+    // 2. Real-Time GPS Telemetry Distance Updates
+    if (this.gpsNav && this.gpsNav.activeWaypoint) {
+      const remDist = this.gpsNav.remainingDistance;
+      const distStr = remDist >= 1000 ? `${(remDist / 1000).toFixed(1)} KM` : `${Math.round(remDist)} M`;
+      if (this.gpsTargetDistEl) this.gpsTargetDistEl.textContent = distStr;
+      if (this.hudGpsDistEl) this.hudGpsDistEl.textContent = distStr;
+      if (this.waypointTagEl) this.waypointTagEl.textContent = `${this.gpsNav.activeWaypoint.name} • ${distStr}`;
+    }
+
     if (!this.isOpen) return;
 
-    // 2. Inertia Decay when not dragging
+    // 3. Inertia Decay when not dragging
     if (!this.isDragging) {
       this.targetPanX += this.velX;
       this.targetPanY += this.velY;

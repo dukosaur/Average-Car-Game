@@ -762,6 +762,7 @@
         object-fit: cover;
         pointer-events: none;
         display: block;
+        filter: saturate(1.24) contrast(1.10) brightness(1.04);
       }
 
       .map-routes-svg {
@@ -920,6 +921,230 @@
         font-size: 8.5px;
         font-weight: 600;
         color: #94a3b8;
+      }
+
+      .poi-track-btn {
+        margin-top: 4px;
+        background: linear-gradient(135deg, #00d2ff, #0099ff);
+        color: #0d1117;
+        border: none;
+        border-radius: 4px;
+        padding: 3px 8px;
+        font-size: 8.5px;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        cursor: pointer;
+        pointer-events: auto;
+        box-shadow: 0 2px 8px rgba(0, 210, 255, 0.45);
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+      }
+
+      .poi-track-btn:hover {
+        transform: scale(1.06);
+        box-shadow: 0 3px 12px rgba(0, 210, 255, 0.75);
+      }
+
+      /* Map Waypoint Destination Marker */
+      .map-waypoint-marker {
+        position: absolute;
+        transform: translate(-50%, -50%);
+        pointer-events: auto;
+        cursor: pointer;
+        z-index: 22;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        transition: opacity 0.2s ease;
+      }
+
+      .map-waypoint-marker.hidden {
+        display: none !important;
+      }
+
+      .waypoint-pulse-ring {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 52px;
+        height: 52px;
+        margin-top: -26px;
+        margin-left: -26px;
+        border-radius: 50%;
+        border: 2px solid #00f0ff;
+        box-shadow: 0 0 14px #00f0ff;
+        animation: waypointPulse 1.8s infinite cubic-bezier(0.1, 0.8, 0.3, 1);
+        pointer-events: none;
+      }
+
+      @keyframes waypointPulse {
+        0% { transform: scale(0.3); opacity: 1; }
+        100% { transform: scale(2.6); opacity: 0; }
+      }
+
+      .waypoint-pin-disc {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #00e5ff, #0088ff);
+        border: 2px solid #ffffff;
+        box-shadow: 0 4px 16px rgba(0, 210, 255, 0.65);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 15px;
+        color: #0d1117;
+        font-weight: 900;
+      }
+
+      .waypoint-tag-pill {
+        margin-top: 4px;
+        background: rgba(13, 17, 24, 0.94);
+        border: 1px solid #00f0ff;
+        border-radius: 4px;
+        padding: 2px 7px;
+        font-size: 9px;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+        color: #00f0ff;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
+        white-space: nowrap;
+      }
+
+      /* Map Header GPS Route HUD */
+      .map-gps-hud {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: rgba(0, 229, 255, 0.12);
+        border: 1px solid rgba(0, 229, 255, 0.4);
+        border-radius: 8px;
+        padding: 4px 10px;
+        margin-left: 8px;
+      }
+
+      .map-gps-hud.hidden {
+        display: none !important;
+      }
+
+      .gps-route-pill {
+        background: #00f0ff;
+        color: #080c14;
+        font-size: 9px;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+        padding: 2px 6px;
+        border-radius: 4px;
+      }
+
+      .gps-target-name {
+        font-size: 11px;
+        font-weight: 800;
+        color: #ffffff;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .gps-target-dist {
+        font-size: 11px;
+        font-weight: 900;
+        color: #00f0ff;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .gps-cancel-btn {
+        background: rgba(255, 255, 255, 0.12);
+        border: 1px solid rgba(255, 255, 255, 0.25);
+        border-radius: 4px;
+        color: #ffffff;
+        font-size: 9px;
+        font-weight: 800;
+        padding: 2px 6px;
+        cursor: pointer;
+        transition: background 0.15s ease;
+      }
+
+      .gps-cancel-btn:hover {
+        background: rgba(255, 0, 122, 0.8);
+        border-color: #ff007a;
+      }
+
+      /* In-Game HUD GPS Waypoint Indicator */
+      .hud-gps-indicator {
+        position: fixed;
+        top: 76px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 100;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: rgba(13, 17, 24, 0.88);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid rgba(0, 240, 255, 0.45);
+        border-radius: 12px;
+        padding: 6px 16px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 16px rgba(0, 240, 255, 0.25);
+        user-select: none;
+        animation: hudGpsSlideDown 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      .hud-gps-indicator.hidden {
+        display: none !important;
+      }
+
+      @keyframes hudGpsSlideDown {
+        from { opacity: 0; transform: translateX(-50%) translateY(-12px); }
+        to { opacity: 1; transform: translateX(-50%) translateY(0); }
+      }
+
+      .hud-gps-icon {
+        font-size: 16px;
+      }
+
+      .hud-gps-info {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+      }
+
+      .hud-gps-name {
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        color: #ffffff;
+        text-transform: uppercase;
+      }
+
+      .hud-gps-dist {
+        font-size: 13px;
+        font-weight: 900;
+        color: #00f0ff;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .hud-gps-cancel {
+        background: rgba(255, 255, 255, 0.12);
+        border: 1px solid rgba(255, 255, 255, 0.25);
+        border-radius: 50%;
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #ffffff;
+        font-size: 10px;
+        font-weight: 800;
+        cursor: pointer;
+        margin-left: 4px;
+        transition: background 0.15s ease;
+      }
+
+      .hud-gps-cancel:hover {
+        background: #ff007a;
+        border-color: #ff007a;
       }
 
       /* Floating Bottom HUD Bar */
@@ -1148,6 +1373,13 @@
               <div class="map-title">WORLD MAP &bull; ISLA CIRCUIT</div>
               <div class="map-subtitle">4.0 KM ROAD NETWORK &bull; SATELLITE SCAN &amp; CORRIDORS</div>
             </div>
+            <!-- Active GPS Destination Badge -->
+            <div class="map-gps-hud hidden" id="map-gps-hud">
+              <span class="gps-route-pill">GPS ROUTE ACTIVE</span>
+              <span class="gps-target-name" id="gps-target-name">WAYPOINT</span>
+              <span class="gps-target-dist" id="gps-target-dist">0m</span>
+              <button class="gps-cancel-btn" id="map-gps-cancel-btn" title="Cancel Route (X)">✕ CANCEL</button>
+            </div>
           </div>
           <div class="map-telemetry-badge" id="map-telemetry-badge">
             <div class="telemetry-coord"><span class="t-label">POS</span> <span id="map-coord-val">X: 0.0m | Z: 0.0m</span></div>
@@ -1173,14 +1405,26 @@
                 <filter id="road-casing-shadow" x="-20%" y="-20%" width="140%" height="140%">
                   <feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="rgba(0,0,0,0.45)" />
                 </filter>
+                <!-- Vibrant GPS Route Glow -->
+                <filter id="gps-route-glow" x="-30%" y="-30%" width="160%" height="160%">
+                  <feDropShadow dx="0" dy="0" stdDeviation="5.0" flood-color="rgba(0, 220, 255, 0.85)" />
+                </filter>
               </defs>
               <g id="map-roads-group"></g>
+              <g id="map-gps-group"></g>
             </svg>
 
             <!-- 3. Floating Landmark POI Badges -->
             <div class="map-landmarks-layer" id="map-landmarks-layer"></div>
 
-            <!-- 4. Real-Time Player Vehicle Chevron Marker -->
+            <!-- 4. Active GPS Destination Waypoint Marker -->
+            <div class="map-waypoint-marker hidden" id="map-waypoint-marker">
+              <div class="waypoint-pulse-ring"></div>
+              <div class="waypoint-pin-disc">🎯</div>
+              <div class="waypoint-tag-pill" id="map-waypoint-tag">WAYPOINT • 0m</div>
+            </div>
+
+            <!-- 5. Real-Time Player Vehicle Chevron Marker -->
             <div class="map-player-marker" id="map-player-marker">
               <div class="player-sonar-ring"></div>
               <div class="player-arrow-wrap" id="map-player-arrow">
@@ -1198,7 +1442,9 @@
           <div class="map-hints">
             <span class="hint-item"><span class="key-hint">Left Drag</span> Pan Map</span>
             <span class="hint-item"><span class="key-hint">Scroll</span> Zoom</span>
-            <span class="hint-item"><span class="key-hint">Space</span> Center Player</span>
+            <span class="hint-item"><span class="key-hint">Click Map / Pin</span> Set Route</span>
+            <span class="hint-item"><span class="key-hint">Space</span> Recenter</span>
+            <span class="hint-item"><span class="key-hint">X</span> Clear</span>
             <span class="hint-item"><span class="key-hint">M</span> / <span class="key-hint">Esc</span> Close</span>
           </div>
           <div class="map-actions-group">
@@ -1218,6 +1464,15 @@
             </button>
           </div>
         </div>
+      </div>
+      <!-- In-Game HUD GPS Waypoint Indicator -->
+      <div id="hud-gps-indicator" class="hud-gps-indicator hidden">
+        <span class="hud-gps-icon">🎯</span>
+        <div class="hud-gps-info">
+          <span class="hud-gps-name" id="hud-gps-name">DESTINATION</span>
+          <span class="hud-gps-dist" id="hud-gps-dist">0m</span>
+        </div>
+        <button class="hud-gps-cancel" id="hud-gps-cancel" title="Cancel Route (X)">✕</button>
       </div>
       <div id="telemetry">
         <div class="speed-row">

@@ -4,6 +4,7 @@ import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUti
 import RAPIER from '@dimforge/rapier3d-compat';
 import { RaycastVehicleController } from './vehicleController.js';
 import { WorldMapController } from './worldMap.js';
+import { GPSNavigationSystem } from './gpsNavigation.js';
 
 // DOM Telemetry Elements
 const carTitleEl = document.getElementById('car-title');
@@ -1215,8 +1216,12 @@ async function init() {
   window.__input = input;
   window.__renderer = renderer;
 
+  // Setup Forza Horizon GPS Navigation & 3D Chevron System
+  const gpsNav = new GPSNavigationSystem(scene, vehicle);
+  window.__gpsNav = gpsNav;
+
   // Setup Forza Horizon Interactive Full World Map Controller
-  const worldMap = new WorldMapController(vehicle, input);
+  const worldMap = new WorldMapController(vehicle, input, gpsNav);
   window.__worldMap = worldMap;
 
   // 1. Setup Forza Horizon Centered Glossy Garage Modal & Backdrop Blur
@@ -1591,6 +1596,10 @@ async function init() {
           worldMap.setOpen(false);
           e.preventDefault();
           break;
+        case 'KeyX':
+          worldMap.clearGpsWaypoint();
+          e.preventDefault();
+          break;
         case 'Space':
           worldMap.centerOnPlayer(1.35);
           e.preventDefault();
@@ -1685,6 +1694,9 @@ async function init() {
         break;
       case 'KeyM':
         worldMap.setOpen(!worldMap.isOpen);
+        break;
+      case 'KeyX':
+        worldMap.clearGpsWaypoint();
         break;
       case 'Digit1':
         selectCar(0);
@@ -1988,7 +2000,11 @@ async function init() {
         : `STEER: ${(vehicle.currentSteer * (180 / Math.PI)).toFixed(1)}° | ${currentFps} FPS | FOV: ${currentFov.toFixed(0)}°`;
     }
 
-    // Update Forza Horizon World Map marker & telemetry
+    // Update Forza Horizon GPS 3D Road Chevrons & World Map marker / telemetry
+    if (gpsNav && vehicle && vehicle.rootGroup) {
+      gpsNav.vehicle = vehicle;
+      gpsNav.update(vehicle.rootGroup.position);
+    }
     if (worldMap && vehicle && vehicle.rootGroup) {
       const carHeadingDir = new THREE.Vector3();
       vehicle.rootGroup.getWorldDirection(carHeadingDir);

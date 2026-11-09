@@ -172,8 +172,8 @@ def trim_branch_for_fillet(samples, start_parent, start_half_w, start_closed, en
     return trimmed, (k_s, "side"), (k_e, "side")
 
 def to_three(v):
-    # Three.js: X = Blender X, Z = -Blender Y
-    return [round(v.x, 2), round(-v.y, 2)]
+    # Three.js: X = Blender X, Y = Blender Z (elevation), Z = -Blender Y
+    return [round(v.x, 2), round(v.z, 2), round(-v.y, 2)]
 
 def extract_and_save():
     # 1. HWY
