@@ -40,28 +40,47 @@ def render_map():
     cam_obj.location = (center_x, center_y, 400.0)
     cam_obj.rotation_euler = (0.0, 0.0, 0.0)
 
-    # 2. Lighting: Angled warm sunlight to create rich elevation relief shadows
+    # 2. Add Canyon River Water Surface Mesh at Z = -8.2m beneath Suspension Bridge
+    bpy.ops.mesh.primitive_plane_add(size=1.0, location=(20.0, -164.0, -8.2))
+    water_obj = bpy.context.active_object
+    water_obj.name = "Canyon_River"
+    water_obj.scale = (240.0, 42.0, 1.0)
+
+    water_mat = bpy.data.materials.new("RiverWater")
+    water_mat.use_nodes = True
+    w_nodes = water_mat.node_tree.nodes
+    w_links = water_mat.node_tree.links
+    w_nodes.clear()
+    w_bsdf = w_nodes.new(type="ShaderNodeBsdfPrincipled")
+    w_bsdf.inputs["Base Color"].default_value = (0.05, 0.28, 0.42, 1.0) # Deep Azure River Water
+    w_bsdf.inputs["Roughness"].default_value = 0.10
+    w_bsdf.inputs["Specular IOR Level"].default_value = 0.8
+    w_out = w_nodes.new(type="ShaderNodeOutputMaterial")
+    w_links.new(w_bsdf.outputs["BSDF"], w_out.inputs["Surface"])
+    water_obj.data.materials.append(water_mat)
+
+    # 3. Lighting: Angled warm sunlight to create rich elevation relief shadows
     sun_data = bpy.data.lights.new("Sun", type='SUN')
-    sun_data.energy = 5.2
-    sun_data.color = (1.0, 0.98, 0.92)
+    sun_data.energy = 5.5
+    sun_data.color = (1.0, 0.98, 0.94)
     sun_obj = bpy.data.objects.new("Sun", sun_data)
     scene.collection.objects.link(sun_obj)
-    sun_obj.rotation_euler = (math.radians(42), math.radians(18), math.radians(45))
+    sun_obj.rotation_euler = (math.radians(46), math.radians(22), math.radians(48))
 
     # Sky fill light from opposite angle to brighten shadows naturally
     fill_data = bpy.data.lights.new("SkyFill", type='SUN')
-    fill_data.energy = 2.0
-    fill_data.color = (0.75, 0.88, 1.0)
+    fill_data.energy = 2.2
+    fill_data.color = (0.72, 0.86, 1.0)
     fill_obj = bpy.data.objects.new("SkyFill", fill_data)
     scene.collection.objects.link(fill_obj)
-    fill_obj.rotation_euler = (math.radians(-40), math.radians(-20), math.radians(-135))
+    fill_obj.rotation_euler = (math.radians(-42), math.radians(-18), math.radians(-132))
 
     # Ambient World
     if not scene.world:
         scene.world = bpy.data.worlds.new("World")
     scene.world.color = (0.16, 0.32, 0.16)
 
-    # 3. High-res Render Settings (2048 x 1920)
+    # 4. High-res Render Settings (2048 x 1920)
     scene.render.resolution_x = 2048
     scene.render.resolution_y = 1920
     scene.render.resolution_percentage = 100

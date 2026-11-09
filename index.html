@@ -788,35 +788,35 @@
         position: absolute;
         top: 50%;
         left: 50%;
-        width: 50px;
-        height: 50px;
-        margin-top: -25px;
-        margin-left: -25px;
+        width: 44px;
+        height: 44px;
+        margin-top: -22px;
+        margin-left: -22px;
         border-radius: 50%;
-        border: 2px solid #ff007a;
-        box-shadow: 0 0 16px #ff007a;
-        animation: sonarPulse 1.9s infinite ease-out;
+        border: 1.5px solid rgba(255, 0, 122, 0.75);
+        box-shadow: 0 0 10px rgba(255, 0, 122, 0.35);
+        animation: sonarPulse 2.2s infinite cubic-bezier(0.1, 0.8, 0.3, 1);
       }
 
       @keyframes sonarPulse {
         0% {
-          transform: scale(0.4);
-          opacity: 1;
+          transform: scale(0.35);
+          opacity: 0.9;
         }
         100% {
-          transform: scale(2.8);
+          transform: scale(2.4);
           opacity: 0;
         }
       }
 
       .player-arrow-wrap {
-        width: 32px;
-        height: 32px;
+        width: 30px;
+        height: 30px;
         display: flex;
         align-items: center;
         justify-content: center;
         transition: transform 0.06s linear;
-        filter: drop-shadow(0 0 8px #ff007a);
+        filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.85));
       }
 
       .player-tag-pill {
@@ -839,42 +839,87 @@
         pointer-events: none;
       }
 
-      .map-poi-badge {
+      .map-poi-pin {
         position: absolute;
         transform: translate(-50%, -50%);
         pointer-events: auto;
         cursor: pointer;
+        z-index: 25;
         display: flex;
+        flex-direction: column;
         align-items: center;
-        gap: 6px;
-        background: rgba(15, 20, 28, 0.88);
+      }
+
+      .poi-disc {
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        background: rgba(14, 18, 26, 0.94);
         backdrop-filter: blur(12px);
         -webkit-backdrop-filter: blur(12px);
-        border: 1.5px solid rgba(255, 255, 255, 0.22);
-        border-radius: 20px;
-        padding: 4px 10px;
-        font-size: 10px;
-        font-weight: 800;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-        color: #ffffff;
-        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6);
+        border: 1.5px solid rgba(255, 255, 255, 0.45);
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.75);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
         transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
                     border-color 0.2s ease,
-                    background 0.2s ease,
-                    box-shadow 0.2s ease;
-        white-space: nowrap;
+                    box-shadow 0.2s ease,
+                    background 0.2s ease;
       }
 
-      .map-poi-badge:hover {
-        transform: translate(-50%, -54%) scale(1.12);
+      .map-poi-pin:hover .poi-disc,
+      .map-poi-pin.active .poi-disc {
+        transform: scale(1.18);
         border-color: #ff007a;
-        background: rgba(22, 28, 40, 0.96);
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7), 0 0 16px rgba(255, 0, 122, 0.45);
+        background: rgba(24, 30, 44, 0.98);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.8), 0 0 14px rgba(255, 0, 122, 0.5);
       }
 
-      .map-poi-icon {
-        font-size: 12px;
+      .poi-tooltip {
+        position: absolute;
+        top: 36px;
+        left: 50%;
+        transform: translateX(-50%) translateY(4px);
+        background: rgba(13, 17, 24, 0.95);
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+        border: 1px solid rgba(255, 255, 255, 0.24);
+        border-radius: 8px;
+        padding: 5px 10px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.75);
+        pointer-events: none;
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s ease;
+        white-space: nowrap;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+        z-index: 30;
+      }
+
+      .map-poi-pin:hover .poi-tooltip,
+      .map-poi-pin.active .poi-tooltip {
+        opacity: 1;
+        visibility: visible;
+        transform: translateX(-50%) translateY(0);
+      }
+
+      .poi-title {
+        font-size: 10px;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+        color: #ffffff;
+        text-transform: uppercase;
+      }
+
+      .poi-desc {
+        font-size: 8.5px;
+        font-weight: 600;
+        color: #94a3b8;
       }
 
       /* Floating Bottom HUD Bar */
@@ -1115,27 +1160,18 @@
           <!-- Pannable & Zoomable World Plane (2048x1920) -->
           <div class="map-plane" id="map-plane">
             <!-- 1. Top-Down Satellite Photographic Base -->
-            <img class="map-satellite-img" src="/assets/satellite_world_map.png" alt="Satellite World Map" draggable="false" />
+            <img class="map-satellite-img" src="/assets/satellite_world_map.png?v=4" alt="Satellite World Map" draggable="false" />
 
             <!-- 2. Layered SVG Vector Road Lines -->
             <svg class="map-routes-svg" id="map-routes-svg" viewBox="0 0 2048 1920" xmlns="http://www.w3.org/2000/svg">
               <defs>
-                <filter id="hwy-glow" x="-30%" y="-30%" width="160%" height="160%">
-                  <feGaussianBlur stdDeviation="6" result="blur" />
-                  <feMerge>
-                    <feMergeNode in="blur" />
-                    <feMergeNode in="SourceGraphic" />
-                  </feMerge>
+                <!-- Elevated Bridge Realistic Directional Drop-Shadow -->
+                <filter id="bridge-drop-shadow" x="-40%" y="-40%" width="180%" height="220%">
+                  <feDropShadow dx="-4" dy="9" stdDeviation="6" flood-color="rgba(0,0,0,0.88)" />
                 </filter>
-                <filter id="touge-glow" x="-30%" y="-30%" width="160%" height="160%">
-                  <feGaussianBlur stdDeviation="5" result="blur" />
-                  <feMerge>
-                    <feMergeNode in="blur" />
-                    <feMergeNode in="SourceGraphic" />
-                  </feMerge>
-                </filter>
-                <filter id="overpass-shadow" x="-20%" y="-20%" width="140%" height="140%">
-                  <feDropShadow dx="4" dy="7" stdDeviation="5" flood-color="rgba(0,0,0,0.75)" />
+                <!-- Subtle Ground Road Casing Shadow -->
+                <filter id="road-casing-shadow" x="-20%" y="-20%" width="140%" height="140%">
+                  <feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="rgba(0,0,0,0.45)" />
                 </filter>
               </defs>
               <g id="map-roads-group"></g>

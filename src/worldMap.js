@@ -89,7 +89,7 @@ export class WorldMapController {
 
   async loadMapMetadata() {
     try {
-      const resp = await fetch('/assets/map_routes.json?v=1');
+      const resp = await fetch('/assets/map_routes.json?v=4');
       if (resp.ok) {
         this.routesData = await resp.json();
         this.renderVectorRoads(this.routesData.routes);
@@ -101,69 +101,129 @@ export class WorldMapController {
   }
 
   /**
-   * Renders luminous glowing SVG vector road lines layered over the satellite photograph
+   * Renders authentic Forza Horizon-style vector road lines and elevated overpass bridge with drop shadow
    */
   renderVectorRoads(routes) {
     if (!this.roadsGroupEl || !routes) return;
     this.roadsGroupEl.innerHTML = '';
 
-    for (const route of routes) {
-      if (!route.points || route.points.length < 2) continue;
+    // Split routes by layer: ground routes first, elevated overpass bridge on top
+    const groundRoutes = routes.filter((r) => r.layer !== 'elevated');
+    const elevatedRoutes = routes.filter((r) => r.layer === 'elevated');
 
-      // Build SVG path data string `M x y L x y ...`
+    const toPathD = (pts, closed) => {
       let d = '';
-      for (let i = 0; i < route.points.length; i++) {
-        const pt = route.points[i];
-        const p = this.worldToMapPx(pt[0], pt[1]);
+      for (let i = 0; i < pts.length; i++) {
+        const p = this.worldToMapPx(pts[i][0], pts[i][1]);
         d += (i === 0 ? `M ${p.x.toFixed(1)} ${p.y.toFixed(1)} ` : `L ${p.x.toFixed(1)} ${p.y.toFixed(1)} `);
       }
-      if (route.type === 'highway') d += 'Z'; // Closed loop
+      if (closed) d += 'Z';
+      return d;
+    };
 
-      // 1. Outer Glow / Casing Ribbon
-      const glowPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      glowPath.setAttribute('d', d);
-      glowPath.setAttribute('fill', 'none');
-      glowPath.setAttribute('stroke', route.glow || 'rgba(255,255,255,0.4)');
-      glowPath.setAttribute('stroke-width', String((route.width || 6) * 2.2));
-      glowPath.setAttribute('stroke-linecap', 'round');
-      glowPath.setAttribute('stroke-linejoin', 'round');
-      glowPath.setAttribute('opacity', '0.65');
-      if (route.type === 'highway') {
-        glowPath.setAttribute('filter', 'url(#hwy-glow)');
-      } else if (route.type === 'touge') {
-        glowPath.setAttribute('filter', 'url(#touge-glow)');
-      } else if (route.type === 'overpass') {
-        glowPath.setAttribute('filter', 'url(#overpass-shadow)');
+    // 1. RENDER GROUND ROUTES (Clean Forza Cartography: No Goofy Neon Glows)
+    for (const route of groundRoutes) {
+      if (!route.points || route.points.length < 2) continue;
+      const isHwy = route.type === 'highway';
+      const d = toPathD(route.points, isHwy);
+
+      // A. Dark Outer Casing (Crisp border against satellite terrain)
+      const casing = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      casing.setAttribute('d', d);
+      casing.setAttribute('fill', 'none');
+      casing.setAttribute('stroke', '#0c1017');
+      casing.setAttribute('stroke-width', isHwy ? '8.8' : '6.2');
+      casing.setAttribute('stroke-linecap', 'round');
+      casing.setAttribute('stroke-linejoin', 'round');
+      casing.setAttribute('opacity', '0.96');
+      this.roadsGroupEl.appendChild(casing);
+
+      // B. Solid Crisp Road Core (Clean white asphalt line)
+      const core = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      core.setAttribute('d', d);
+      core.setAttribute('fill', 'none');
+      core.setAttribute('stroke', '#ffffff');
+      core.setAttribute('stroke-width', isHwy ? '5.4' : '3.6');
+      core.setAttribute('stroke-linecap', 'round');
+      core.setAttribute('stroke-linejoin', 'round');
+      core.setAttribute('opacity', '0.98');
+      this.roadsGroupEl.appendChild(core);
+
+      // C. Highway Subtle Centerline Divider
+      if (isHwy) {
+        const divider = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        divider.setAttribute('d', d);
+        divider.setAttribute('fill', 'none');
+        divider.setAttribute('stroke', '#1e2632');
+        divider.setAttribute('stroke-width', '1.0');
+        divider.setAttribute('stroke-dasharray', '6, 10');
+        divider.setAttribute('opacity', '0.80');
+        this.roadsGroupEl.appendChild(divider);
       }
-      this.roadsGroupEl.appendChild(glowPath);
+    }
 
-      // 2. Core Solid Road Line
-      const corePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      corePath.setAttribute('d', d);
-      corePath.setAttribute('fill', 'none');
-      corePath.setAttribute('stroke', route.color || '#ffffff');
-      corePath.setAttribute('stroke-width', String(route.width || 5));
-      corePath.setAttribute('stroke-linecap', 'round');
-      corePath.setAttribute('stroke-linejoin', 'round');
-      corePath.setAttribute('opacity', '0.95');
-      this.roadsGroupEl.appendChild(corePath);
+    // 2. RENDER ELEVATED OVERPASS BRIDGE ON TOP WITH REALISTIC DROP-SHADOW
+    for (const bridge of elevatedRoutes) {
+      if (!bridge.points || bridge.points.length < 2) continue;
+      const d = toPathD(bridge.points, false);
 
-      // 3. For Major Highway: Add subtle dashed center line
-      if (route.type === 'highway') {
-        const dashPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        dashPath.setAttribute('d', d);
-        dashPath.setAttribute('fill', 'none');
-        dashPath.setAttribute('stroke', '#ffffff');
-        dashPath.setAttribute('stroke-width', '1.6');
-        dashPath.setAttribute('stroke-dasharray', '8, 12');
-        dashPath.setAttribute('opacity', '0.85');
-        this.roadsGroupEl.appendChild(dashPath);
+      // A. Bridge Elevated Directional Drop-Shadow (casts realistic shadow across lower highway)
+      const shadowPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      shadowPath.setAttribute('d', d);
+      shadowPath.setAttribute('fill', 'none');
+      shadowPath.setAttribute('stroke', '#000000');
+      shadowPath.setAttribute('stroke-width', '14.0');
+      shadowPath.setAttribute('stroke-linecap', 'butt');
+      shadowPath.setAttribute('stroke-linejoin', 'round');
+      shadowPath.setAttribute('filter', 'url(#bridge-drop-shadow)');
+      this.roadsGroupEl.appendChild(shadowPath);
+
+      // B. Solid Bridge Deck Casing (cleanly cuts and obscures lower highway beneath)
+      const deckCasing = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      deckCasing.setAttribute('d', d);
+      deckCasing.setAttribute('fill', 'none');
+      deckCasing.setAttribute('stroke', '#0e131b');
+      deckCasing.setAttribute('stroke-width', '11.8');
+      deckCasing.setAttribute('stroke-linecap', 'butt');
+      deckCasing.setAttribute('stroke-linejoin', 'round');
+      this.roadsGroupEl.appendChild(deckCasing);
+
+      // C. Bridge Guardrail Parapets
+      const parapet = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      parapet.setAttribute('d', d);
+      parapet.setAttribute('fill', 'none');
+      parapet.setAttribute('stroke', '#475569');
+      parapet.setAttribute('stroke-width', '8.6');
+      parapet.setAttribute('stroke-linecap', 'butt');
+      this.roadsGroupEl.appendChild(parapet);
+
+      // D. Bridge Crisp White Roadway
+      const bridgeCore = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      bridgeCore.setAttribute('d', d);
+      bridgeCore.setAttribute('fill', 'none');
+      bridgeCore.setAttribute('stroke', '#ffffff');
+      bridgeCore.setAttribute('stroke-width', '5.4');
+      bridgeCore.setAttribute('stroke-linecap', 'butt');
+      this.roadsGroupEl.appendChild(bridgeCore);
+
+      // E. Bridge Abutment Joints at Ends
+      const pStart = this.worldToMapPx(bridge.points[0][0], bridge.points[0][1]);
+      const pEnd = this.worldToMapPx(bridge.points[bridge.points.length - 1][0], bridge.points[bridge.points.length - 1][1]);
+      for (const p of [pStart, pEnd]) {
+        const joint = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        joint.setAttribute('cx', p.x.toFixed(1));
+        joint.setAttribute('cy', p.y.toFixed(1));
+        joint.setAttribute('r', '4.5');
+        joint.setAttribute('fill', '#334155');
+        joint.setAttribute('stroke', '#ffffff');
+        joint.setAttribute('stroke-width', '1.2');
+        this.roadsGroupEl.appendChild(joint);
       }
     }
   }
 
   /**
-   * Renders floating landmark badges on the map plane
+   * Renders compact, non-intrusive landmark pins with sleek hover tooltips (keeps roads 100% visible)
    */
   renderLandmarks(landmarks) {
     if (!this.landmarksLayerEl || !landmarks) return;
@@ -181,20 +241,29 @@ export class WorldMapController {
 
     for (const lm of landmarks) {
       const p = this.worldToMapPx(lm.x, lm.z);
-      const badge = document.createElement('div');
-      badge.className = 'map-poi-badge';
-      badge.style.left = `${p.x.toFixed(1)}px`;
-      badge.style.top = `${p.y.toFixed(1)}px`;
-      badge.innerHTML = `
-        <span class="map-poi-icon">${iconMap[lm.type] || '📍'}</span>
-        <span class="map-poi-label">${lm.name}</span>
+      const pin = document.createElement('div');
+      pin.className = 'map-poi-pin';
+      pin.style.left = `${p.x.toFixed(1)}px`;
+      pin.style.top = `${p.y.toFixed(1)}px`;
+      pin.innerHTML = `
+        <div class="poi-disc" title="${lm.name}">
+          <span class="poi-icon">${iconMap[lm.type] || '📍'}</span>
+        </div>
+        <div class="poi-tooltip">
+          <div class="poi-title">${lm.name}</div>
+          <div class="poi-desc">${lm.desc || ''}</div>
+        </div>
       `;
-      badge.title = lm.desc || lm.name;
-      badge.addEventListener('click', (e) => {
+      pin.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (this.landmarksLayerEl) {
+          const allPins = this.landmarksLayerEl.querySelectorAll('.map-poi-pin');
+          allPins.forEach((p) => p.classList.remove('active'));
+        }
+        pin.classList.add('active');
         this.centerOnWorld(lm.x, lm.z, 1.8);
       });
-      this.landmarksLayerEl.appendChild(badge);
+      this.landmarksLayerEl.appendChild(pin);
     }
   }
 
@@ -218,6 +287,14 @@ export class WorldMapController {
 
     // Viewport Pointer Dragging (Pan)
     if (this.viewportEl) {
+      this.viewportEl.addEventListener('click', (e) => {
+        if (e.target.closest('.map-poi-pin')) return;
+        if (this.landmarksLayerEl) {
+          const allPins = this.landmarksLayerEl.querySelectorAll('.map-poi-pin');
+          allPins.forEach((p) => p.classList.remove('active'));
+        }
+      });
+
       this.viewportEl.addEventListener('pointerdown', (e) => {
         if (e.button !== 0) return; // Main click only
         this.isDragging = true;
