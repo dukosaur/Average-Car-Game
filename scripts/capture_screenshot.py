@@ -25,14 +25,23 @@ def capture(out_path="verified_meadow_view.png", wait_sec=4.0, js_eval=None, sle
     ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     try:
-        time.sleep(wait_sec)
-        # Fetch webSocketDebuggerUrl
-        try:
-            req = urllib.request.urlopen(f"http://127.0.0.1:{port}/json")
-            targets = json.loads(req.read().decode())
-        except Exception as e:
-            print(f"Error connecting to Chrome DevTools port {port}: {e}")
+        # Retry loop to connect to Chrome DevTools port
+        targets = None
+        start_t = time.time()
+        while time.time() - start_t < 12.0:
+            try:
+                req = urllib.request.urlopen(f"http://127.0.0.1:{port}/json", timeout=2)
+                targets = json.loads(req.read().decode())
+                if targets:
+                    break
+            except Exception:
+                time.sleep(0.4)
+        
+        if not targets:
+            print(f"Error connecting to Chrome DevTools port {port}: timeout waiting for DevTools")
             return False
+
+        time.sleep(wait_sec)
 
         page = next((t for t in targets if "localhost:5173" in t.get("url", "")), None)
         if not page:
@@ -62,7 +71,7 @@ def capture(out_path="verified_meadow_view.png", wait_sec=4.0, js_eval=None, sle
             return False
 
         if js_eval:
-            eval_payload = json.dumps({"id": 1, "method": "Runtime.evaluate", "params": {"expression": js_eval, "returnByValue": True}}).encode()
+            eval_payload = json.dumps({"id": 1, "method": "Runtime.evaluate", "params": {"expression": js_eval, "returnByValue": True, "awaitPromise": True}}).encode()
             mask = os.urandom(4)
             masked = bytes(b ^ mask[i % 4] for i, b in enumerate(eval_payload))
             length = len(eval_payload)

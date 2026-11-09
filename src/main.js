@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { RaycastVehicleController } from './vehicleController.js';
+import { WorldMapController } from './worldMap.js';
 
 // DOM Telemetry Elements
 const carTitleEl = document.getElementById('car-title');
@@ -1214,6 +1215,10 @@ async function init() {
   window.__input = input;
   window.__renderer = renderer;
 
+  // Setup Forza Horizon Interactive Full World Map Controller
+  const worldMap = new WorldMapController(vehicle, input);
+  window.__worldMap = worldMap;
+
   // 1. Setup Forza Horizon Centered Glossy Garage Modal & Backdrop Blur
   let isGarageOpen = false;
   let activeCarIndex = 0;
@@ -1578,6 +1583,32 @@ async function init() {
       return;
     }
 
+    // World Map Active: Handle Map Keyboard Controls
+    if (worldMap && worldMap.isOpen) {
+      switch (e.code) {
+        case 'KeyM':
+        case 'Escape':
+          worldMap.setOpen(false);
+          e.preventDefault();
+          break;
+        case 'Space':
+          worldMap.centerOnPlayer(1.35);
+          e.preventDefault();
+          break;
+        case 'Equal':
+        case 'NumpadAdd':
+          worldMap.setZoomByFactor(1.3);
+          e.preventDefault();
+          break;
+        case 'Minus':
+        case 'NumpadSubtract':
+          worldMap.setZoomByFactor(0.77);
+          e.preventDefault();
+          break;
+      }
+      return;
+    }
+
     // Modal Active: Handle Garage Keyboard Navigation
     if (isGarageOpen) {
       switch (e.code) {
@@ -1652,6 +1683,9 @@ async function init() {
       case 'Escape':
         setGarageOpen(!isGarageOpen);
         break;
+      case 'KeyM':
+        worldMap.setOpen(!worldMap.isOpen);
+        break;
       case 'Digit1':
         selectCar(0);
         break;
@@ -1671,6 +1705,7 @@ async function init() {
   });
 
   window.addEventListener('keyup', (e) => {
+    if (worldMap && worldMap.isOpen) return;
     if (isGarageOpen) return;
     if (freeCam.active) {
       switch (e.code) {
@@ -1951,6 +1986,13 @@ async function init() {
       statusLineEl.textContent = vehicle.isDrifting
         ? `STATUS: DRIFTING | ${currentFps} FPS | FOV: ${currentFov.toFixed(0)}°`
         : `STEER: ${(vehicle.currentSteer * (180 / Math.PI)).toFixed(1)}° | ${currentFps} FPS | FOV: ${currentFov.toFixed(0)}°`;
+    }
+
+    // Update Forza Horizon World Map marker & telemetry
+    if (worldMap && vehicle && vehicle.rootGroup) {
+      const carHeadingDir = new THREE.Vector3();
+      vehicle.rootGroup.getWorldDirection(carHeadingDir);
+      worldMap.update(vehicle.rootGroup.position, vehicle.speedKmh, carHeadingDir);
     }
 
     renderer.render(scene, camera);

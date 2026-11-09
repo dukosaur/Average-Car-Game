@@ -612,6 +612,423 @@
         font-family: monospace;
         color: #8b949e;
       }
+
+      /* ==========================================================================
+         Forza Horizon-Style Fullscreen Interactive World Map
+         ========================================================================== */
+      .world-map-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 300;
+        background: #080c14;
+        display: flex;
+        flex-direction: column;
+        opacity: 1;
+        visibility: visible;
+        transition: opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+                    visibility 0.28s ease;
+        overflow: hidden;
+        user-select: none;
+      }
+
+      .world-map-overlay.hidden {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+      }
+
+      /* Floating Top HUD Bar */
+      .map-hud-top {
+        position: absolute;
+        top: 20px;
+        left: 24px;
+        right: 24px;
+        z-index: 310;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        pointer-events: none;
+      }
+
+      .map-title-wrap {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        background: rgba(13, 17, 24, 0.88);
+        backdrop-filter: blur(20px) saturate(140%);
+        -webkit-backdrop-filter: blur(20px) saturate(140%);
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        border-radius: 14px;
+        padding: 10px 18px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+        pointer-events: auto;
+      }
+
+      .map-badge {
+        background: linear-gradient(135deg, #ff007a, #e0006c);
+        color: #ffffff;
+        font-size: 11px;
+        font-weight: 900;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        padding: 4px 10px;
+        border-radius: 6px;
+        box-shadow: 0 0 14px rgba(255, 0, 122, 0.5);
+      }
+
+      .map-title-group {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .map-title {
+        font-size: 16px;
+        font-weight: 900;
+        font-style: italic;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #ffffff;
+        line-height: 1.1;
+      }
+
+      .map-subtitle {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: #8b949e;
+      }
+
+      .map-telemetry-badge {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        background: rgba(13, 17, 24, 0.88);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        border-radius: 14px;
+        padding: 10px 18px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+        pointer-events: auto;
+      }
+
+      .telemetry-coord, .telemetry-speed {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        font-size: 12px;
+        font-weight: 700;
+        color: #ffffff;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .t-label {
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        color: #ff007a;
+      }
+
+      /* Viewport Container & Pannable Plane */
+      .map-viewport {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        cursor: grab;
+        background: #080c14;
+      }
+
+      .map-viewport.dragging {
+        cursor: grabbing;
+      }
+
+      .map-plane {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 2048px;
+        height: 1920px;
+        transform-origin: 0 0;
+        will-change: transform;
+      }
+
+      .map-satellite-img {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        pointer-events: none;
+        display: block;
+      }
+
+      .map-routes-svg {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+      }
+
+      /* Player Vehicle Marker */
+      .map-player-marker {
+        position: absolute;
+        transform: translate(-50%, -50%);
+        pointer-events: none;
+        z-index: 10;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .player-sonar-ring {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 50px;
+        height: 50px;
+        margin-top: -25px;
+        margin-left: -25px;
+        border-radius: 50%;
+        border: 2px solid #ff007a;
+        box-shadow: 0 0 16px #ff007a;
+        animation: sonarPulse 1.9s infinite ease-out;
+      }
+
+      @keyframes sonarPulse {
+        0% {
+          transform: scale(0.4);
+          opacity: 1;
+        }
+        100% {
+          transform: scale(2.8);
+          opacity: 0;
+        }
+      }
+
+      .player-arrow-wrap {
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: transform 0.06s linear;
+        filter: drop-shadow(0 0 8px #ff007a);
+      }
+
+      .player-tag-pill {
+        margin-top: 4px;
+        background: rgba(13, 17, 24, 0.90);
+        border: 1px solid #ff007a;
+        border-radius: 4px;
+        padding: 1px 6px;
+        font-size: 9px;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+        color: #ffffff;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+      }
+
+      /* Floating Landmark POIs */
+      .map-landmarks-layer {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+      }
+
+      .map-poi-badge {
+        position: absolute;
+        transform: translate(-50%, -50%);
+        pointer-events: auto;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: rgba(15, 20, 28, 0.88);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1.5px solid rgba(255, 255, 255, 0.22);
+        border-radius: 20px;
+        padding: 4px 10px;
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #ffffff;
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6);
+        transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+                    border-color 0.2s ease,
+                    background 0.2s ease,
+                    box-shadow 0.2s ease;
+        white-space: nowrap;
+      }
+
+      .map-poi-badge:hover {
+        transform: translate(-50%, -54%) scale(1.12);
+        border-color: #ff007a;
+        background: rgba(22, 28, 40, 0.96);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7), 0 0 16px rgba(255, 0, 122, 0.45);
+      }
+
+      .map-poi-icon {
+        font-size: 12px;
+      }
+
+      /* Floating Bottom HUD Bar */
+      .map-hud-bottom {
+        position: absolute;
+        bottom: 20px;
+        left: 24px;
+        right: 24px;
+        z-index: 310;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        pointer-events: none;
+      }
+
+      .map-hints {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        background: rgba(13, 17, 24, 0.88);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        border-radius: 14px;
+        padding: 10px 18px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+        pointer-events: auto;
+      }
+
+      .map-actions-group {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        pointer-events: auto;
+      }
+
+      .map-action-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        cursor: pointer;
+        background: rgba(13, 17, 24, 0.88);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        color: #ffffff;
+        border-radius: 12px;
+        padding: 8px 16px;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+        transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      .map-action-pill kbd {
+        background: rgba(255, 255, 255, 0.15);
+        border: 1px solid rgba(255, 255, 255, 0.25);
+        border-radius: 4px;
+        padding: 1px 5px;
+        font-size: 9px;
+        color: #ffffff;
+      }
+
+      .map-action-pill:hover {
+        background: rgba(28, 36, 48, 0.95);
+        border-color: #00f0ff;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 14px rgba(0, 240, 255, 0.35);
+        transform: translateY(-2px);
+      }
+
+      .map-zoom-controls {
+        display: flex;
+        align-items: center;
+        background: rgba(13, 17, 24, 0.88);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+      }
+
+      .map-zoom-btn {
+        cursor: pointer;
+        background: transparent;
+        border: none;
+        color: #ffffff;
+        font-size: 16px;
+        font-weight: 800;
+        padding: 8px 14px;
+        transition: background 0.15s ease;
+      }
+
+      .map-zoom-btn:hover {
+        background: rgba(255, 255, 255, 0.15);
+      }
+
+      .map-zoom-label {
+        font-size: 11px;
+        font-weight: 800;
+        color: #8b949e;
+        padding: 0 6px;
+        min-width: 48px;
+        text-align: center;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .map-close-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        cursor: pointer;
+        background: linear-gradient(135deg, #ff007a, #d60066);
+        border: none;
+        color: #ffffff;
+        border-radius: 12px;
+        padding: 9px 18px;
+        font-size: 11px;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        box-shadow: 0 6px 20px rgba(255, 0, 122, 0.45);
+        transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease;
+      }
+
+      .map-close-pill kbd {
+        background: rgba(0, 0, 0, 0.35);
+        border: 1px solid rgba(255, 255, 255, 0.25);
+        border-radius: 4px;
+        padding: 1px 5px;
+        font-size: 9px;
+      }
+
+      .map-close-pill:hover {
+        transform: translateY(-2px) scale(1.02);
+        box-shadow: 0 8px 26px rgba(255, 0, 122, 0.65);
+      }
+
+      .pill-btn.map-toggle-hud {
+        background: rgba(0, 240, 255, 0.16);
+        border-color: rgba(0, 240, 255, 0.45);
+        color: #5ce6ff;
+        width: 100%;
+        margin-top: 7px;
+        padding: 6px 10px;
+        text-align: center;
+      }
+
+      .pill-btn.map-toggle-hud:hover {
+        background: rgba(0, 240, 255, 0.28);
+        color: #ffffff;
+      }
     </style>
   </head>
   <body>
@@ -622,7 +1039,7 @@
         <div class="controls">
           <div><span class="key">W</span> / <span class="key">↑</span> Throttle &nbsp; <span class="key">S</span> / <span class="key">↓</span> Brake / Reverse</div>
           <div><span class="key">A</span> <span class="key">D</span> / <span class="key">←</span> <span class="key">→</span> Steer &nbsp; <span class="key">Space</span> Handbrake Drift</div>
-          <div><span class="key">C</span> Camera &nbsp; <span class="key">F</span> Free Cam &nbsp; <span class="key">G</span> Garage &nbsp; <span class="key">R</span> Reset</div>
+          <div><span class="key">C</span> Camera &nbsp; <span class="key">F</span> Free Cam &nbsp; <span class="key">G</span> Garage &nbsp; <span class="key">M</span> Map &nbsp; <span class="key">R</span> Reset</div>
         </div>
         <div class="section-block">
           <div class="switcher-label">
@@ -632,6 +1049,7 @@
           <div class="btn-list" id="cam-btn-list"></div>
           <button class="pill-btn freecam-btn" id="freecam-toggle-btn">Toggle Free Cam (Key F)</button>
           <button class="pill-btn garage-toggle-hud" id="hud-garage-btn">Forza Garage (Key G)</button>
+          <button class="pill-btn map-toggle-hud" id="hud-map-btn">World Map (Key M)</button>
           <div id="freecam-hint">
             <strong>FREE CAM ACTIVE:</strong> Drag Mouse or <span class="key">←</span><span class="key">↑</span><span class="key">↓</span><span class="key">→</span> Look &bull; <span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span> Fly &bull; <span class="key">Q</span>/<span class="key">E</span> Down/Up &bull; <span class="key">Shift</span> Boost
           </div>
@@ -671,6 +1089,96 @@
             <button class="garage-drive-btn" id="garage-drive-btn">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
               <span>DRIVE VEHICLE</span>
+            </button>
+          </div>
+        </div>
+      </div>
+      <!-- Forza Horizon Fullscreen Interactive World Map Overlay -->
+      <div id="world-map-overlay" class="world-map-overlay hidden">
+        <!-- Floating Top HUD Bar -->
+        <div class="map-hud-top">
+          <div class="map-title-wrap">
+            <span class="map-badge">FORZA HORIZON</span>
+            <div class="map-title-group">
+              <div class="map-title">WORLD MAP &bull; ISLA CIRCUIT</div>
+              <div class="map-subtitle">4.0 KM ROAD NETWORK &bull; SATELLITE SCAN &amp; CORRIDORS</div>
+            </div>
+          </div>
+          <div class="map-telemetry-badge" id="map-telemetry-badge">
+            <div class="telemetry-coord"><span class="t-label">POS</span> <span id="map-coord-val">X: 0.0m | Z: 0.0m</span></div>
+            <div class="telemetry-speed"><span class="t-label">SPEED</span> <span id="map-speed-val">0 KM/H</span></div>
+          </div>
+        </div>
+
+        <!-- Main Interactive Viewport Container -->
+        <div class="map-viewport" id="map-viewport">
+          <!-- Pannable & Zoomable World Plane (2048x1920) -->
+          <div class="map-plane" id="map-plane">
+            <!-- 1. Top-Down Satellite Photographic Base -->
+            <img class="map-satellite-img" src="/assets/satellite_world_map.png" alt="Satellite World Map" draggable="false" />
+
+            <!-- 2. Layered SVG Vector Road Lines -->
+            <svg class="map-routes-svg" id="map-routes-svg" viewBox="0 0 2048 1920" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <filter id="hwy-glow" x="-30%" y="-30%" width="160%" height="160%">
+                  <feGaussianBlur stdDeviation="6" result="blur" />
+                  <feMerge>
+                    <feMergeNode in="blur" />
+                    <feMergeNode in="SourceGraphic" />
+                  </feMerge>
+                </filter>
+                <filter id="touge-glow" x="-30%" y="-30%" width="160%" height="160%">
+                  <feGaussianBlur stdDeviation="5" result="blur" />
+                  <feMerge>
+                    <feMergeNode in="blur" />
+                    <feMergeNode in="SourceGraphic" />
+                  </feMerge>
+                </filter>
+                <filter id="overpass-shadow" x="-20%" y="-20%" width="140%" height="140%">
+                  <feDropShadow dx="4" dy="7" stdDeviation="5" flood-color="rgba(0,0,0,0.75)" />
+                </filter>
+              </defs>
+              <g id="map-roads-group"></g>
+            </svg>
+
+            <!-- 3. Floating Landmark POI Badges -->
+            <div class="map-landmarks-layer" id="map-landmarks-layer"></div>
+
+            <!-- 4. Real-Time Player Vehicle Chevron Marker -->
+            <div class="map-player-marker" id="map-player-marker">
+              <div class="player-sonar-ring"></div>
+              <div class="player-arrow-wrap" id="map-player-arrow">
+                <svg class="player-arrow-svg" viewBox="0 0 32 32" width="28" height="28">
+                  <polygon points="16,3 29,27 16,21 3,27" fill="#ff007a" stroke="#ffffff" stroke-width="2" />
+                </svg>
+              </div>
+              <div class="player-tag-pill">YOU</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Floating Bottom HUD Action Bar -->
+        <div class="map-hud-bottom">
+          <div class="map-hints">
+            <span class="hint-item"><span class="key-hint">Left Drag</span> Pan Map</span>
+            <span class="hint-item"><span class="key-hint">Scroll</span> Zoom</span>
+            <span class="hint-item"><span class="key-hint">Space</span> Center Player</span>
+            <span class="hint-item"><span class="key-hint">M</span> / <span class="key-hint">Esc</span> Close</span>
+          </div>
+          <div class="map-actions-group">
+            <button class="map-action-pill" id="map-center-btn" title="Center camera on player car (Space)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="7"/><line x1="12" y1="2" x2="12" y2="7"/><line x1="12" y1="17" x2="12" y2="22"/><line x1="2" y1="12" x2="7" y2="12"/><line x1="17" y1="12" x2="22" y2="12"/></svg>
+              <span>RECENTER CAR</span>
+              <kbd>SPACE</kbd>
+            </button>
+            <div class="map-zoom-controls">
+              <button class="map-zoom-btn" id="map-zoom-out" title="Zoom Out (−)">−</button>
+              <span class="map-zoom-label" id="map-zoom-label">100%</span>
+              <button class="map-zoom-btn" id="map-zoom-in" title="Zoom In (+)">+</button>
+            </div>
+            <button class="map-close-pill" id="map-close-btn" title="Close Map (Esc / M)">
+              <span>CLOSE</span>
+              <kbd>ESC</kbd>
             </button>
           </div>
         </div>
