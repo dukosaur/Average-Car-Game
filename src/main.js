@@ -5,6 +5,7 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import { RaycastVehicleController } from './vehicleController.js';
 import { WorldMapController } from './worldMap.js';
 import { GPSNavigationSystem } from './gpsNavigation.js';
+import { PauseMenuController } from './pauseMenu.js';
 
 // DOM Telemetry Elements
 const carTitleEl = document.getElementById('car-title');
@@ -924,9 +925,19 @@ function createStaticGrassField(terrainMesh, roadCorridors, obstacles, scene, su
     // Distance threshold aligned with fade-out boundary (185m)
     const maxDistSq = 185.0 * 185.0;
 
+    const density = window.__grassDensity || 'high';
+    if (density === 'off') {
+      for (let i = 0; i < grassChunks.length; i++) grassChunks[i].mesh.visible = false;
+      return;
+    }
+
     let visibleChunks = 0;
     for (let i = 0; i < grassChunks.length; i++) {
       const ch = grassChunks[i];
+      if (density === 'medium' && (i % 2 !== 0)) {
+        ch.mesh.visible = false;
+        continue;
+      }
       // 1) Distance test: Chunks beyond 145m across the map are turned off
       if (ch.center.distanceToSquared(camPos) > maxDistSq) {
         ch.mesh.visible = false;
@@ -1380,6 +1391,30 @@ async function init() {
     setFreeCamActive(false);
   }
 
+  // 3. Setup Forza Horizon "Apple Glass" Pause Menu Controller
+  window.__grassDensity = 'high';
+  function setGrassDensity(density) {
+    window.__grassDensity = density;
+  }
+  function getGrassDensity() {
+    return window.__grassDensity || 'high';
+  }
+
+  const pauseMenu = new PauseMenuController({
+    vehicle,
+    input,
+    worldMap,
+    carRoster: CAR_ROSTER,
+    selectCarFn: selectCar,
+    getActiveCarIndexFn: () => activeCarIndex,
+    cameraModes: CAMERA_MODES,
+    selectCameraModeFn: selectCameraMode,
+    getCurrentCamIndexFn: () => currentCamIndex,
+    setGrassDensityFn: setGrassDensity,
+    getGrassDensityFn: getGrassDensity
+  });
+  window.__pauseMenu = pauseMenu;
+
   if (freecamToggleBtnEl) {
     freecamToggleBtnEl.addEventListener('click', () => {
       setFreeCamActive(!freeCam.active);
@@ -1516,6 +1551,13 @@ async function init() {
 
   // Keyboard Controls Setup
   window.addEventListener('keydown', (e) => {
+    // 1. Pause Menu Active: Route all inputs to PauseMenuController
+    if (pauseMenu && pauseMenu.isOpen) {
+      if (pauseMenu.handleKeyDown(e)) {
+        return;
+      }
+    }
+
     if (e.code === 'KeyF') {
       setFreeCamActive(!freeCam.active);
       return;
@@ -1688,9 +1730,12 @@ async function init() {
       case 'KeyC':
         selectCameraMode(currentCamIndex + 1);
         break;
-      case 'KeyG':
       case 'Escape':
-        setGarageOpen(!isGarageOpen);
+        pauseMenu.setOpen(!pauseMenu.isOpen);
+        break;
+      case 'KeyG':
+        pauseMenu.setOpen(true);
+        pauseMenu.showView('cars');
         break;
       case 'KeyM':
         worldMap.setOpen(!worldMap.isOpen);
@@ -1717,6 +1762,7 @@ async function init() {
   });
 
   window.addEventListener('keyup', (e) => {
+    if (pauseMenu && pauseMenu.isOpen) return;
     if (worldMap && worldMap.isOpen) return;
     if (isGarageOpen) return;
     if (freeCam.active) {
@@ -1818,9 +1864,12 @@ async function init() {
     const subSteps = 2;
     const subDt = smoothedDt / subSteps;
     world.timestep = subDt;
-    for (let i = 0; i < subSteps; i++) {
-      vehicle.updatePhysicsStep(subDt, input);
-      world.step();
+    const isPaused = (pauseMenu && pauseMenu.isOpen) || (worldMap && worldMap.isOpen);
+    if (!isPaused) {
+      for (let i = 0; i < subSteps; i++) {
+        vehicle.updatePhysicsStep(subDt, input);
+        world.step();
+      }
     }
     vehicle.syncVisuals();
 
