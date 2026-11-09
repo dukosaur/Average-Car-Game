@@ -1,0 +1,13 @@
+# Dependencies
+node_modules/
+
+# Production build
+dist/
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Logs & temp test dumps
+*.log
+test_*.png

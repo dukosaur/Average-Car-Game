@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Low-Poly Racer — Three.js + Rapier 3D Vehicle Physics</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        user-select: none;
+      }
+      html, body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #0d1117;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        color: #f0f6fc;
+      }
+      #app {
+        width: 100%;
+        height: 100%;
+        position: relative;
+      }
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      #hud {
+        position: absolute;
+        top: 16px;
+        left: 16px;
+        background: rgba(13, 17, 23, 0.84);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 12px;
+        padding: 14px 18px;
+        min-width: 305px;
+        max-width: 340px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+      }
+      #hud h1 {
+        font-size: 14px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #ff4d4d;
+        margin-bottom: 4px;
+      }
+      #hud .sub {
+        font-size: 12px;
+        color: #8b949e;
+        margin-bottom: 10px;
+      }
+      #hud .controls {
+        font-size: 12px;
+        line-height: 1.7;
+        color: #c9d1d9;
+      }
+      #hud .key {
+        display: inline-block;
+        padding: 1px 6px;
+        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.12);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        font-family: monospace;
+        font-size: 11px;
+        color: #fff;
+      }
+      .section-block {
+        margin-top: 11px;
+        padding-top: 9px;
+        border-top: 1px solid rgba(255, 255, 255, 0.12);
+      }
+      .switcher-label {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #8b949e;
+        margin-bottom: 6px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .switcher-label span.active-cam {
+        color: #58a6ff;
+        font-family: monospace;
+      }
+      .btn-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .pill-btn {
+        cursor: pointer;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        color: #c9d1d9;
+        border-radius: 6px;
+        padding: 5px 9px;
+        font-size: 11px;
+        font-weight: 600;
+        transition: all 0.15s ease;
+      }
+      .pill-btn:hover {
+        background: rgba(255, 255, 255, 0.16);
+        color: #fff;
+      }
+      .pill-btn.active {
+        background: rgba(255, 77, 77, 0.28);
+        border-color: #ff6b6b;
+        color: #ffffff;
+      }
+      .pill-btn.cam-active {
+        background: rgba(56, 139, 253, 0.28);
+        border-color: #58a6ff;
+        color: #ffffff;
+      }
+      .pill-btn.freecam-btn {
+        background: rgba(163, 113, 247, 0.16);
+        border-color: rgba(163, 113, 247, 0.45);
+        color: #d2a8ff;
+        width: 100%;
+        margin-top: 7px;
+        padding: 6px 10px;
+        text-align: center;
+      }
+      .pill-btn.freecam-btn:hover {
+        background: rgba(163, 113, 247, 0.28);
+        color: #ffffff;
+      }
+      .pill-btn.freecam-btn.freecam-active {
+        background: rgba(163, 113, 247, 0.42);
+        border-color: #bc8cff;
+        color: #ffffff;
+        box-shadow: 0 0 12px rgba(163, 113, 247, 0.45);
+      }
+      #freecam-hint {
+        display: none;
+        margin-top: 7px;
+        padding: 6px 8px;
+        border-radius: 6px;
+        background: rgba(163, 113, 247, 0.14);
+        border: 1px solid rgba(163, 113, 247, 0.35);
+        font-size: 11px;
+        line-height: 1.5;
+        color: #e2c5ff;
+      }
+      /* ==========================================================================
+         Forza Horizon-Style Centered Glossy Garage Modal & Backdrop Blur
+         ========================================================================== */
+      .garage-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 200;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: radial-gradient(circle at center, rgba(6, 10, 16, 0.62) 0%, rgba(2, 4, 8, 0.88) 100%);
+        backdrop-filter: blur(18px) saturate(135%);
+        -webkit-backdrop-filter: blur(18px) saturate(135%);
+        opacity: 1;
+        visibility: visible;
+        transition: opacity 0.30s cubic-bezier(0.16, 1, 0.3, 1),
+                    visibility 0.30s ease,
+                    backdrop-filter 0.30s ease;
+        padding: 24px;
+        overflow: hidden;
+      }
+
+      .garage-backdrop.hidden {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+        backdrop-filter: blur(0px);
+        -webkit-backdrop-filter: blur(0px);
+      }
+
+      .garage-modal {
+        position: relative;
+        width: 95vw;
+        max-width: 1140px;
+        background: rgba(13, 17, 24, 0.88);
+        backdrop-filter: blur(28px) saturate(160%);
+        -webkit-backdrop-filter: blur(28px) saturate(160%);
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        border-radius: 20px;
+        padding: 24px 28px;
+        box-shadow: 0 30px 80px rgba(0, 0, 0, 0.8),
+                    0 0 50px rgba(255, 0, 122, 0.12),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        transform: scale(1) translateY(0);
+        opacity: 1;
+        transition: transform 0.36s cubic-bezier(0.175, 0.885, 0.32, 1.15),
+                    opacity 0.26s ease;
+      }
+
+      .garage-backdrop.hidden .garage-modal {
+        transform: scale(0.93) translateY(24px);
+        opacity: 0;
+      }
+
+      /* Header */
+      .garage-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding-bottom: 14px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+      }
+
+      .garage-title-wrap {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .garage-badge {
+        background: linear-gradient(135deg, #ff007a, #e0006c);
+        color: #ffffff;
+        font-size: 11px;
+        font-weight: 900;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        padding: 4px 10px;
+        border-radius: 6px;
+        box-shadow: 0 0 16px rgba(255, 0, 122, 0.55);
+      }
+
+      .garage-title-group {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .garage-title {
+        font-size: 17px;
+        font-weight: 900;
+        font-style: italic;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #ffffff;
+        line-height: 1.1;
+        text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+      }
+
+      .garage-subtitle {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: #8b949e;
+      }
+
+      .garage-header-actions {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .garage-current-badge {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        color: #ff66ad;
+        background: rgba(255, 0, 122, 0.12);
+        border: 1px solid rgba(255, 0, 122, 0.35);
+        border-radius: 8px;
+        padding: 5px 12px;
+        text-transform: uppercase;
+      }
+
+      .garage-close-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        color: #c9d1d9;
+        border-radius: 8px;
+        padding: 6px 12px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      .garage-close-btn kbd {
+        background: rgba(0, 0, 0, 0.4);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 4px;
+        padding: 1px 5px;
+        font-size: 10px;
+        color: #ffffff;
+      }
+
+      .garage-close-btn:hover {
+        background: rgba(255, 255, 255, 0.18);
+        color: #ffffff;
+        transform: translateY(-1px);
+      }
+
+      /* Cards Grid */
+      .garage-cards-row {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 14px;
+        align-items: stretch;
+      }
+
+      /* Individual Forza Car Card */
+      .forza-car-card {
+        position: relative;
+        height: 184px;
+        cursor: pointer;
+        background: rgba(21, 26, 35, 0.75);
+        border: 1.5px solid rgba(255, 255, 255, 0.12);
+        border-radius: 14px;
+        padding: 12px 14px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+        transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+                    border-color 0.22s ease,
+                    background 0.22s ease,
+                    box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        overflow: hidden;
+        user-select: none;
+      }
+
+      /* Card Entrance Stagger Animation */
+      .garage-backdrop:not(.hidden) .forza-car-card {
+        animation: cardFlyIn 0.38s cubic-bezier(0.16, 1, 0.3, 1) both;
+        animation-delay: calc(var(--card-index, 0) * 0.05s);
+      }
+
+      @keyframes cardFlyIn {
+        0% {
+          opacity: 0;
+          transform: translateY(28px) scale(0.92);
+        }
+        100% {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+
+      /* Specular Shimmer Sweep on Card */
+      .forza-car-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -120%;
+        width: 80%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.10), transparent);
+        transform: skewX(-20deg);
+        transition: left 0.6s ease;
+        pointer-events: none;
+      }
+
+      .forza-car-card:hover::before {
+        left: 140%;
+      }
+
+      .forza-car-card:hover {
+        background: rgba(30, 39, 52, 0.90);
+        border-color: rgba(255, 255, 255, 0.38);
+        transform: translateY(-8px) scale(1.025);
+        box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6),
+                    0 0 20px rgba(255, 255, 255, 0.08);
+      }
+
+      .forza-car-card:active {
+        transform: translateY(-3px) scale(0.985);
+        transition: transform 0.08s ease;
+      }
+
+      /* Active / Selected Card */
+      .forza-car-card.active {
+        background: linear-gradient(160deg, rgba(255, 0, 122, 0.24) 0%, rgba(20, 24, 34, 0.92) 80%);
+        border: 2px solid #ff007a;
+        box-shadow: 0 0 28px rgba(255, 0, 122, 0.52),
+                    0 14px 34px rgba(0, 0, 0, 0.6),
+                    inset 0 0 20px rgba(255, 0, 122, 0.18);
+        transform: translateY(-5px);
+      }
+
+      .forza-car-card.active:hover {
+        transform: translateY(-10px) scale(1.03);
+        box-shadow: 0 0 34px rgba(255, 0, 122, 0.65),
+                    0 18px 42px rgba(0, 0, 0, 0.7);
+      }
+
+      /* Keyboard Navigation Highlight */
+      .forza-car-card.keyboard-focused:not(.active) {
+        border-color: #58a6ff;
+        box-shadow: 0 0 20px rgba(88, 166, 255, 0.45);
+        transform: translateY(-6px);
+      }
+
+      .card-car-name {
+        font-size: 13px;
+        font-weight: 900;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #ffffff;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        line-height: 1.2;
+      }
+
+      .card-car-img-wrap {
+        width: 100%;
+        height: 94px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 4px 0;
+      }
+
+      .card-car-img {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+        filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.65));
+        transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), filter 0.3s ease;
+      }
+
+      .forza-car-card:hover .card-car-img {
+        transform: scale(1.10) translateY(-2px);
+        filter: drop-shadow(0 10px 16px rgba(0, 0, 0, 0.75));
+      }
+
+      .card-status-bar {
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: #8b949e;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding-top: 6px;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      .forza-car-card.active .card-status-bar {
+        color: #ff007a;
+        border-color: rgba(255, 0, 122, 0.3);
+      }
+
+      .active-pip {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #484f58;
+        transition: all 0.2s ease;
+      }
+
+      .forza-car-card.active .active-pip {
+        background: #ff007a;
+        box-shadow: 0 0 8px #ff007a, 0 0 16px #ff007a;
+      }
+
+      /* Footer Bar */
+      .garage-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding-top: 12px;
+        border-top: 1px solid rgba(255, 255, 255, 0.10);
+      }
+
+      .garage-hints {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+
+      .hint-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        font-weight: 600;
+        color: #8b949e;
+      }
+
+      .key-hint {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(255, 255, 255, 0.12);
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        color: #ffffff;
+        border-radius: 5px;
+        padding: 2px 7px;
+        font-size: 10px;
+        font-weight: 800;
+        font-family: inherit;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
+      }
+
+      .garage-drive-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        cursor: pointer;
+        background: linear-gradient(135deg, #ff007a, #d60066);
+        border: none;
+        border-radius: 10px;
+        color: #ffffff;
+        padding: 9px 20px;
+        font-size: 12px;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        box-shadow: 0 6px 20px rgba(255, 0, 122, 0.45);
+        transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+                    box-shadow 0.2s ease,
+                    background 0.2s ease;
+      }
+
+      .garage-drive-btn:hover {
+        transform: translateY(-2px) scale(1.02);
+        box-shadow: 0 8px 26px rgba(255, 0, 122, 0.65);
+      }
+
+      .garage-drive-btn:active {
+        transform: translateY(0) scale(0.98);
+      }
+      .pill-btn.garage-toggle-hud {
+        background: rgba(255, 0, 122, 0.16);
+        border-color: rgba(255, 0, 122, 0.45);
+        color: #ff66ad;
+        width: 100%;
+        margin-top: 7px;
+        padding: 6px 10px;
+        text-align: center;
+      }
+      .pill-btn.garage-toggle-hud:hover {
+        background: rgba(255, 0, 122, 0.28);
+        color: #ffffff;
+      }
+      #telemetry {
+        position: absolute;
+        bottom: 20px;
+        right: 20px;
+        background: rgba(13, 17, 23, 0.85);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 14px;
+        padding: 16px 22px;
+        min-width: 245px;
+        pointer-events: none;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+      }
+      .speed-row {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+      }
+      #speed-value {
+        font-size: 44px;
+        font-weight: 800;
+        font-variant-numeric: tabular-nums;
+        color: #ffffff;
+        line-height: 1;
+      }
+      .speed-unit {
+        font-size: 13px;
+        font-weight: 600;
+        color: #8b949e;
+        margin-left: 6px;
+      }
+      #gear-badge {
+        font-size: 20px;
+        font-weight: 800;
+        padding: 4px 10px;
+        border-radius: 8px;
+        background: rgba(255, 77, 77, 0.2);
+        border: 1px solid rgba(255, 77, 77, 0.5);
+        color: #ff6b6b;
+      }
+      .bar-wrap {
+        margin-top: 10px;
+        height: 6px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 3px;
+        overflow: hidden;
+      }
+      #rpm-bar {
+        height: 100%;
+        width: 15%;
+        background: linear-gradient(90deg, #2ea043, #e3b341, #ff4d4d);
+        transition: width 0.06s linear;
+      }
+      #status-line {
+        margin-top: 8px;
+        font-size: 11px;
+        font-family: monospace;
+        color: #8b949e;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div id="hud">
+        <h1 id="car-title">JDM Widebody Supra GT</h1>
+        <div class="sub" id="model-status">Preparing asset &amp; physics engine...</div>
+        <div class="controls">
+          <div><span class="key">W</span> / <span class="key">↑</span> Throttle &nbsp; <span class="key">S</span> / <span class="key">↓</span> Brake / Reverse</div>
+          <div><span class="key">A</span> <span class="key">D</span> / <span class="key">←</span> <span class="key">→</span> Steer &nbsp; <span class="key">Space</span> Handbrake Drift</div>
+          <div><span class="key">C</span> Camera &nbsp; <span class="key">F</span> Free Cam &nbsp; <span class="key">G</span> Garage &nbsp; <span class="key">R</span> Reset</div>
+        </div>
+        <div class="section-block">
+          <div class="switcher-label">
+            <span>Camera View (Key C):</span>
+            <span class="active-cam" id="cam-mode-label">Chase Near</span>
+          </div>
+          <div class="btn-list" id="cam-btn-list"></div>
+          <button class="pill-btn freecam-btn" id="freecam-toggle-btn">Toggle Free Cam (Key F)</button>
+          <button class="pill-btn garage-toggle-hud" id="hud-garage-btn">Forza Garage (Key G)</button>
+          <div id="freecam-hint">
+            <strong>FREE CAM ACTIVE:</strong> Drag Mouse or <span class="key">←</span><span class="key">↑</span><span class="key">↓</span><span class="key">→</span> Look &bull; <span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span> Fly &bull; <span class="key">Q</span>/<span class="key">E</span> Down/Up &bull; <span class="key">Shift</span> Boost
+          </div>
+        </div>
+      </div>
+      <!-- Forza Horizon Centered Glossy Garage Modal & Backdrop Blur -->
+      <div id="garage-backdrop" class="garage-backdrop hidden">
+        <div id="garage-modal" class="garage-modal">
+          <!-- Top Bar / Header -->
+          <div class="garage-header">
+            <div class="garage-title-wrap">
+              <span class="garage-badge">GARAGE</span>
+              <div class="garage-title-group">
+                <div class="garage-title">SELECT VEHICLE</div>
+                <div class="garage-subtitle">CHOOSE YOUR RIDE &bull; 5 VEHICLES IN FLEET</div>
+              </div>
+            </div>
+            <div class="garage-header-actions">
+              <div class="garage-current-badge" id="garage-current-badge">ACTIVE: JDM SUPRA GT</div>
+              <button class="garage-close-btn" id="garage-close-btn" title="Close Garage (Esc / G)">
+                <span>CLOSE</span>
+                <kbd>ESC</kbd>
+              </button>
+            </div>
+          </div>
+
+          <!-- Centered 5-Car Cards Grid -->
+          <div class="garage-cards-row" id="car-cards-row"></div>
+
+          <!-- Footer / Interactive Controls & Drive Button -->
+          <div class="garage-footer">
+            <div class="garage-hints">
+              <span class="hint-item"><span class="key-hint">←</span> <span class="key-hint">→</span> Navigate</span>
+              <span class="hint-item"><span class="key-hint">Enter</span> Select</span>
+              <span class="hint-item"><span class="key-hint">Esc</span> / <span class="key-hint">G</span> Close</span>
+            </div>
+            <button class="garage-drive-btn" id="garage-drive-btn">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+              <span>DRIVE VEHICLE</span>
+            </button>
+          </div>
+        </div>
+      </div>
+      <div id="telemetry">
+        <div class="speed-row">
+          <div><span id="speed-value">0</span><span class="speed-unit">KM/H</span></div>
+          <div id="gear-badge">N</div>
+        </div>
+        <div class="bar-wrap"><div id="rpm-bar"></div></div>
+        <div id="status-line">Hierarchy: Waiting for GLB...</div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
