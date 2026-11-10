@@ -170,7 +170,7 @@
       /* Floating Top HUD Bar */
       .map-hud-top {
         position: absolute;
-        top: 20px;
+        top: 24px;
         left: 24px;
         right: 24px;
         z-index: 310;
@@ -180,86 +180,43 @@
         pointer-events: none;
       }
 
-      .map-title-wrap {
+      .map-header-left, .map-header-right {
         display: flex;
         align-items: center;
         gap: 12px;
-        background: rgba(13, 17, 24, 0.88);
-        backdrop-filter: blur(20px) saturate(140%);
-        -webkit-backdrop-filter: blur(20px) saturate(140%);
-        border: 1px solid rgba(255, 255, 255, 0.16);
-        border-radius: 14px;
-        padding: 10px 18px;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
         pointer-events: auto;
       }
 
-      .map-badge {
-        background: rgba(229, 169, 60, 0.18);
-        border: 1px solid #e5a93c;
-        color: #e5a93c;
-        font-size: 11px;
-        font-weight: 900;
-        letter-spacing: 0.1em;
-        text-transform: uppercase;
-        padding: 4px 10px;
-        border-radius: 6px;
-        box-shadow: 0 0 14px rgba(229, 169, 60, 0.35);
-      }
-
-      .map-title-group {
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-      }
-
-      .map-title {
-        font-size: 16px;
-        font-weight: 900;
-        font-style: italic;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: #ffffff;
-        line-height: 1.1;
-      }
-
-      .map-subtitle {
-        font-size: 10px;
-        font-weight: 700;
-        letter-spacing: 0.1em;
-        text-transform: uppercase;
-        color: #8b949e;
-      }
-
-      .map-telemetry-badge {
+      .map-brand-badge {
         display: flex;
         align-items: center;
-        gap: 16px;
-        background: rgba(13, 17, 24, 0.88);
-        backdrop-filter: blur(20px);
-        -webkit-backdrop-filter: blur(20px);
-        border: 1px solid rgba(255, 255, 255, 0.16);
-        border-radius: 14px;
-        padding: 10px 18px;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
-        pointer-events: auto;
+        gap: 10px;
+        background: linear-gradient(135deg, rgba(20, 24, 32, 0.90) 0%, rgba(12, 16, 22, 0.86) 100%);
+        backdrop-filter: blur(20px) saturate(160%);
+        -webkit-backdrop-filter: blur(20px) saturate(160%);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-top: 1px solid rgba(255, 255, 255, 0.24);
+        border-radius: 12px;
+        padding: 8px 16px;
+        box-shadow: 0 10px 24px -4px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.14);
       }
 
-      .telemetry-coord, .telemetry-speed {
-        display: flex;
-        align-items: baseline;
-        gap: 8px;
-        font-size: 12px;
-        font-weight: 700;
+      .map-brand-title {
+        font-size: 14px;
+        font-weight: 900;
+        letter-spacing: 0.10em;
         color: #ffffff;
-        font-variant-numeric: tabular-nums;
+        text-transform: uppercase;
       }
 
-      .t-label {
-        font-size: 9px;
-        font-weight: 800;
+      .map-brand-sub {
+        font-size: 10px;
+        font-weight: 700;
         letter-spacing: 0.08em;
         color: #e5a93c;
+        padding-left: 8px;
+        border-left: 1px solid rgba(255, 255, 255, 0.16);
+        text-transform: uppercase;
       }
 
       /* Viewport Container & Pannable Plane */
@@ -738,46 +695,143 @@
       /* Floating Bottom HUD Bar */
       .map-hud-bottom {
         position: absolute;
-        bottom: 20px;
+        bottom: 24px;
         left: 24px;
         right: 24px;
         z-index: 310;
         display: flex;
-        align-items: center;
+        align-items: flex-end;
         justify-content: space-between;
         pointer-events: none;
       }
 
-      .map-hints {
+      /* Collapsible Vertical Controls Panel (Bottom-Left) */
+      .map-controls-card {
         display: flex;
-        align-items: center;
-        gap: 16px;
-        background: rgba(13, 17, 24, 0.88);
-        backdrop-filter: blur(20px);
-        -webkit-backdrop-filter: blur(20px);
-        border: 1px solid rgba(255, 255, 255, 0.16);
+        flex-direction: column;
+        background: linear-gradient(135deg, rgba(20, 24, 32, 0.92) 0%, rgba(12, 16, 22, 0.88) 100%);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-top: 1px solid rgba(255, 255, 255, 0.24);
         border-radius: 14px;
-        padding: 10px 18px;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+        box-shadow: 0 12px 32px -4px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+        backdrop-filter: blur(20px) saturate(160%);
+        -webkit-backdrop-filter: blur(20px) saturate(160%);
+        overflow: hidden;
         pointer-events: auto;
+        width: 220px;
+        transition: all 0.24s cubic-bezier(0.16, 1, 0.3, 1);
       }
 
+      .map-controls-header-btn {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        width: 100%;
+        padding: 10px 14px;
+        background: transparent;
+        border: none;
+        color: #ffffff;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        cursor: pointer;
+        user-select: none;
+        transition: background 0.15s ease;
+      }
+
+      .map-controls-header-btn:hover {
+        background: rgba(255, 255, 255, 0.06);
+      }
+
+      .map-controls-title-wrap {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: #e5a93c;
+      }
+
+      .map-controls-title-wrap span {
+        color: #ffffff;
+        font-weight: 800;
+      }
+
+      .map-controls-caret {
+        font-size: 9px;
+        color: rgba(255, 255, 255, 0.5);
+        transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      .map-controls-card.collapsed .map-controls-caret {
+        transform: rotate(-90deg);
+      }
+
+      .map-controls-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 0 14px 12px 14px;
+        max-height: 240px;
+        opacity: 1;
+        transition: max-height 0.26s cubic-bezier(0.16, 1, 0.3, 1),
+                    opacity 0.2s ease,
+                    padding 0.26s ease;
+      }
+
+      .map-controls-card.collapsed .map-controls-list {
+        max-height: 0;
+        opacity: 0;
+        padding-bottom: 0;
+        pointer-events: none;
+      }
+
+      .map-control-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .map-keycap {
+        background: rgba(255, 255, 255, 0.09);
+        border: 1px solid rgba(255, 255, 255, 0.20);
+        border-radius: 5px;
+        padding: 2px 7px;
+        font-size: 9.5px;
+        font-weight: 800;
+        color: #ffffff;
+        letter-spacing: 0.04em;
+        font-family: inherit;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+        white-space: nowrap;
+      }
+
+      .map-control-text {
+        font-size: 11px;
+        font-weight: 600;
+        color: rgba(255, 255, 255, 0.70);
+        text-align: right;
+        white-space: nowrap;
+      }
+
+      /* Bottom-Right Action Controls (Apple-Glass Motorsport Pills) */
       .map-actions-group {
         display: flex;
         align-items: center;
-        gap: 12px;
+        gap: 10px;
         pointer-events: auto;
       }
 
-      .map-action-pill {
+      .map-glass-btn {
         display: inline-flex;
         align-items: center;
         gap: 8px;
         cursor: pointer;
-        background: rgba(13, 17, 24, 0.88);
-        backdrop-filter: blur(20px);
-        -webkit-backdrop-filter: blur(20px);
-        border: 1px solid rgba(255, 255, 255, 0.18);
+        background: linear-gradient(135deg, rgba(20, 24, 32, 0.90) 0%, rgba(12, 16, 22, 0.86) 100%);
+        backdrop-filter: blur(20px) saturate(160%);
+        -webkit-backdrop-filter: blur(20px) saturate(160%);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-top: 1px solid rgba(255, 255, 255, 0.24);
         color: #ffffff;
         border-radius: 12px;
         padding: 8px 16px;
@@ -785,36 +839,36 @@
         font-weight: 800;
         letter-spacing: 0.06em;
         text-transform: uppercase;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+        box-shadow: 0 10px 24px -4px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.14);
         transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
       }
 
-      .map-action-pill kbd {
-        background: rgba(255, 255, 255, 0.15);
-        border: 1px solid rgba(255, 255, 255, 0.25);
-        border-radius: 4px;
-        padding: 1px 5px;
-        font-size: 9px;
-        color: #ffffff;
-      }
-
-      .map-action-pill:hover {
-        background: rgba(28, 36, 48, 0.95);
-        border-color: #e5a93c;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 14px rgba(229, 169, 60, 0.35);
+      .map-glass-btn:hover {
+        background: linear-gradient(135deg, rgba(28, 34, 46, 0.95) 0%, rgba(18, 24, 34, 0.92) 100%);
+        border-color: rgba(229, 169, 60, 0.6);
         transform: translateY(-2px);
+        box-shadow: 0 12px 28px -4px rgba(0, 0, 0, 0.7), 0 0 16px rgba(229, 169, 60, 0.25);
       }
 
-      .map-zoom-controls {
+      .map-glass-btn:active {
+        transform: translateY(0) scale(0.98);
+      }
+
+      .map-close-btn:hover {
+        border-color: rgba(255, 255, 255, 0.4);
+      }
+
+      .map-zoom-group {
         display: flex;
         align-items: center;
-        background: rgba(13, 17, 24, 0.88);
-        backdrop-filter: blur(20px);
-        -webkit-backdrop-filter: blur(20px);
-        border: 1px solid rgba(255, 255, 255, 0.18);
+        background: linear-gradient(135deg, rgba(20, 24, 32, 0.90) 0%, rgba(12, 16, 22, 0.86) 100%);
+        backdrop-filter: blur(20px) saturate(160%);
+        -webkit-backdrop-filter: blur(20px) saturate(160%);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-top: 1px solid rgba(255, 255, 255, 0.24);
         border-radius: 12px;
         overflow: hidden;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+        box-shadow: 0 10px 24px -4px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.14);
       }
 
       .map-zoom-btn {
@@ -822,57 +876,27 @@
         background: transparent;
         border: none;
         color: #ffffff;
-        font-size: 16px;
+        font-size: 15px;
         font-weight: 800;
         padding: 8px 14px;
-        transition: background 0.15s ease;
+        transition: background 0.15s ease, color 0.15s ease;
       }
 
       .map-zoom-btn:hover {
-        background: rgba(255, 255, 255, 0.15);
+        background: rgba(255, 255, 255, 0.12);
+        color: #e5a93c;
       }
 
       .map-zoom-label {
         font-size: 11px;
         font-weight: 800;
-        color: #8b949e;
-        padding: 0 6px;
-        min-width: 48px;
+        color: #ffffff;
+        padding: 0 8px;
+        min-width: 44px;
         text-align: center;
         font-variant-numeric: tabular-nums;
-      }
-
-      .map-close-pill {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        cursor: pointer;
-        background: rgba(255, 255, 255, 0.08);
-        border: 1px solid rgba(255, 255, 255, 0.18);
-        color: #ffffff;
-        border-radius: 12px;
-        padding: 9px 18px;
-        font-size: 11px;
-        font-weight: 800;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
-        transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease, background 0.2s ease, border-color 0.2s ease;
-      }
-
-      .map-close-pill kbd {
-        background: rgba(0, 0, 0, 0.35);
-        border: 1px solid rgba(255, 255, 255, 0.25);
-        border-radius: 4px;
-        padding: 1px 5px;
-        font-size: 9px;
-      }
-
-      .map-close-pill:hover {
-        background: rgba(255, 255, 255, 0.16);
-        border-color: rgba(255, 255, 255, 0.35);
-        transform: translateY(-2px);
-        box-shadow: 0 8px 26px rgba(0, 0, 0, 0.65);
+        border-left: 1px solid rgba(255, 255, 255, 0.08);
+        border-right: 1px solid rgba(255, 255, 255, 0.08);
       }
 
       /* ==========================================================================
@@ -1895,13 +1919,12 @@
       </div>
       <!-- Forza Horizon Fullscreen Interactive World Map Overlay -->
       <div id="world-map-overlay" class="world-map-overlay hidden">
-        <!-- Floating Top HUD Bar -->
+        <!-- Floating Top HUD Bar (Apple-Glass Motorsport Header) -->
         <div class="map-hud-top">
-          <div class="map-title-wrap">
-            <span class="map-badge">FORZA HORIZON</span>
-            <div class="map-title-group">
-              <div class="map-title">WORLD MAP &bull; ISLA CIRCUIT</div>
-              <div class="map-subtitle">4.0 KM ROAD NETWORK &bull; SATELLITE SCAN &amp; CORRIDORS</div>
+          <div class="map-header-left">
+            <div class="map-brand-badge">
+              <span class="map-brand-title">WORLD MAP</span>
+              <span class="map-brand-sub">ISLA CIRCUIT</span>
             </div>
             <!-- Active GPS Destination Badge -->
             <div class="map-gps-hud hidden" id="map-gps-hud">
@@ -1911,9 +1934,15 @@
               <button class="gps-cancel-btn" id="map-gps-cancel-btn" title="Cancel Route (X)">✕ CANCEL</button>
             </div>
           </div>
-          <div class="map-telemetry-badge" id="map-telemetry-badge">
-            <div class="telemetry-coord"><span class="t-label">POS</span> <span id="map-coord-val">X: 0.0m | Z: 0.0m</span></div>
-            <div class="telemetry-speed"><span class="t-label">SPEED</span> <span id="map-speed-val">0 KM/H</span></div>
+          <div class="map-header-right">
+            <div class="pause-telemetry-chip">
+              <span class="pause-chip-label">COORDINATES</span>
+              <span class="pause-chip-val" id="map-coord-val">0.0m, 0.0m</span>
+            </div>
+            <div class="pause-telemetry-chip">
+              <span class="pause-chip-label">SPEED</span>
+              <span class="pause-chip-val" id="map-speed-val">0 MPH</span>
+            </div>
           </div>
         </div>
 
@@ -1928,8 +1957,8 @@
             <svg class="map-routes-svg" id="map-routes-svg" viewBox="0 0 2048 1920" xmlns="http://www.w3.org/2000/svg">
               <defs>
                 <!-- Elevated Bridge Realistic Directional Drop-Shadow -->
-                <filter id="bridge-drop-shadow" x="-40%" y="-40%" width="180%" height="220%">
-                  <feDropShadow dx="-4" dy="9" stdDeviation="6" flood-color="rgba(0,0,0,0.88)" />
+                <filter id="bridge-drop-shadow" x="-30%" y="-30%" width="160%" height="180%">
+                  <feDropShadow dx="0" dy="3.0" stdDeviation="2.0" flood-color="rgba(0,0,0,0.65)" />
                 </filter>
                 <!-- Subtle Ground Road Casing Shadow -->
                 <filter id="road-casing-shadow" x="-20%" y="-20%" width="140%" height="140%">
@@ -1977,28 +2006,58 @@
 
         <!-- Floating Bottom HUD Action Bar -->
         <div class="map-hud-bottom">
-          <div class="map-hints">
-            <span class="hint-item"><span class="key-hint">Left Drag</span> Pan Map</span>
-            <span class="hint-item"><span class="key-hint">Scroll</span> Zoom</span>
-            <span class="hint-item"><span class="key-hint">Hover Road</span> Click to Set Destination</span>
-            <span class="hint-item"><span class="key-hint">Space</span> Recenter</span>
-            <span class="hint-item"><span class="key-hint">X</span> Clear</span>
-            <span class="hint-item"><span class="key-hint">M</span> / <span class="key-hint">Esc</span> Close</span>
-          </div>
-          <div class="map-actions-group">
-            <button class="map-action-pill" id="map-center-btn" title="Center camera on player car (Space)">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="7"/><line x1="12" y1="2" x2="12" y2="7"/><line x1="12" y1="17" x2="12" y2="22"/><line x1="2" y1="12" x2="7" y2="12"/><line x1="17" y1="12" x2="22" y2="12"/></svg>
-              <span>RECENTER CAR</span>
-              <kbd>SPACE</kbd>
+          <!-- Collapsible Vertical Controls Card (Bottom-Left) -->
+          <div class="map-controls-card" id="map-controls-card">
+            <button class="map-controls-header-btn" id="map-controls-toggle-btn" title="Toggle Controls Help">
+              <div class="map-controls-title-wrap">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                <span>CONTROLS</span>
+              </div>
+              <span class="map-controls-caret" id="map-controls-caret">▼</span>
             </button>
-            <div class="map-zoom-controls">
+            <div class="map-controls-list" id="map-controls-list">
+              <div class="map-control-item">
+                <span class="map-keycap">L-DRAG</span>
+                <span class="map-control-text">Pan Map</span>
+              </div>
+              <div class="map-control-item">
+                <span class="map-keycap">SCROLL</span>
+                <span class="map-control-text">Zoom</span>
+              </div>
+              <div class="map-control-item">
+                <span class="map-keycap">CLICK ROAD</span>
+                <span class="map-control-text">Set Route</span>
+              </div>
+              <div class="map-control-item">
+                <span class="map-keycap">SPACE</span>
+                <span class="map-control-text">Recenter Car</span>
+              </div>
+              <div class="map-control-item">
+                <span class="map-keycap">X</span>
+                <span class="map-control-text">Clear Route</span>
+              </div>
+              <div class="map-control-item">
+                <span class="map-keycap">ESC / M</span>
+                <span class="map-control-text">Close Map</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bottom-Right Apple-Glass Action Controls -->
+          <div class="map-actions-group">
+            <button class="map-glass-btn" id="map-center-btn" title="Center camera on player car (Space)">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#e5a93c" stroke-width="2.5"><circle cx="12" cy="12" r="7"/><line x1="12" y1="2" x2="12" y2="7"/><line x1="12" y1="17" x2="12" y2="22"/><line x1="2" y1="12" x2="7" y2="12"/><line x1="17" y1="12" x2="22" y2="12"/></svg>
+              <span>RECENTER CAR</span>
+              <kbd class="map-keycap">SPACE</kbd>
+            </button>
+            <div class="map-zoom-group">
               <button class="map-zoom-btn" id="map-zoom-out" title="Zoom Out (−)">−</button>
               <span class="map-zoom-label" id="map-zoom-label">100%</span>
               <button class="map-zoom-btn" id="map-zoom-in" title="Zoom In (+)">+</button>
             </div>
-            <button class="map-close-pill" id="map-close-btn" title="Close Map (Esc / M)">
+            <button class="map-glass-btn" id="map-close-btn" title="Close Map (Esc / M)">
               <span>CLOSE</span>
-              <kbd>ESC</kbd>
+              <kbd class="map-keycap">ESC</kbd>
             </button>
           </div>
         </div>

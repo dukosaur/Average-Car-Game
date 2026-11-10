@@ -33,6 +33,8 @@ export class WorldMapController {
     this.zoomLabelEl = document.getElementById('map-zoom-label');
     this.closeBtnEl = document.getElementById('map-close-btn');
     this.hudMapBtnEl = document.getElementById('hud-map-btn');
+    this.controlsCardEl = document.getElementById('map-controls-card');
+    this.controlsToggleBtnEl = document.getElementById('map-controls-toggle-btn');
 
     // GPS Navigation UI Elements
     this.mapGpsHudEl = document.getElementById('map-gps-hud');
@@ -189,15 +191,11 @@ export class WorldMapController {
   }
 
   /**
-   * Renders authentic Forza Horizon-style vector road lines and elevated overpass bridge with drop shadow
+   * Renders authentic Forza Horizon-style vector road lines with seamless overpass bridge & drop shadow
    */
   renderVectorRoads(routes) {
     if (!this.roadsGroupEl || !routes) return;
     this.roadsGroupEl.innerHTML = '';
-
-    // Split routes by layer: ground routes first, elevated overpass bridge on top
-    const groundRoutes = routes.filter((r) => r.layer !== 'elevated');
-    const elevatedRoutes = routes.filter((r) => r.layer === 'elevated');
 
     const toPathD = (pts, closed) => {
       let d = '';
@@ -211,10 +209,8 @@ export class WorldMapController {
       return d;
     };
 
-    // 1. RENDER GROUND ROUTES (Clean Forza Cartography: Bold & Readable)
-    for (const route of groundRoutes) {
-      if (!route.points || route.points.length < 2) continue;
-      const isHwy = route.type === 'highway';
+    const drawRoad = (route, isHwy) => {
+      if (!route.points || route.points.length < 2) return;
       const d = toPathD(route.points, isHwy);
 
       // A. Dark Outer Casing (Crisp border against satellite terrain)
@@ -239,7 +235,7 @@ export class WorldMapController {
       core.setAttribute('opacity', '0.98');
       this.roadsGroupEl.appendChild(core);
 
-      // C. Highway Subtle Centerline Divider
+      // C. Highway Centerline Divider
       if (isHwy) {
         const divider = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         divider.setAttribute('d', d);
@@ -250,67 +246,43 @@ export class WorldMapController {
         divider.setAttribute('opacity', '0.80');
         this.roadsGroupEl.appendChild(divider);
       }
+    };
+
+    // 1. RENDER GROUND HIGHWAY FIRST (Underneath everything)
+    const hwy = routes.find((r) => r.type === 'highway' || r.id === 'hwy');
+    if (hwy) drawRoad(hwy, true);
+
+    // 2. RENDER GROUND CONNECTOR ROUTES (touge, valley, sw_shortcut)
+    for (const r of routes) {
+      if (r === hwy || r.id === 'overpass' || r.layer === 'elevated' || r.id === 'overpass_bridge') continue;
+      drawRoad(r, false);
     }
 
-    // 2. RENDER ELEVATED OVERPASS BRIDGE ON TOP WITH REALISTIC DROP-SHADOW
-    for (const bridge of elevatedRoutes) {
-      if (!bridge.points || bridge.points.length < 2) continue;
-      const d = toPathD(bridge.points, false);
-
-      // A. Bridge Elevated Directional Drop-Shadow (casts realistic shadow across lower highway)
-      const shadowPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      shadowPath.setAttribute('d', d);
-      shadowPath.setAttribute('fill', 'none');
-      shadowPath.setAttribute('stroke', '#000000');
-      shadowPath.setAttribute('stroke-width', '18.0');
-      shadowPath.setAttribute('stroke-linecap', 'butt');
-      shadowPath.setAttribute('stroke-linejoin', 'round');
-      shadowPath.setAttribute('filter', 'url(#bridge-drop-shadow)');
-      this.roadsGroupEl.appendChild(shadowPath);
-
-      // B. Solid Bridge Deck Casing (cleanly cuts and obscures lower highway beneath)
-      const deckCasing = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      deckCasing.setAttribute('d', d);
-      deckCasing.setAttribute('fill', 'none');
-      deckCasing.setAttribute('stroke', '#0e131b');
-      deckCasing.setAttribute('stroke-width', '15.0');
-      deckCasing.setAttribute('stroke-linecap', 'butt');
-      deckCasing.setAttribute('stroke-linejoin', 'round');
-      this.roadsGroupEl.appendChild(deckCasing);
-
-      // C. Bridge Guardrail Parapets
-      const parapet = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      parapet.setAttribute('d', d);
-      parapet.setAttribute('fill', 'none');
-      parapet.setAttribute('stroke', '#475569');
-      parapet.setAttribute('stroke-width', '10.8');
-      parapet.setAttribute('stroke-linecap', 'butt');
-      this.roadsGroupEl.appendChild(parapet);
-
-      // D. Bridge Crisp White Roadway
-      const bridgeCore = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      bridgeCore.setAttribute('d', d);
-      bridgeCore.setAttribute('fill', 'none');
-      bridgeCore.setAttribute('stroke', '#ffffff');
-      bridgeCore.setAttribute('stroke-width', '7.0');
-      bridgeCore.setAttribute('stroke-linecap', 'butt');
-      this.roadsGroupEl.appendChild(bridgeCore);
-
-      // E. Bridge Abutment Joints at Ends
-      const p0 = bridge.points[0];
-      const p1 = bridge.points[bridge.points.length - 1];
-      const pStart = this.worldToMapPx(p0[0], p0.length > 2 ? p0[2] : p0[1]);
-      const pEnd = this.worldToMapPx(p1[0], p1.length > 2 ? p1[2] : p1[1]);
-      for (const p of [pStart, pEnd]) {
-        const joint = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-        joint.setAttribute('cx', p.x.toFixed(1));
-        joint.setAttribute('cy', p.y.toFixed(1));
-        joint.setAttribute('r', '5.5');
-        joint.setAttribute('fill', '#334155');
-        joint.setAttribute('stroke', '#ffffff');
-        joint.setAttribute('stroke-width', '1.5');
-        this.roadsGroupEl.appendChild(joint);
+    // 3. RENDER REALISTIC BRIDGE DROP-SHADOW ACROSS LOWER HIGHWAY
+    // Casts a clean, tight shadow underneath the overpass crossing onto the highway below
+    const bridge = routes.find((r) => r.layer === 'elevated' || r.id === 'overpass_bridge');
+    if (bridge && bridge.points && bridge.points.length >= 2) {
+      // Focus shadow on the crossing span over the highway (|X| <= 22) with rounded soft caps
+      const spanPts = bridge.points.filter((p) => Math.abs(p[0]) <= 22);
+      if (spanPts.length >= 2) {
+        const dBridge = toPathD(spanPts, false);
+        const shadowPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        shadowPath.setAttribute('d', dBridge);
+        shadowPath.setAttribute('fill', 'none');
+        shadowPath.setAttribute('stroke', 'rgba(0, 0, 0, 0.55)');
+        shadowPath.setAttribute('stroke-width', '8.5');
+        shadowPath.setAttribute('stroke-linecap', 'round');
+        shadowPath.setAttribute('stroke-linejoin', 'round');
+        shadowPath.setAttribute('filter', 'url(#bridge-drop-shadow)');
+        this.roadsGroupEl.appendChild(shadowPath);
       }
+    }
+
+    // 4. RENDER OVERPASS AS A SMOOTH, CONTINUOUS UNIFORM ROAD ON TOP
+    // Crosses over the highway and drop shadow with seamless width (8.5 / 5.0) and NO circles/knobs
+    const overpass = routes.find((r) => r.id === 'overpass');
+    if (overpass) {
+      drawRoad(overpass, false);
     }
 
     if (window.__pauseMenu && typeof window.__pauseMenu.syncRoads === 'function') {
@@ -515,6 +487,12 @@ export class WorldMapController {
     }
     if (this.zoomOutBtnEl) {
       this.zoomOutBtnEl.addEventListener('click', () => this.setZoomByFactor(0.77));
+    }
+    if (this.controlsToggleBtnEl && this.controlsCardEl) {
+      this.controlsToggleBtnEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.controlsCardEl.classList.toggle('collapsed');
+      });
     }
 
     // GPS Cancel Buttons & Waypoint Click
@@ -765,7 +743,10 @@ export class WorldMapController {
           this.playerMarkerEl.style.top = `${p.y.toFixed(1)}px`;
         }
         if (this.coordValEl) {
-          this.coordValEl.textContent = `X: ${pos.x.toFixed(1)}m | Z: ${pos.z.toFixed(1)}m`;
+          this.coordValEl.textContent = `${pos.x.toFixed(1)}m, ${pos.z.toFixed(1)}m`;
+        }
+        if (this.speedValEl) {
+          this.speedValEl.textContent = '0 MPH (0 KM/H)';
         }
       }
       // Instantly center on player car when opening
@@ -812,10 +793,12 @@ export class WorldMapController {
 
       if (this.isOpen) {
         if (this.coordValEl) {
-          this.coordValEl.textContent = `X: ${carPos.x.toFixed(1)}m | Z: ${carPos.z.toFixed(1)}m`;
+          this.coordValEl.textContent = `${carPos.x.toFixed(1)}m, ${carPos.z.toFixed(1)}m`;
         }
         if (this.speedValEl) {
-          this.speedValEl.textContent = `${Math.round(carSpeedKmh || 0)} KM/H`;
+          const mph = Math.round((carSpeedKmh || 0) * 0.621371);
+          const kmh = Math.round(carSpeedKmh || 0);
+          this.speedValEl.textContent = `${mph} MPH (${kmh} KM/H)`;
         }
       }
     }
