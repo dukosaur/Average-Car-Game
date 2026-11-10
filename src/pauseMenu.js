@@ -567,8 +567,19 @@ export class PauseMenuController {
     // High-fidelity zoom tightly focused on player car, matching Forza Horizon 5 hero map card
     const miniScale = 0.90;
 
-    const offsetX = containerW * 0.5 - p.x * miniScale;
-    const offsetY = containerH * 0.5 - p.y * miniScale;
+    let offsetX = containerW * 0.5 - p.x * miniScale;
+    let offsetY = containerH * 0.5 - p.y * miniScale;
+
+    // Viewport Edge Clamping: Ensure the satellite map covers 100% of the hero tile at all times.
+    // When the vehicle is driving near the island perimeters (e.g. western hairpin loop),
+    // the camera smoothly clamps at the image border so zero black void or cutoffs are ever exposed.
+    const maxOffsetX = 0;
+    const minOffsetX = Math.min(0, containerW - this.mapBounds.imgW * miniScale);
+    const maxOffsetY = 0;
+    const minOffsetY = Math.min(0, containerH - this.mapBounds.imgH * miniScale);
+
+    offsetX = Math.min(maxOffsetX, Math.max(minOffsetX, offsetX));
+    offsetY = Math.min(maxOffsetY, Math.max(minOffsetY, offsetY));
 
     this.miniMapPlaneEl.style.transform = `translate(${offsetX.toFixed(1)}px, ${offsetY.toFixed(1)}px) scale(${miniScale})`;
 

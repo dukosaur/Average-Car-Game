@@ -244,6 +244,29 @@ def test_pause_menu():
         time.sleep(1.5)
         take_screenshot(14, "verified_world_map_expanded.png")
 
+        # Pass 8: Move vehicle to western hairpin perimeter (min_wx = -250m) and open pause menu
+        js_step8 = """
+        (function() {
+            const v = window.__vehicle;
+            const pm = window.__pauseMenu;
+            const wm = window.__worldMap;
+            wm.setOpen(false);
+            if (v && v.rootGroup) {
+                v.rootGroup.position.set(-250, 0, 0);
+            }
+            pm.setOpen(true);
+            pm.updateFocusedTile(1);
+            return {
+                carX: v.rootGroup.position.x,
+                carZ: v.rootGroup.position.z,
+                planeTransform: document.getElementById('pause-mini-map-plane').style.transform
+            };
+        })()
+        """
+        eval_js(15, js_step8)
+        time.sleep(1.2)
+        take_screenshot(16, "verified_pause_menu_hairpin_edge_clamped.png")
+
     finally:
         proc.terminate()
         try:

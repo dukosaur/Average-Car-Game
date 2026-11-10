@@ -688,6 +688,36 @@ export class WorldMapController {
     this.targetPanY = centerY - mapPointY * nextScale;
   }
 
+  clampPan(panX, panY, scale) {
+    if (!this.viewportEl) return { x: panX, y: panY };
+    const rect = this.viewportEl.getBoundingClientRect();
+    const mapW = this.bounds.imgW * scale;
+    const mapH = this.bounds.imgH * scale;
+
+    let minX, maxX;
+    if (mapW >= rect.width) {
+      minX = rect.width - mapW;
+      maxX = 0;
+    } else {
+      minX = (rect.width - mapW) * 0.5;
+      maxX = minX;
+    }
+
+    let minY, maxY;
+    if (mapH >= rect.height) {
+      minY = rect.height - mapH;
+      maxY = 0;
+    } else {
+      minY = (rect.height - mapH) * 0.5;
+      maxY = minY;
+    }
+
+    return {
+      x: Math.min(maxX, Math.max(minX, panX)),
+      y: Math.min(maxY, Math.max(minY, panY))
+    };
+  }
+
   centerOnWorld(wx, wz, desiredScale = null) {
     if (!this.viewportEl) return;
     const rect = this.viewportEl.getBoundingClientRect();
@@ -696,8 +726,11 @@ export class WorldMapController {
     if (desiredScale !== null) {
       this.targetScale = Math.max(this.minScale, Math.min(this.maxScale, desiredScale));
     }
-    this.targetPanX = rect.width * 0.5 - p.x * this.targetScale;
-    this.targetPanY = rect.height * 0.5 - p.y * this.targetScale;
+    const rawPanX = rect.width * 0.5 - p.x * this.targetScale;
+    const rawPanY = rect.height * 0.5 - p.y * this.targetScale;
+    const clamped = this.clampPan(rawPanX, rawPanY, this.targetScale);
+    this.targetPanX = clamped.x;
+    this.targetPanY = clamped.y;
   }
 
   centerOnPlayer(desiredScale = 1.15) {
@@ -798,7 +831,7 @@ export class WorldMapController {
 
     if (!this.isOpen) return;
 
-    // 3. Inertia Decay when not dragging
+    // 3. Inertia Decay & Viewport Clamping when not dragging
     if (!this.isDragging) {
       this.targetPanX += this.velX;
       this.targetPanY += this.velY;
@@ -807,6 +840,10 @@ export class WorldMapController {
       if (Math.abs(this.velX) < 0.05) this.velX = 0;
       if (Math.abs(this.velY) < 0.05) this.velY = 0;
     }
+
+    const clamped = this.clampPan(this.targetPanX, this.targetPanY, this.targetScale);
+    this.targetPanX = clamped.x;
+    this.targetPanY = clamped.y;
 
     // 3. Smooth Damping (Spring Lerp)
     this.panX += (this.targetPanX - this.panX) * 0.18;
