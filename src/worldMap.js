@@ -411,15 +411,15 @@ export class WorldMapController {
       d += (i === 0 ? `M ${p.x.toFixed(1)} ${p.y.toFixed(1)} ` : `L ${p.x.toFixed(1)} ${p.y.toFixed(1)} `);
     }
 
-    // A. Outer Luminous Halo / Glow
+    // A. Outer Luminous Halo / Glow (Motorsport Amber)
     const glowPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     glowPath.setAttribute('d', d);
     glowPath.setAttribute('fill', 'none');
-    glowPath.setAttribute('stroke', '#00d2ff');
+    glowPath.setAttribute('stroke', '#E5A93C');
     glowPath.setAttribute('stroke-width', '16.0');
     glowPath.setAttribute('stroke-linecap', 'round');
     glowPath.setAttribute('stroke-linejoin', 'round');
-    glowPath.setAttribute('opacity', '0.80');
+    glowPath.setAttribute('opacity', '0.75');
     glowPath.setAttribute('filter', 'url(#gps-route-glow)');
     this.gpsGroupEl.appendChild(glowPath);
 
@@ -427,18 +427,18 @@ export class WorldMapController {
     const casingPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     casingPath.setAttribute('d', d);
     casingPath.setAttribute('fill', 'none');
-    casingPath.setAttribute('stroke', '#00263f');
+    casingPath.setAttribute('stroke', '#1a1408');
     casingPath.setAttribute('stroke-width', '12.5');
     casingPath.setAttribute('stroke-linecap', 'round');
     casingPath.setAttribute('stroke-linejoin', 'round');
     casingPath.setAttribute('opacity', '0.92');
     this.gpsGroupEl.appendChild(casingPath);
 
-    // C. Vibrant Forza Cyan Ribbon Core
+    // C. Clean Motorsport Amber Ribbon Core
     const ribbonPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     ribbonPath.setAttribute('d', d);
     ribbonPath.setAttribute('fill', 'none');
-    ribbonPath.setAttribute('stroke', '#00f7ff');
+    ribbonPath.setAttribute('stroke', '#FFB74D');
     ribbonPath.setAttribute('stroke-width', '8.8');
     ribbonPath.setAttribute('stroke-linecap', 'round');
     ribbonPath.setAttribute('stroke-linejoin', 'round');

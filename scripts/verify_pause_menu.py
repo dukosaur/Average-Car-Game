@@ -118,6 +118,24 @@ def test_pause_menu():
             except Exception as e:
                 print(f"Error parsing screenshot: {e}")
 
+        # Pass 0: Active Gameplay HUD (Clean Minimalism - verify only [ESC] Pause and speed telemetry)
+        js_step0 = """
+        (function() {
+            const hudPrompt = document.getElementById('hud-pause-prompt');
+            const oldHud = document.getElementById('hud');
+            const oldGarage = document.getElementById('garage-backdrop');
+            return {
+                hasHudPrompt: !!hudPrompt,
+                oldHudRemoved: !oldHud,
+                oldGarageRemoved: !oldGarage,
+                hudPromptVisible: hudPrompt && getComputedStyle(hudPrompt).display !== 'none'
+            };
+        })()
+        """
+        eval_js(0, js_step0)
+        time.sleep(1.0)
+        take_screenshot(1, "verified_hud_clean_minimalism.png")
+
         # Pass 1: Open Pause Menu (Default focused on Tile 1: World Map)
         js_step1 = """
         (function() {
@@ -131,9 +149,9 @@ def test_pause_menu():
             };
         })()
         """
-        eval_js(1, js_step1)
+        eval_js(2, js_step1)
         time.sleep(1.0)
-        take_screenshot(2, "verified_pause_menu_main.png")
+        take_screenshot(3, "verified_pause_menu_main.png")
 
         # Pass 2: Navigate focus to CARS & GARAGE tile (Tile 0)
         js_step2 = """
@@ -145,9 +163,9 @@ def test_pause_menu():
             };
         })()
         """
-        eval_js(3, js_step2)
+        eval_js(4, js_step2)
         time.sleep(1.0)
-        take_screenshot(4, "verified_pause_menu_garage_tile_focused.png")
+        take_screenshot(5, "verified_pause_menu_garage_tile_focused.png")
 
         # Pass 3: Open Cars Showroom Subview
         js_step3 = """
@@ -160,9 +178,9 @@ def test_pause_menu():
             };
         })()
         """
-        eval_js(5, js_step3)
+        eval_js(6, js_step3)
         time.sleep(1.0)
-        take_screenshot(6, "verified_pause_menu_cars_showroom.png")
+        take_screenshot(7, "verified_pause_menu_cars_showroom.png")
 
         # Pass 4: Select Lamborghini Veneno (Index 1) and verify live car swap
         js_step4 = """
@@ -170,22 +188,21 @@ def test_pause_menu():
             const pm = window.__pauseMenu;
             await pm.selectCar(1);
             return {
-                newActiveIndex: window.__vehicle ? 1 : 0,
-                carTitle: document.getElementById('car-title').textContent
+                newActiveIndex: pm.activeCarIndex,
+                activeCarName: pm.carRoster[pm.activeCarIndex].name
             };
         })()
         """
-        eval_js(7, js_step4)
+        eval_js(8, js_step4)
         time.sleep(2.0)
 
-        # Pass 5: Re-open Pause Menu to verify that active car updated to Lamborghini Veneno in both Header and Garage Tile!
+        # Pass 5: Re-open Pause Menu to verify that active car updated to Lamborghini Veneno in Garage Tile!
         js_step5 = """
         (function() {
             const pm = window.__pauseMenu;
             pm.setOpen(true);
             pm.updateFocusedTile(1);
             return {
-                headerCar: document.getElementById('pause-header-car-name').textContent,
                 garageTileCar: document.getElementById('pause-garage-current-name').textContent,
                 tileImgSrc: document.getElementById('pause-garage-current-img').getAttribute('src')
             };
@@ -209,6 +226,23 @@ def test_pause_menu():
         eval_js(11, js_step6)
         time.sleep(1.0)
         take_screenshot(12, "verified_pause_menu_settings.png")
+
+        # Pass 7: Expand Fullscreen World Map from pause menu
+        js_step7 = """
+        (function() {
+            const pm = window.__pauseMenu;
+            const wm = window.__worldMap;
+            pm.setOpen(false);
+            wm.setOpen(true);
+            return {
+                isMapOpen: wm.isOpen,
+                playerMarkerVisible: !document.getElementById('map-player-marker').classList.contains('hidden')
+            };
+        })()
+        """
+        eval_js(13, js_step7)
+        time.sleep(1.5)
+        take_screenshot(14, "verified_world_map_expanded.png")
 
     finally:
         proc.terminate()

@@ -79,6 +79,7 @@ export class PauseMenuController {
     ];
 
     // Mini Map Elements in Hero Tile
+    this.miniMapViewportEl = document.querySelector('.pause-mini-map-viewport');
     this.miniMapPlaneEl = document.getElementById('pause-mini-map-plane');
     this.miniMapArrowEl = document.getElementById('pause-mini-map-arrow');
     this.miniMapGpsSvgEl = document.getElementById('pause-mini-map-gps-svg');
@@ -97,7 +98,8 @@ export class PauseMenuController {
     this.settingsBackBtnEl = document.getElementById('pause-settings-back-btn');
     this.grassOptionBtns = document.querySelectorAll('.pause-grass-opt-btn');
 
-    // HUD trigger button
+    // Minimalist HUD Pause Prompt (Bottom-Left)
+    this.hudPausePromptEl = document.getElementById('hud-pause-prompt');
     this.hudPauseBtnEl = document.getElementById('hud-pause-btn');
     this.footerPromptsEl = document.getElementById('pause-footer-prompts');
 
@@ -108,7 +110,27 @@ export class PauseMenuController {
     this.buildCarsGrid();
     this.buildCameraDots();
     this.bindEvents();
+    this.initParallax();
     this.updateFocusedTile(1);
+  }
+
+  initParallax() {
+    if (!this.overlayEl) return;
+    const shell = this.overlayEl.querySelector('.pause-menu-shell');
+    if (!shell) return;
+
+    this.overlayEl.addEventListener('mousemove', (e) => {
+      if (!this.isOpen) return;
+      const xNorm = (e.clientX / window.innerWidth - 0.5) * 2;
+      const yNorm = (e.clientY / window.innerHeight - 0.5) * 2;
+      const rotY = xNorm * 1.4;
+      const rotX = -yNorm * 1.4;
+      shell.style.transform = `perspective(1200px) rotateX(${rotX.toFixed(2)}deg) rotateY(${rotY.toFixed(2)}deg)`;
+    });
+
+    this.overlayEl.addEventListener('mouseleave', () => {
+      shell.style.transform = 'perspective(1200px) rotateX(0deg) rotateY(0deg)';
+    });
   }
 
   worldToMapPx(wx, wz) {
@@ -164,7 +186,20 @@ export class PauseMenuController {
   }
 
   bindEvents() {
-    // HUD Pause Button
+    // Minimalist HUD Pause Prompt (Bottom-Left)
+    if (this.hudPausePromptEl) {
+      this.hudPausePromptEl.addEventListener('click', () => {
+        this.setOpen(true);
+      });
+      this.hudPausePromptEl.addEventListener('keydown', (e) => {
+        if (e.code === 'Enter' || e.code === 'Space') {
+          this.setOpen(true);
+          e.preventDefault();
+        }
+      });
+    }
+
+    // Legacy HUD Pause Button fallback
     if (this.hudPauseBtnEl) {
       this.hudPauseBtnEl.addEventListener('click', () => {
         this.setOpen(!this.isOpen);
@@ -486,11 +521,11 @@ export class PauseMenuController {
     const pos = this.vehicle.rootGroup.position;
     const p = this.worldToMapPx(pos.x, pos.z);
 
-    // Mini map container is ~480px x 300px
-    // Center the satellite plane around player position
-    const miniScale = 0.42;
-    const containerW = 480;
-    const containerH = 300;
+    // Dynamic measurement of hero tile viewport
+    const vpRect = this.miniMapViewportEl ? this.miniMapViewportEl.getBoundingClientRect() : { width: 540, height: 440 };
+    const containerW = vpRect.width || 540;
+    const containerH = vpRect.height || 440;
+    const miniScale = 0.44;
 
     const offsetX = containerW * 0.5 - p.x * miniScale;
     const offsetY = containerH * 0.5 - p.y * miniScale;
@@ -523,6 +558,10 @@ export class PauseMenuController {
 
     if (this.overlayEl) {
       this.overlayEl.classList.toggle('hidden', !open);
+    }
+
+    if (this.hudPausePromptEl) {
+      this.hudPausePromptEl.classList.toggle('hidden', open);
     }
 
     if (open) {

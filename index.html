@@ -29,530 +29,60 @@
         width: 100%;
         height: 100%;
       }
-      #hud {
-        position: absolute;
-        top: 16px;
-        left: 16px;
-        background: rgba(13, 17, 23, 0.84);
-        backdrop-filter: blur(10px);
-        border: 1px solid rgba(255, 255, 255, 0.14);
-        border-radius: 12px;
-        padding: 14px 18px;
-        min-width: 305px;
-        max-width: 340px;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
-      }
-      #hud h1 {
-        font-size: 14px;
-        font-weight: 700;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-        color: #ff4d4d;
-        margin-bottom: 4px;
-      }
-      #hud .sub {
-        font-size: 12px;
-        color: #8b949e;
-        margin-bottom: 10px;
-      }
-      #hud .controls {
-        font-size: 12px;
-        line-height: 1.7;
-        color: #c9d1d9;
-      }
-      #hud .key {
-        display: inline-block;
-        padding: 1px 6px;
-        border-radius: 4px;
-        background: rgba(255, 255, 255, 0.12);
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        font-family: monospace;
-        font-size: 11px;
-        color: #fff;
-      }
-      .section-block {
-        margin-top: 11px;
-        padding-top: 9px;
-        border-top: 1px solid rgba(255, 255, 255, 0.12);
-      }
-      .switcher-label {
-        font-size: 11px;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        color: #8b949e;
-        margin-bottom: 6px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-      .switcher-label span.active-cam {
-        color: #58a6ff;
-        font-family: monospace;
-      }
-      .btn-list {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-      }
-      .pill-btn {
-        cursor: pointer;
-        background: rgba(255, 255, 255, 0.08);
-        border: 1px solid rgba(255, 255, 255, 0.18);
-        color: #c9d1d9;
-        border-radius: 6px;
-        padding: 5px 9px;
-        font-size: 11px;
-        font-weight: 600;
-        transition: all 0.15s ease;
-      }
-      .pill-btn:hover {
-        background: rgba(255, 255, 255, 0.16);
-        color: #fff;
-      }
-      .pill-btn.active {
-        background: rgba(255, 77, 77, 0.28);
-        border-color: #ff6b6b;
-        color: #ffffff;
-      }
-      .pill-btn.cam-active {
-        background: rgba(56, 139, 253, 0.28);
-        border-color: #58a6ff;
-        color: #ffffff;
-      }
-      .pill-btn.freecam-btn {
-        background: rgba(163, 113, 247, 0.16);
-        border-color: rgba(163, 113, 247, 0.45);
-        color: #d2a8ff;
-        width: 100%;
-        margin-top: 7px;
-        padding: 6px 10px;
-        text-align: center;
-      }
-      .pill-btn.freecam-btn:hover {
-        background: rgba(163, 113, 247, 0.28);
-        color: #ffffff;
-      }
-      .pill-btn.freecam-btn.freecam-active {
-        background: rgba(163, 113, 247, 0.42);
-        border-color: #bc8cff;
-        color: #ffffff;
-        box-shadow: 0 0 12px rgba(163, 113, 247, 0.45);
-      }
-      #freecam-hint {
-        display: none;
-        margin-top: 7px;
-        padding: 6px 8px;
-        border-radius: 6px;
-        background: rgba(163, 113, 247, 0.14);
-        border: 1px solid rgba(163, 113, 247, 0.35);
-        font-size: 11px;
-        line-height: 1.5;
-        color: #e2c5ff;
-      }
       /* ==========================================================================
-         Forza Horizon-Style Centered Glossy Garage Modal & Backdrop Blur
+         Minimalist In-Game HUD Pause Prompt (Bottom-Left)
          ========================================================================== */
-      .garage-backdrop {
-        position: fixed;
-        inset: 0;
-        z-index: 200;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: radial-gradient(circle at center, rgba(6, 10, 16, 0.62) 0%, rgba(2, 4, 8, 0.88) 100%);
-        backdrop-filter: blur(18px) saturate(135%);
-        -webkit-backdrop-filter: blur(18px) saturate(135%);
-        opacity: 1;
-        visibility: visible;
-        transition: opacity 0.30s cubic-bezier(0.16, 1, 0.3, 1),
-                    visibility 0.30s ease,
-                    backdrop-filter 0.30s ease;
-        padding: 24px;
-        overflow: hidden;
-      }
-
-      .garage-backdrop.hidden {
-        opacity: 0;
-        visibility: hidden;
-        pointer-events: none;
-        backdrop-filter: blur(0px);
-        -webkit-backdrop-filter: blur(0px);
-      }
-
-      .garage-modal {
-        position: relative;
-        width: 95vw;
-        max-width: 1140px;
-        background: rgba(13, 17, 24, 0.88);
-        backdrop-filter: blur(28px) saturate(160%);
-        -webkit-backdrop-filter: blur(28px) saturate(160%);
-        border: 1px solid rgba(255, 255, 255, 0.16);
-        border-radius: 20px;
-        padding: 24px 28px;
-        box-shadow: 0 30px 80px rgba(0, 0, 0, 0.8),
-                    0 0 50px rgba(255, 0, 122, 0.12),
-                    inset 0 1px 0 rgba(255, 255, 255, 0.18);
-        display: flex;
-        flex-direction: column;
-        gap: 20px;
-        transform: scale(1) translateY(0);
-        opacity: 1;
-        transition: transform 0.36s cubic-bezier(0.175, 0.885, 0.32, 1.15),
-                    opacity 0.26s ease;
-      }
-
-      .garage-backdrop.hidden .garage-modal {
-        transform: scale(0.93) translateY(24px);
-        opacity: 0;
-      }
-
-      /* Header */
-      .garage-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding-bottom: 14px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.10);
-      }
-
-      .garage-title-wrap {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-      }
-
-      .garage-badge {
-        background: linear-gradient(135deg, #ff007a, #e0006c);
-        color: #ffffff;
-        font-size: 11px;
-        font-weight: 900;
-        letter-spacing: 0.1em;
-        text-transform: uppercase;
-        padding: 4px 10px;
-        border-radius: 6px;
-        box-shadow: 0 0 16px rgba(255, 0, 122, 0.55);
-      }
-
-      .garage-title-group {
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-      }
-
-      .garage-title {
-        font-size: 17px;
-        font-weight: 900;
-        font-style: italic;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: #ffffff;
-        line-height: 1.1;
-        text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
-      }
-
-      .garage-subtitle {
-        font-size: 10px;
-        font-weight: 700;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
-        color: #8b949e;
-      }
-
-      .garage-header-actions {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-      }
-
-      .garage-current-badge {
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 0.06em;
-        color: #ff66ad;
-        background: rgba(255, 0, 122, 0.12);
-        border: 1px solid rgba(255, 0, 122, 0.35);
-        border-radius: 8px;
-        padding: 5px 12px;
-        text-transform: uppercase;
-      }
-
-      .garage-close-btn {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        cursor: pointer;
-        background: rgba(255, 255, 255, 0.08);
-        border: 1px solid rgba(255, 255, 255, 0.18);
-        color: #c9d1d9;
-        border-radius: 8px;
-        padding: 6px 12px;
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 0.06em;
-        transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-      }
-
-      .garage-close-btn kbd {
-        background: rgba(0, 0, 0, 0.4);
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        border-radius: 4px;
-        padding: 1px 5px;
-        font-size: 10px;
-        color: #ffffff;
-      }
-
-      .garage-close-btn:hover {
-        background: rgba(255, 255, 255, 0.18);
-        color: #ffffff;
-        transform: translateY(-1px);
-      }
-
-      /* Cards Grid */
-      .garage-cards-row {
-        display: grid;
-        grid-template-columns: repeat(5, minmax(0, 1fr));
-        gap: 14px;
-        align-items: stretch;
-      }
-
-      /* Individual Forza Car Card */
-      .forza-car-card {
-        position: relative;
-        height: 184px;
-        cursor: pointer;
-        background: rgba(21, 26, 35, 0.75);
-        border: 1.5px solid rgba(255, 255, 255, 0.12);
-        border-radius: 14px;
-        padding: 12px 14px;
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
-        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
-        transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
-                    border-color 0.22s ease,
-                    background 0.22s ease,
-                    box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-        overflow: hidden;
-        user-select: none;
-      }
-
-      /* Card Entrance Stagger Animation */
-      .garage-backdrop:not(.hidden) .forza-car-card {
-        animation: cardFlyIn 0.38s cubic-bezier(0.16, 1, 0.3, 1) both;
-        animation-delay: calc(var(--card-index, 0) * 0.05s);
-      }
-
-      @keyframes cardFlyIn {
-        0% {
-          opacity: 0;
-          transform: translateY(28px) scale(0.92);
-        }
-        100% {
-          opacity: 1;
-          transform: translateY(0) scale(1);
-        }
-      }
-
-      /* Specular Shimmer Sweep on Card */
-      .forza-car-card::before {
-        content: '';
+      .hud-pause-prompt {
         position: absolute;
-        top: 0;
-        left: -120%;
-        width: 80%;
-        height: 100%;
-        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.10), transparent);
-        transform: skewX(-20deg);
-        transition: left 0.6s ease;
+        bottom: 24px;
+        left: 24px;
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        cursor: pointer;
+        z-index: 50;
+        user-select: none;
+        opacity: 0.88;
+        transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+                    transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      .hud-pause-prompt:hover {
+        opacity: 1;
+        transform: translateY(-2px);
+      }
+      .hud-pause-prompt:active {
+        transform: translateY(0) scale(0.96);
+      }
+      .hud-pause-prompt.hidden {
+        opacity: 0;
         pointer-events: none;
+        transform: translateY(6px);
       }
-
-      .forza-car-card:hover::before {
-        left: 140%;
-      }
-
-      .forza-car-card:hover {
-        background: rgba(30, 39, 52, 0.90);
-        border-color: rgba(255, 255, 255, 0.38);
-        transform: translateY(-8px) scale(1.025);
-        box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6),
-                    0 0 20px rgba(255, 255, 255, 0.08);
-      }
-
-      .forza-car-card:active {
-        transform: translateY(-3px) scale(0.985);
-        transition: transform 0.08s ease;
-      }
-
-      /* Active / Selected Card */
-      .forza-car-card.active {
-        background: linear-gradient(160deg, rgba(255, 0, 122, 0.24) 0%, rgba(20, 24, 34, 0.92) 80%);
-        border: 2px solid #ff007a;
-        box-shadow: 0 0 28px rgba(255, 0, 122, 0.52),
-                    0 14px 34px rgba(0, 0, 0, 0.6),
-                    inset 0 0 20px rgba(255, 0, 122, 0.18);
-        transform: translateY(-5px);
-      }
-
-      .forza-car-card.active:hover {
-        transform: translateY(-10px) scale(1.03);
-        box-shadow: 0 0 34px rgba(255, 0, 122, 0.65),
-                    0 18px 42px rgba(0, 0, 0, 0.7);
-      }
-
-      /* Keyboard Navigation Highlight */
-      .forza-car-card.keyboard-focused:not(.active) {
-        border-color: #58a6ff;
-        box-shadow: 0 0 20px rgba(88, 166, 255, 0.45);
-        transform: translateY(-6px);
-      }
-
-      .card-car-name {
-        font-size: 13px;
-        font-weight: 900;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-        color: #ffffff;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        line-height: 1.2;
-      }
-
-      .card-car-img-wrap {
-        width: 100%;
-        height: 94px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin: 4px 0;
-      }
-
-      .card-car-img {
-        max-width: 100%;
-        max-height: 100%;
-        object-fit: contain;
-        filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.65));
-        transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), filter 0.3s ease;
-      }
-
-      .forza-car-card:hover .card-car-img {
-        transform: scale(1.10) translateY(-2px);
-        filter: drop-shadow(0 10px 16px rgba(0, 0, 0, 0.75));
-      }
-
-      .card-status-bar {
-        font-size: 10px;
-        font-weight: 800;
-        letter-spacing: 0.1em;
-        text-transform: uppercase;
-        color: #8b949e;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding-top: 6px;
-        border-top: 1px solid rgba(255, 255, 255, 0.08);
-      }
-
-      .forza-car-card.active .card-status-bar {
-        color: #ff007a;
-        border-color: rgba(255, 0, 122, 0.3);
-      }
-
-      .active-pip {
-        width: 7px;
-        height: 7px;
-        border-radius: 50%;
-        background: #484f58;
-        transition: all 0.2s ease;
-      }
-
-      .forza-car-card.active .active-pip {
-        background: #ff007a;
-        box-shadow: 0 0 8px #ff007a, 0 0 16px #ff007a;
-      }
-
-      /* Footer Bar */
-      .garage-footer {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding-top: 12px;
-        border-top: 1px solid rgba(255, 255, 255, 0.10);
-      }
-
-      .garage-hints {
-        display: flex;
-        align-items: center;
-        gap: 16px;
-      }
-
-      .hint-item {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 11px;
-        font-weight: 600;
-        color: #8b949e;
-      }
-
-      .key-hint {
+      .hud-pause-key {
         display: inline-flex;
         align-items: center;
         justify-content: center;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        color: #ffffff;
         background: rgba(255, 255, 255, 0.12);
         border: 1px solid rgba(255, 255, 255, 0.22);
-        color: #ffffff;
-        border-radius: 5px;
-        padding: 2px 7px;
-        font-size: 10px;
-        font-weight: 800;
-        font-family: inherit;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
+        border-radius: 6px;
+        padding: 4px 8px;
+        box-shadow: 0 3px 8px rgba(0, 0, 0, 0.45);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+      }
+      .hud-pause-label {
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        color: #d1d5db;
+        text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
       }
 
-      .garage-drive-btn {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        cursor: pointer;
-        background: linear-gradient(135deg, #ff007a, #d60066);
-        border: none;
-        border-radius: 10px;
-        color: #ffffff;
-        padding: 9px 20px;
-        font-size: 12px;
-        font-weight: 900;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        box-shadow: 0 6px 20px rgba(255, 0, 122, 0.45);
-        transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
-                    box-shadow 0.2s ease,
-                    background 0.2s ease;
-      }
-
-      .garage-drive-btn:hover {
-        transform: translateY(-2px) scale(1.02);
-        box-shadow: 0 8px 26px rgba(255, 0, 122, 0.65);
-      }
-
-      .garage-drive-btn:active {
-        transform: translateY(0) scale(0.98);
-      }
-      .pill-btn.garage-toggle-hud {
-        background: rgba(255, 0, 122, 0.16);
-        border-color: rgba(255, 0, 122, 0.45);
-        color: #ff66ad;
-        width: 100%;
-        margin-top: 7px;
-        padding: 6px 10px;
-        text-align: center;
-      }
-      .pill-btn.garage-toggle-hud:hover {
-        background: rgba(255, 0, 122, 0.28);
-        color: #ffffff;
-      }
       #telemetry {
         position: absolute;
         bottom: 20px;
@@ -665,15 +195,16 @@
       }
 
       .map-badge {
-        background: linear-gradient(135deg, #ff007a, #e0006c);
-        color: #ffffff;
+        background: rgba(229, 169, 60, 0.18);
+        border: 1px solid #e5a93c;
+        color: #e5a93c;
         font-size: 11px;
         font-weight: 900;
         letter-spacing: 0.1em;
         text-transform: uppercase;
         padding: 4px 10px;
         border-radius: 6px;
-        box-shadow: 0 0 14px rgba(255, 0, 122, 0.5);
+        box-shadow: 0 0 14px rgba(229, 169, 60, 0.35);
       }
 
       .map-title-group {
@@ -728,7 +259,7 @@
         font-size: 9px;
         font-weight: 800;
         letter-spacing: 0.08em;
-        color: #ff007a;
+        color: #e5a93c;
       }
 
       /* Viewport Container & Pannable Plane */
@@ -794,8 +325,8 @@
         margin-top: -22px;
         margin-left: -22px;
         border-radius: 50%;
-        border: 1.5px solid rgba(255, 0, 122, 0.75);
-        box-shadow: 0 0 10px rgba(255, 0, 122, 0.35);
+        border: 1.5px solid rgba(229, 169, 60, 0.75);
+        box-shadow: 0 0 10px rgba(229, 169, 60, 0.35);
         animation: sonarPulse 2.2s infinite cubic-bezier(0.1, 0.8, 0.3, 1);
       }
 
@@ -817,13 +348,13 @@
         align-items: center;
         justify-content: center;
         transition: transform 0.06s linear;
-        filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.85));
+        filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.85));
       }
 
       .player-tag-pill {
         margin-top: 4px;
         background: rgba(13, 17, 24, 0.90);
-        border: 1px solid #ff007a;
+        border: 1px solid #e5a93c;
         border-radius: 4px;
         padding: 1px 6px;
         font-size: 9px;
@@ -873,9 +404,9 @@
       .map-poi-pin:hover .poi-disc,
       .map-poi-pin.active .poi-disc {
         transform: scale(1.18);
-        border-color: #ff007a;
+        border-color: #e5a93c;
         background: rgba(24, 30, 44, 0.98);
-        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.8), 0 0 14px rgba(255, 0, 122, 0.5);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.8), 0 0 14px rgba(229, 169, 60, 0.45);
       }
 
       .poi-tooltip {
@@ -925,8 +456,8 @@
 
       .poi-track-btn {
         margin-top: 4px;
-        background: linear-gradient(135deg, #00d2ff, #0099ff);
-        color: #0d1117;
+        background: #e5a93c;
+        color: #080c14;
         border: none;
         border-radius: 4px;
         padding: 3px 8px;
@@ -936,13 +467,13 @@
         text-transform: uppercase;
         cursor: pointer;
         pointer-events: auto;
-        box-shadow: 0 2px 8px rgba(0, 210, 255, 0.45);
+        box-shadow: 0 2px 8px rgba(229, 169, 60, 0.45);
         transition: transform 0.15s ease, box-shadow 0.15s ease;
       }
 
       .poi-track-btn:hover {
         transform: scale(1.06);
-        box-shadow: 0 3px 12px rgba(0, 210, 255, 0.75);
+        box-shadow: 0 3px 12px rgba(229, 169, 60, 0.75);
       }
 
       /* Map Waypoint Destination Marker */
@@ -972,8 +503,8 @@
         margin-top: -22px;
         margin-left: -22px;
         border-radius: 50%;
-        border: 2px solid #00f0ff;
-        box-shadow: 0 0 14px #00f0ff;
+        border: 2px solid #e5a93c;
+        box-shadow: 0 0 14px rgba(229, 169, 60, 0.6);
         animation: waypointPulse 1.8s infinite cubic-bezier(0.1, 0.8, 0.3, 1);
         pointer-events: none;
       }
@@ -987,9 +518,9 @@
         width: 18px;
         height: 18px;
         border-radius: 50%;
-        background: #00f0ff;
+        background: #e5a93c;
         border: 2.5px solid #ffffff;
-        box-shadow: 0 0 16px rgba(0, 240, 255, 0.95), 0 2px 8px rgba(0, 0, 0, 0.8);
+        box-shadow: 0 0 16px rgba(229, 169, 60, 0.95), 0 2px 8px rgba(0, 0, 0, 0.8);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -999,7 +530,7 @@
 
       .map-waypoint-marker:hover .waypoint-pin-dot {
         transform: scale(1.25);
-        box-shadow: 0 0 22px #00f0ff;
+        box-shadow: 0 0 22px #e5a93c;
       }
 
       .waypoint-inner-core {
@@ -1035,7 +566,7 @@
         margin-top: -13px;
         margin-left: -13px;
         border-radius: 50%;
-        border: 1.5px dashed rgba(0, 240, 255, 0.85);
+        border: 1.5px dashed rgba(229, 169, 60, 0.85);
         animation: spinHoverRing 6s linear infinite;
       }
 
@@ -1047,9 +578,9 @@
         width: 11px;
         height: 11px;
         border-radius: 50%;
-        background: #00f0ff;
+        background: #e5a93c;
         border: 1.5px solid #ffffff;
-        box-shadow: 0 0 10px rgba(0, 240, 255, 0.9);
+        box-shadow: 0 0 10px rgba(229, 169, 60, 0.9);
       }
 
       .road-hover-label {
@@ -1057,13 +588,13 @@
         background: rgba(13, 17, 24, 0.94);
         backdrop-filter: blur(8px);
         -webkit-backdrop-filter: blur(8px);
-        border: 1px solid rgba(0, 240, 255, 0.6);
+        border: 1px solid rgba(229, 169, 60, 0.6);
         border-radius: 4px;
         padding: 2px 7px;
         font-size: 8.5px;
         font-weight: 900;
         letter-spacing: 0.08em;
-        color: #00f0ff;
+        color: #e5a93c;
         white-space: nowrap;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.7);
         text-transform: uppercase;
@@ -1074,8 +605,8 @@
         display: flex;
         align-items: center;
         gap: 8px;
-        background: rgba(0, 229, 255, 0.12);
-        border: 1px solid rgba(0, 229, 255, 0.4);
+        background: rgba(229, 169, 60, 0.12);
+        border: 1px solid rgba(229, 169, 60, 0.4);
         border-radius: 8px;
         padding: 4px 10px;
         margin-left: 8px;
@@ -1086,7 +617,7 @@
       }
 
       .gps-route-pill {
-        background: #00f0ff;
+        background: #e5a93c;
         color: #080c14;
         font-size: 9px;
         font-weight: 900;
@@ -1106,7 +637,7 @@
       .gps-target-dist {
         font-size: 11px;
         font-weight: 900;
-        color: #00f0ff;
+        color: #e5a93c;
         font-variant-numeric: tabular-nums;
       }
 
@@ -1123,8 +654,8 @@
       }
 
       .gps-cancel-btn:hover {
-        background: rgba(255, 0, 122, 0.8);
-        border-color: #ff007a;
+        background: #e53935;
+        border-color: #e53935;
       }
 
       /* In-Game HUD GPS Waypoint Indicator */
@@ -1140,10 +671,10 @@
         background: rgba(13, 17, 24, 0.88);
         backdrop-filter: blur(16px);
         -webkit-backdrop-filter: blur(16px);
-        border: 1px solid rgba(0, 240, 255, 0.45);
+        border: 1px solid rgba(229, 169, 60, 0.45);
         border-radius: 12px;
         padding: 6px 16px;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 16px rgba(0, 240, 255, 0.25);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 16px rgba(229, 169, 60, 0.25);
         user-select: none;
         animation: hudGpsSlideDown 0.3s cubic-bezier(0.16, 1, 0.3, 1);
       }
@@ -1178,7 +709,7 @@
       .hud-gps-dist {
         font-size: 13px;
         font-weight: 900;
-        color: #00f0ff;
+        color: #e5a93c;
         font-variant-numeric: tabular-nums;
       }
 
@@ -1200,8 +731,8 @@
       }
 
       .hud-gps-cancel:hover {
-        background: #ff007a;
-        border-color: #ff007a;
+        background: #e53935;
+        border-color: #e53935;
       }
 
       /* Floating Bottom HUD Bar */
@@ -1269,8 +800,8 @@
 
       .map-action-pill:hover {
         background: rgba(28, 36, 48, 0.95);
-        border-color: #00f0ff;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 14px rgba(0, 240, 255, 0.35);
+        border-color: #e5a93c;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 14px rgba(229, 169, 60, 0.35);
         transform: translateY(-2px);
       }
 
@@ -1316,17 +847,17 @@
         align-items: center;
         gap: 8px;
         cursor: pointer;
-        background: linear-gradient(135deg, #ff007a, #d60066);
-        border: none;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.18);
         color: #ffffff;
         border-radius: 12px;
         padding: 9px 18px;
         font-size: 11px;
-        font-weight: 900;
+        font-weight: 800;
         letter-spacing: 0.08em;
         text-transform: uppercase;
-        box-shadow: 0 6px 20px rgba(255, 0, 122, 0.45);
-        transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease;
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+        transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease, background 0.2s ease, border-color 0.2s ease;
       }
 
       .map-close-pill kbd {
@@ -1338,27 +869,14 @@
       }
 
       .map-close-pill:hover {
-        transform: translateY(-2px) scale(1.02);
-        box-shadow: 0 8px 26px rgba(255, 0, 122, 0.65);
-      }
-
-      .pill-btn.map-toggle-hud {
-        background: rgba(0, 240, 255, 0.16);
-        border-color: rgba(0, 240, 255, 0.45);
-        color: #5ce6ff;
-        width: 100%;
-        margin-top: 7px;
-        padding: 6px 10px;
-        text-align: center;
-      }
-
-      .pill-btn.map-toggle-hud:hover {
-        background: rgba(0, 240, 255, 0.28);
-        color: #ffffff;
+        background: rgba(255, 255, 255, 0.16);
+        border-color: rgba(255, 255, 255, 0.35);
+        transform: translateY(-2px);
+        box-shadow: 0 8px 26px rgba(0, 0, 0, 0.65);
       }
 
       /* ==========================================================================
-         FORZA HORIZON "APPLE GLASS" PAUSE MENU STYLES
+         FORZA HORIZON "APPLE GLASS" PAUSE MENU STYLES (OVERHAUL)
          ========================================================================== */
       .pause-menu-overlay {
         position: fixed;
@@ -1367,9 +885,9 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        background: radial-gradient(circle at center, rgba(12, 16, 25, 0.72) 0%, rgba(6, 8, 14, 0.90) 100%);
-        backdrop-filter: blur(28px) saturate(180%) contrast(105%);
-        -webkit-backdrop-filter: blur(28px) saturate(180%) contrast(105%);
+        background: radial-gradient(circle at center, rgba(10, 13, 19, 0.78) 0%, rgba(5, 7, 11, 0.94) 100%);
+        backdrop-filter: blur(28px) saturate(140%) contrast(105%);
+        -webkit-backdrop-filter: blur(28px) saturate(140%) contrast(105%);
         transition: opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1),
                     transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
         opacity: 1;
@@ -1383,12 +901,14 @@
       }
 
       .pause-menu-shell {
-        width: 100%;
-        max-width: 1140px;
-        padding: 0 24px;
+        width: 94vw;
+        max-width: 1280px;
+        padding: 0 20px;
         display: flex;
         flex-direction: column;
         gap: 16px;
+        transform-style: preserve-3d;
+        perspective: 1200px;
       }
 
       /* Top Header Bar */
@@ -1396,7 +916,7 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 0 8px;
+        padding: 0 4px;
       }
 
       .pause-header-left {
@@ -1409,17 +929,18 @@
         display: flex;
         align-items: center;
         gap: 8px;
-        background: rgba(255, 255, 255, 0.08);
-        border: 1px solid rgba(255, 255, 255, 0.18);
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.12);
         border-radius: 8px;
-        padding: 6px 12px;
+        padding: 6px 14px;
       }
 
       .pause-brand-pill {
         width: 4px;
         height: 14px;
-        background: linear-gradient(180deg, #ff007a 0%, #00f0ff 100%);
+        background: #e5a93c;
         border-radius: 2px;
+        box-shadow: 0 0 8px rgba(229, 169, 60, 0.4);
       }
 
       .pause-brand-title {
@@ -1431,25 +952,7 @@
       }
 
       .pause-header-center {
-        text-align: center;
-      }
-
-      .pause-current-car-name {
-        font-size: 20px;
-        font-weight: 800;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-        color: #ffffff;
-        text-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
-      }
-
-      .pause-current-car-sub {
-        font-size: 10px;
-        font-weight: 600;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
-        color: rgba(255, 255, 255, 0.55);
-        margin-top: 2px;
+        display: none;
       }
 
       .pause-header-right {
@@ -1472,7 +975,7 @@
         font-size: 9px;
         font-weight: 700;
         letter-spacing: 0.12em;
-        color: rgba(255, 255, 255, 0.45);
+        color: #8e8e93;
         text-transform: uppercase;
       }
 
@@ -1480,17 +983,17 @@
         font-size: 12px;
         font-weight: 800;
         letter-spacing: 0.04em;
-        color: #00f0ff;
+        color: #e5a93c;
         font-feature-settings: 'tnum';
       }
 
       /* Main 5-Tile Grid Layout */
       .pause-main-view {
         display: grid;
-        grid-template-columns: 290px 1fr 290px;
+        grid-template-columns: 310px 1fr 310px;
         gap: 16px;
         align-items: stretch;
-        min-height: 400px;
+        min-height: clamp(420px, 50vh, 480px);
       }
 
       .pause-main-view.hidden {
@@ -1507,15 +1010,15 @@
         min-height: 100%;
       }
 
-      /* Base Apple-Glass Tile */
+      /* Base Apple-Glass Tile (Obsidian Glass Surfaces) */
       .pause-glass-tile {
         position: relative;
-        background: linear-gradient(135deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.02) 100%);
-        border: 1px solid rgba(255, 255, 255, 0.14);
-        border-top: 1px solid rgba(255, 255, 255, 0.28);
+        background: linear-gradient(135deg, rgba(22, 26, 35, 0.82) 0%, rgba(14, 18, 26, 0.76) 100%);
+        border: 1px solid rgba(255, 255, 255, 0.09);
+        border-top: 1px solid rgba(255, 255, 255, 0.18);
         border-radius: 18px;
-        box-shadow: 0 16px 40px -10px rgba(0, 0, 0, 0.55),
-                    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+        box-shadow: 0 16px 40px -10px rgba(0, 0, 0, 0.65),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.10);
         cursor: pointer;
         outline: none;
         overflow: hidden;
@@ -1534,7 +1037,7 @@
         left: -100%;
         width: 80%;
         height: 100%;
-        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.06), transparent);
         transform: skewX(-20deg);
         transition: left 0.6s ease;
         pointer-events: none;
@@ -1544,15 +1047,20 @@
         left: 140%;
       }
 
-      /* Hover & Keyboard Focus States ("Forza Juice") */
+      /* Hover & Keyboard Focus States (Subtle Horizon Amber Elevation - Zero Pink) */
       .pause-glass-tile:hover,
       .pause-glass-tile.keyboard-focused {
-        transform: translateY(-4px) scale(1.015);
-        border-color: #ff007a;
-        box-shadow: 0 0 0 2px #ff007a,
-                    0 18px 45px rgba(255, 0, 122, 0.35),
-                    inset 0 1px 0 rgba(255, 255, 255, 0.30);
-        background: linear-gradient(135deg, rgba(255, 255, 255, 0.11) 0%, rgba(255, 255, 255, 0.04) 100%);
+        transform: translateY(-3px) scale(1.015);
+        border-color: rgba(229, 169, 60, 0.85);
+        box-shadow: 0 0 0 1.5px rgba(229, 169, 60, 0.85),
+                    0 20px 45px rgba(0, 0, 0, 0.65),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.20);
+        background: linear-gradient(135deg, rgba(28, 33, 44, 0.88) 0%, rgba(18, 22, 32, 0.82) 100%);
+      }
+
+      .pause-glass-tile:active {
+        transform: translateY(0px) scale(0.985);
+        transition-duration: 0.08s;
       }
 
       .pause-tile-tag {
@@ -1574,12 +1082,12 @@
         width: 6px;
         height: 6px;
         border-radius: 50%;
-        background: #00f0ff;
+        background: #e5a93c;
       }
 
       /* Tile 0: Garage */
       .pause-tile-garage {
-        height: 250px;
+        height: 270px;
         padding: 18px;
         display: flex;
         flex-direction: column;
@@ -1605,7 +1113,7 @@
 
       .pause-tile-car-img {
         max-width: 95%;
-        max-height: 130px;
+        max-height: 140px;
         object-fit: contain;
         filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.65));
         transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
@@ -1639,13 +1147,13 @@
         font-size: 10px;
         font-weight: 800;
         letter-spacing: 0.1em;
-        color: #00f0ff;
+        color: #e5a93c;
         text-transform: uppercase;
       }
 
       /* Tile 3: Reset Vehicle */
       .pause-tile-reset {
-        height: 134px;
+        height: 140px;
         padding: 18px;
         display: flex;
         align-items: center;
@@ -1667,7 +1175,7 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        color: #ff4d4d;
+        color: #e5a93c;
         flex-shrink: 0;
       }
 
@@ -1690,7 +1198,8 @@
 
       /* Tile 1: Center Hero World Map */
       .pause-tile-map {
-        height: 400px;
+        height: 100%;
+        min-height: 420px;
         display: flex;
         flex-direction: column;
       }
@@ -1738,16 +1247,14 @@
         z-index: 5;
       }
 
-      /* Hero Map Banner Overlay */
+      /* Hero Map Banner Overlay (Smooth Linear-Gradient Feather - Zero Blur Rectangle Clipping) */
       .pause-mini-map-banner {
         position: absolute;
         bottom: 0;
         left: 0;
         right: 0;
-        padding: 28px 20px 18px;
-        background: linear-gradient(to top, rgba(6, 9, 14, 0.98) 0%, rgba(6, 9, 14, 0.70) 50%, transparent 100%);
-        backdrop-filter: blur(8px);
-        -webkit-backdrop-filter: blur(8px);
+        padding: 36px 24px 20px;
+        background: linear-gradient(to top, rgba(14, 18, 26, 0.96) 0%, rgba(14, 18, 26, 0.50) 60%, transparent 100%);
         display: flex;
         align-items: flex-end;
         justify-content: space-between;
@@ -1755,59 +1262,17 @@
         pointer-events: none;
       }
 
-      .pause-hero-badge {
-        font-size: 9px;
-        font-weight: 800;
-        letter-spacing: 0.16em;
-        text-transform: uppercase;
-        color: #ff007a;
-      }
-
       .pause-hero-title {
         font-size: 24px;
         font-weight: 900;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-        color: #ffffff;
-        margin-top: 2px;
-      }
-
-      .pause-hero-sub {
-        font-size: 11px;
-        font-weight: 600;
         letter-spacing: 0.08em;
         text-transform: uppercase;
-        color: rgba(255, 255, 255, 0.65);
-        margin-top: 3px;
-      }
-
-      .pause-hero-action {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        background: rgba(255, 255, 255, 0.12);
-        border: 1px solid rgba(255, 255, 255, 0.22);
-        border-radius: 8px;
-        padding: 6px 12px;
-        font-size: 11px;
-        font-weight: 800;
-        letter-spacing: 0.10em;
-        text-transform: uppercase;
         color: #ffffff;
-      }
-
-      .pause-hero-action kbd {
-        background: rgba(0, 0, 0, 0.45);
-        border: 1px solid rgba(255, 255, 255, 0.3);
-        border-radius: 4px;
-        padding: 2px 6px;
-        font-size: 10px;
-        color: #00f0ff;
       }
 
       /* Tile 2: Camera Mode */
       .pause-tile-camera {
-        height: 250px;
+        height: 270px;
         padding: 18px;
         display: flex;
         flex-direction: column;
@@ -1831,7 +1296,7 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        color: #00f0ff;
+        color: #e5a93c;
         align-self: center;
         margin: auto 0;
       }
@@ -1859,13 +1324,13 @@
       }
 
       .pause-cam-dot.active {
-        background: #00f0ff;
+        background: #e5a93c;
         transform: scale(1.2);
       }
 
       /* Tile 4: Settings */
       .pause-tile-settings {
-        height: 134px;
+        height: 140px;
         padding: 18px;
         display: flex;
         align-items: center;
@@ -1887,20 +1352,20 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        color: #ffaa00;
+        color: #e5a93c;
         flex-shrink: 0;
       }
 
       /* Sub-Views (Cars & Settings) */
       .pause-subview {
-        background: linear-gradient(135deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.02) 100%);
-        border: 1px solid rgba(255, 255, 255, 0.16);
-        border-top: 1px solid rgba(255, 255, 255, 0.32);
+        background: linear-gradient(135deg, rgba(20, 24, 32, 0.90) 0%, rgba(12, 16, 22, 0.86) 100%);
+        border: 1px solid rgba(255, 255, 255, 0.10);
+        border-top: 1px solid rgba(255, 255, 255, 0.22);
         border-radius: 20px;
         box-shadow: 0 20px 50px -10px rgba(0, 0, 0, 0.65),
-                    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+                    inset 0 1px 0 rgba(255, 255, 255, 0.15);
         padding: 24px;
-        min-height: 400px;
+        min-height: clamp(420px, 50vh, 480px);
         display: flex;
         flex-direction: column;
         gap: 18px;
@@ -1915,7 +1380,7 @@
         align-items: center;
         justify-content: space-between;
         padding-bottom: 14px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
       }
 
       .pause-subview-title {
@@ -1954,7 +1419,11 @@
 
       .pause-subview-back-btn:hover {
         background: rgba(255, 255, 255, 0.18);
-        border-color: #ff007a;
+        border-color: #e5a93c;
+      }
+
+      .pause-subview-back-btn:active {
+        transform: scale(0.97);
       }
 
       .pause-subview-back-btn kbd {
@@ -1973,9 +1442,9 @@
       }
 
       .pause-car-card {
-        background: linear-gradient(135deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.02) 100%);
-        border: 1px solid rgba(255, 255, 255, 0.12);
-        border-top: 1px solid rgba(255, 255, 255, 0.24);
+        background: linear-gradient(135deg, rgba(24, 28, 38, 0.85) 0%, rgba(16, 20, 28, 0.80) 100%);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-top: 1px solid rgba(255, 255, 255, 0.18);
         border-radius: 14px;
         padding: 16px 12px 14px;
         display: flex;
@@ -1991,16 +1460,26 @@
 
       .pause-car-card:hover,
       .pause-car-card.keyboard-focused {
-        transform: translateY(-6px) scale(1.02);
-        border-color: #ff007a;
-        box-shadow: 0 0 0 2px #ff007a,
-                    0 16px 36px rgba(255, 0, 122, 0.35);
+        transform: translateY(-4px) scale(1.02);
+        border-color: rgba(229, 169, 60, 0.85);
+        box-shadow: 0 0 0 1.5px rgba(229, 169, 60, 0.85),
+                    0 18px 40px rgba(0, 0, 0, 0.65);
+      }
+
+      .pause-car-card:active {
+        transform: translateY(-1px) scale(0.985);
       }
 
       .pause-car-card.active {
-        border-color: #00f0ff;
-        box-shadow: 0 0 0 2px #00f0ff,
-                    0 12px 28px rgba(0, 240, 255, 0.25);
+        border-color: #e5a93c;
+        box-shadow: 0 0 0 1.5px #e5a93c,
+                    0 14px 32px rgba(229, 169, 60, 0.25);
+      }
+
+      .pause-car-card.active.keyboard-focused {
+        border-color: #e5a93c;
+        box-shadow: 0 0 0 2px #e5a93c,
+                    0 20px 42px rgba(229, 169, 60, 0.35);
       }
 
       .pause-car-thumb-wrap {
@@ -2020,26 +1499,7 @@
 
       .pause-car-card:hover .pause-car-thumb,
       .pause-car-card.keyboard-focused .pause-car-thumb {
-        transform: scale(1.12);
-      }
-
-      .pause-car-card.keyboard-focused {
-        transform: translateY(-6px) scale(1.02);
-        border-color: #ff007a;
-        box-shadow: 0 0 0 2px #ff007a,
-                    0 18px 40px rgba(255, 0, 122, 0.40);
-      }
-
-      .pause-car-card.active {
-        border-color: #00f0ff;
-        box-shadow: 0 0 0 2px #00f0ff,
-                    0 14px 32px rgba(0, 240, 255, 0.30);
-      }
-
-      .pause-car-card.active.keyboard-focused {
-        border-color: #ff007a;
-        box-shadow: 0 0 0 2px #ff007a,
-                    0 18px 40px rgba(255, 0, 122, 0.40);
+        transform: scale(1.10);
       }
 
       .pause-car-info {
@@ -2076,9 +1536,9 @@
       }
 
       .pause-car-badge.active {
-        background: rgba(0, 240, 255, 0.18);
-        border: 1px solid rgba(0, 240, 255, 0.45);
-        color: #00f0ff;
+        background: rgba(229, 169, 60, 0.18);
+        border: 1px solid rgba(229, 169, 60, 0.45);
+        color: #e5a93c;
       }
 
       /* Settings Subview Details */
@@ -2089,8 +1549,8 @@
       }
 
       .pause-setting-section {
-        background: rgba(255, 255, 255, 0.04);
-        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.07);
         border-radius: 12px;
         padding: 16px;
       }
@@ -2120,8 +1580,8 @@
 
       .pause-grass-opt-btn {
         flex: 1;
-        background: rgba(255, 255, 255, 0.06);
-        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.12);
         border-radius: 8px;
         padding: 10px 14px;
         font-size: 11px;
@@ -2139,10 +1599,10 @@
       }
 
       .pause-grass-opt-btn.active {
-        background: rgba(0, 240, 255, 0.18);
-        border-color: #00f0ff;
-        color: #00f0ff;
-        box-shadow: 0 0 12px rgba(0, 240, 255, 0.3);
+        background: rgba(229, 169, 60, 0.18);
+        border-color: #e5a93c;
+        color: #e5a93c;
+        box-shadow: 0 0 12px rgba(229, 169, 60, 0.25);
       }
 
       .pause-keybinds-grid {
@@ -2160,13 +1620,13 @@
       }
 
       .pause-kbadge {
-        background: rgba(255, 255, 255, 0.1);
-        border: 1px solid rgba(255, 255, 255, 0.2);
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.18);
         border-radius: 4px;
         padding: 2px 6px;
         font-size: 9px;
         font-weight: 700;
-        color: #00f0ff;
+        color: #e5a93c;
       }
 
       /* Footer Prompt Ribbon */
@@ -2197,55 +1657,22 @@
       }
 
       .pause-key-badge {
-        background: rgba(255, 255, 255, 0.12);
-        border: 1px solid rgba(255, 255, 255, 0.22);
+        background: rgba(255, 255, 255, 0.10);
+        border: 1px solid rgba(255, 255, 255, 0.20);
         border-radius: 5px;
         padding: 2px 7px;
         font-size: 10px;
         font-weight: 800;
         color: #ffffff;
       }
-
-      .pill-btn.pause-toggle-hud {
-        background: rgba(255, 0, 122, 0.18);
-        border-color: rgba(255, 0, 122, 0.45);
-        color: #ff5599;
-        width: 100%;
-        margin-top: 7px;
-        padding: 6px 10px;
-        text-align: center;
-      }
-
-      .pill-btn.pause-toggle-hud:hover {
-        background: rgba(255, 0, 122, 0.32);
-        color: #ffffff;
-      }
     </style>
   </head>
   <body>
     <div id="app">
-      <div id="hud">
-        <h1 id="car-title">JDM Widebody Supra GT</h1>
-        <div class="sub" id="model-status">Preparing asset &amp; physics engine...</div>
-        <div class="controls">
-          <div><span class="key">W</span> / <span class="key">↑</span> Throttle &nbsp; <span class="key">S</span> / <span class="key">↓</span> Brake / Reverse</div>
-          <div><span class="key">A</span> <span class="key">D</span> / <span class="key">←</span> <span class="key">→</span> Steer &nbsp; <span class="key">Space</span> Handbrake Drift</div>
-          <div><span class="key">C</span> Camera &nbsp; <span class="key">F</span> Free Cam &nbsp; <span class="key">G</span> Garage &nbsp; <span class="key">M</span> Map &nbsp; <span class="key">R</span> Reset</div>
-        </div>
-        <div class="section-block">
-          <div class="switcher-label">
-            <span>Camera View (Key C):</span>
-            <span class="active-cam" id="cam-mode-label">Chase Near</span>
-          </div>
-          <div class="btn-list" id="cam-btn-list"></div>
-          <button class="pill-btn freecam-btn" id="freecam-toggle-btn">Toggle Free Cam (Key F)</button>
-          <button class="pill-btn garage-toggle-hud" id="hud-garage-btn">Forza Garage (Key G)</button>
-          <button class="pill-btn map-toggle-hud" id="hud-map-btn">World Map (Key M)</button>
-          <button class="pill-btn pause-toggle-hud" id="hud-pause-btn">Pause Menu (Key Esc)</button>
-          <div id="freecam-hint">
-            <strong>FREE CAM ACTIVE:</strong> Drag Mouse or <span class="key">←</span><span class="key">↑</span><span class="key">↓</span><span class="key">→</span> Look &bull; <span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span> Fly &bull; <span class="key">Q</span>/<span class="key">E</span> Down/Up &bull; <span class="key">Shift</span> Boost
-          </div>
-        </div>
+      <!-- Minimalist In-Game HUD Pause Prompt (Bottom-Left) -->
+      <div id="hud-pause-prompt" class="hud-pause-prompt" tabindex="0" role="button" title="Open Pause Menu (Esc)">
+        <span class="hud-pause-key">ESC</span>
+        <span class="hud-pause-label">Pause</span>
       </div>
       <!-- Forza Horizon Apple-Glass Pause Menu Overlay -->
       <div id="pause-menu-overlay" class="pause-menu-overlay hidden">
@@ -2258,10 +1685,6 @@
                 <span class="pause-brand-title">PAUSE</span>
               </div>
             </div>
-            <div class="pause-header-center">
-              <div class="pause-current-car-name" id="pause-header-car-name">JDM WIDEBODY SUPRA GT</div>
-              <div class="pause-current-car-sub" id="pause-header-car-sub">FLEET ACTIVE &bull; PHYSICAL VEHICLE RIG</div>
-            </div>
             <div class="pause-header-right">
               <div class="pause-telemetry-chip">
                 <span class="pause-chip-label">LOCATION</span>
@@ -2269,7 +1692,7 @@
               </div>
               <div class="pause-telemetry-chip">
                 <span class="pause-chip-label">SPEED</span>
-                <span class="pause-chip-val" id="pause-header-speed">0 MPH (0 KM/H)</span>
+                <span class="pause-chip-val" id="pause-header-speed">0 MPH</span>
               </div>
             </div>
           </header>
@@ -2326,21 +1749,13 @@
                     <!-- Mini Player Direction Chevron -->
                     <div class="pause-mini-map-arrow" id="pause-mini-map-arrow">
                       <svg width="24" height="24" viewBox="0 0 24 24">
-                        <polygon points="12,2 22,22 12,17 2,22" fill="#ff007a" stroke="#ffffff" stroke-width="2" />
+                        <polygon points="12,2 22,22 12,17 2,22" fill="#e5a93c" stroke="#ffffff" stroke-width="2" />
                       </svg>
                     </div>
                   </div>
-                  <!-- Glass Vignette & Content Banner at Bottom of Hero Tile -->
+                  <!-- Minimalist Bold Banner at Bottom of Hero Tile -->
                   <div class="pause-mini-map-banner">
-                    <div class="pause-map-banner-left">
-                      <div class="pause-hero-badge">ISLA SATELLITE</div>
-                      <div class="pause-hero-title">WORLD MAP</div>
-                      <div class="pause-hero-sub">4.0 KM ROAD NETWORK &bull; LIVE RADAR</div>
-                    </div>
-                    <div class="pause-hero-action">
-                      <span>EXPAND</span>
-                      <kbd>ENTER</kbd>
-                    </div>
+                    <div class="pause-hero-title">WORLD MAP</div>
                   </div>
                 </div>
               </div>
@@ -2453,44 +1868,6 @@
           </footer>
         </div>
       </div>
-      <!-- Forza Horizon Centered Glossy Garage Modal & Backdrop Blur -->
-      <div id="garage-backdrop" class="garage-backdrop hidden">
-        <div id="garage-modal" class="garage-modal">
-          <!-- Top Bar / Header -->
-          <div class="garage-header">
-            <div class="garage-title-wrap">
-              <span class="garage-badge">GARAGE</span>
-              <div class="garage-title-group">
-                <div class="garage-title">SELECT VEHICLE</div>
-                <div class="garage-subtitle">CHOOSE YOUR RIDE &bull; 5 VEHICLES IN FLEET</div>
-              </div>
-            </div>
-            <div class="garage-header-actions">
-              <div class="garage-current-badge" id="garage-current-badge">ACTIVE: JDM SUPRA GT</div>
-              <button class="garage-close-btn" id="garage-close-btn" title="Close Garage (Esc / G)">
-                <span>CLOSE</span>
-                <kbd>ESC</kbd>
-              </button>
-            </div>
-          </div>
-
-          <!-- Centered 5-Car Cards Grid -->
-          <div class="garage-cards-row" id="car-cards-row"></div>
-
-          <!-- Footer / Interactive Controls & Drive Button -->
-          <div class="garage-footer">
-            <div class="garage-hints">
-              <span class="hint-item"><span class="key-hint">←</span> <span class="key-hint">→</span> Navigate</span>
-              <span class="hint-item"><span class="key-hint">Enter</span> Select</span>
-              <span class="hint-item"><span class="key-hint">Esc</span> / <span class="key-hint">G</span> Close</span>
-            </div>
-            <button class="garage-drive-btn" id="garage-drive-btn">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-              <span>DRIVE VEHICLE</span>
-            </button>
-          </div>
-        </div>
-      </div>
       <!-- Forza Horizon Fullscreen Interactive World Map Overlay -->
       <div id="world-map-overlay" class="world-map-overlay hidden">
         <!-- Floating Top HUD Bar -->
@@ -2535,7 +1912,7 @@
                 </filter>
                 <!-- Vibrant GPS Route Glow -->
                 <filter id="gps-route-glow" x="-30%" y="-30%" width="160%" height="160%">
-                  <feDropShadow dx="0" dy="0" stdDeviation="5.0" flood-color="rgba(0, 220, 255, 0.85)" />
+                  <feDropShadow dx="0" dy="0" stdDeviation="5.0" flood-color="rgba(229, 169, 60, 0.85)" />
                 </filter>
               </defs>
               <g id="map-roads-group"></g>
@@ -2565,7 +1942,7 @@
               <div class="player-sonar-ring"></div>
               <div class="player-arrow-wrap" id="map-player-arrow">
                 <svg class="player-arrow-svg" viewBox="0 0 32 32" width="28" height="28">
-                  <polygon points="16,3 29,27 16,21 3,27" fill="#ff007a" stroke="#ffffff" stroke-width="2" />
+                  <polygon points="16,3 29,27 16,21 3,27" fill="#e5a93c" stroke="#ffffff" stroke-width="2" />
                 </svg>
               </div>
               <div class="player-tag-pill">YOU</div>
@@ -2604,12 +1981,12 @@
       <!-- In-Game HUD GPS Waypoint Indicator -->
       <div id="hud-gps-indicator" class="hud-gps-indicator hidden">
         <svg class="hud-gps-reticle" width="16" height="16" viewBox="0 0 24 24" fill="none">
-          <circle cx="12" cy="12" r="8.5" stroke="#00f0ff" stroke-width="2.2" opacity="0.9" />
-          <circle cx="12" cy="12" r="3" fill="#00f0ff" />
-          <line x1="12" y1="1" x2="12" y2="4.5" stroke="#00f0ff" stroke-width="2" stroke-linecap="round" />
-          <line x1="12" y1="19.5" x2="12" y2="23" stroke="#00f0ff" stroke-width="2" stroke-linecap="round" />
-          <line x1="1" y1="12" x2="4.5" y2="12" stroke="#00f0ff" stroke-width="2" stroke-linecap="round" />
-          <line x1="19.5" y1="12" x2="23" y2="12" stroke="#00f0ff" stroke-width="2" stroke-linecap="round" />
+          <circle cx="12" cy="12" r="8.5" stroke="#e5a93c" stroke-width="2.2" opacity="0.9" />
+          <circle cx="12" cy="12" r="3" fill="#e5a93c" />
+          <line x1="12" y1="1" x2="12" y2="4.5" stroke="#e5a93c" stroke-width="2" stroke-linecap="round" />
+          <line x1="12" y1="19.5" x2="12" y2="23" stroke="#e5a93c" stroke-width="2" stroke-linecap="round" />
+          <line x1="1" y1="12" x2="4.5" y2="12" stroke="#e5a93c" stroke-width="2" stroke-linecap="round" />
+          <line x1="19.5" y1="12" x2="23" y2="12" stroke="#e5a93c" stroke-width="2" stroke-linecap="round" />
         </svg>
         <div class="hud-gps-info">
           <span class="hud-gps-name" id="hud-gps-name">DESTINATION</span>
@@ -2623,7 +2000,6 @@
           <div id="gear-badge">N</div>
         </div>
         <div class="bar-wrap"><div id="rpm-bar"></div></div>
-        <div id="status-line">Hierarchy: Waiting for GLB...</div>
       </div>
     </div>
     <script type="module" src="/src/main.js"></script>

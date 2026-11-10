@@ -8,20 +8,10 @@ import { GPSNavigationSystem } from './gpsNavigation.js';
 import { PauseMenuController } from './pauseMenu.js';
 
 // DOM Telemetry Elements
-const carTitleEl = document.getElementById('car-title');
 const speedValueEl = document.getElementById('speed-value');
 const gearBadgeEl = document.getElementById('gear-badge');
 const rpmBarEl = document.getElementById('rpm-bar');
 const statusLineEl = document.getElementById('status-line');
-const modelStatusEl = document.getElementById('model-status');
-const carCardsRowEl = document.getElementById('car-cards-row');
-const garageBackdropEl = document.getElementById('garage-backdrop');
-const garageModalEl = document.getElementById('garage-modal');
-const garageCloseBtnEl = document.getElementById('garage-close-btn');
-const hudGarageBtnEl = document.getElementById('hud-garage-btn');
-const garageDriveBtnEl = document.getElementById('garage-drive-btn');
-const garageCurrentBadgeEl = document.getElementById('garage-current-badge');
-const camBtnListEl = document.getElementById('cam-btn-list');
 const camModeLabelEl = document.getElementById('cam-mode-label');
 const freecamToggleBtnEl = document.getElementById('freecam-toggle-btn');
 const freecamHintEl = document.getElementById('freecam-hint');
@@ -1214,7 +1204,6 @@ async function init() {
   const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
   const { grassField } = await buildTestGround(scene, world, maxAnisotropy, sun);
 
-  modelStatusEl.textContent = 'Loading /assets/player_car.glb...';
   const { parts } = await loadRiggedCar(CAR_ROSTER[0].url);
 
   const vehicle = new RaycastVehicleController(RAPIER, world, parts);
@@ -1235,40 +1224,10 @@ async function init() {
   const worldMap = new WorldMapController(vehicle, input, gpsNav);
   window.__worldMap = worldMap;
 
-  // 1. Setup Forza Horizon Centered Glossy Garage Modal & Backdrop Blur
+  // 1. Fleet Vehicle Selection & Showroom Management
   let isGarageOpen = false;
   let activeCarIndex = 0;
   let focusedCarIndex = 0;
-
-  function updateCardFocus(index) {
-    focusedCarIndex = Math.max(0, Math.min(CAR_ROSTER.length - 1, index));
-    if (carCardsRowEl) {
-      const cards = carCardsRowEl.querySelectorAll('.forza-car-card');
-      cards.forEach((card, idx) => {
-        card.classList.toggle('keyboard-focused', idx === focusedCarIndex);
-      });
-    }
-  }
-
-  function setGarageOpen(open) {
-    if (isGarageOpen === open) return;
-    isGarageOpen = open;
-    if (garageBackdropEl) {
-      garageBackdropEl.classList.toggle('hidden', !open);
-    }
-    if (open) {
-      // Release vehicle driving inputs while browsing garage
-      input.forward = false;
-      input.backward = false;
-      input.left = false;
-      input.right = false;
-      input.handbrake = true;
-      focusedCarIndex = activeCarIndex;
-      updateCardFocus(focusedCarIndex);
-    } else {
-      input.handbrake = false;
-    }
-  }
 
   async function selectCar(index, closeAfter = false) {
     if (index < 0 || index >= CAR_ROSTER.length) return;
@@ -1276,80 +1235,30 @@ async function init() {
     focusedCarIndex = index;
     const item = CAR_ROSTER[index];
 
-    if (garageCurrentBadgeEl) {
-      garageCurrentBadgeEl.textContent = `ACTIVE: ${item.name}`;
-    }
-
-    if (carCardsRowEl) {
-      const cards = carCardsRowEl.querySelectorAll('.forza-car-card');
-      cards.forEach((card, idx) => {
-        const isActive = (idx === index);
-        card.classList.toggle('active', isActive);
-        card.classList.toggle('keyboard-focused', isActive);
-        const statusText = card.querySelector('.card-status-text');
-        if (statusText) statusText.textContent = isActive ? 'ACTIVE' : 'SELECT';
-      });
-    }
-
-    carTitleEl.textContent = item.fullName;
-    modelStatusEl.textContent = `Loading ${item.url}...`;
-
     const loaded = await loadRiggedCar(item.url);
     vehicle.setCarParts(loaded.parts);
-    modelStatusEl.textContent = `${item.fullName} • 5-Part Rig Active`;
 
-    if (closeAfter) {
-      setGarageOpen(false);
+    // Smooth focal shift / subtle camera turntable glide
+    if (camera && vehicle && vehicle.rootGroup) {
+      const targetPos = vehicle.rootGroup.position.clone();
+      camera.lookAt(targetPos.x, targetPos.y + 0.8, targetPos.z);
+    }
+
+    if (closeAfter && window.__pauseMenu) {
+      window.__pauseMenu.setOpen(false);
     }
   }
 
-  if (carCardsRowEl) {
-    CAR_ROSTER.forEach((car, idx) => {
-      const card = document.createElement('div');
-      card.className = `forza-car-card${idx === 0 ? ' active' : ''}`;
-      card.style.setProperty('--card-index', idx);
-      card.innerHTML = `
-        <div class="card-car-name">${car.name}</div>
-        <div class="card-car-img-wrap">
-          <img class="card-car-img" src="${car.thumb}" alt="${car.name}" />
-        </div>
-        <div class="card-status-bar">
-          <span class="card-status-text">${idx === 0 ? 'ACTIVE' : 'SELECT'}</span>
-          <span class="active-pip"></span>
-        </div>
-      `;
-      card.addEventListener('mouseenter', () => {
-        updateCardFocus(idx);
-      });
-      card.addEventListener('click', () => {
-        selectCar(idx);
-      });
-      carCardsRowEl.appendChild(card);
-    });
+  function setGarageOpen(open) {
+    if (window.__pauseMenu) {
+      window.__pauseMenu.setOpen(open);
+      if (open) window.__pauseMenu.showView('cars');
+    }
   }
 
   window.__setGarageOpen = setGarageOpen;
   window.__selectCar = selectCar;
-  window.__isGarageOpen = () => isGarageOpen;
-
-  if (garageCloseBtnEl) {
-    garageCloseBtnEl.addEventListener('click', () => setGarageOpen(false));
-  }
-  if (hudGarageBtnEl) {
-    hudGarageBtnEl.addEventListener('click', () => setGarageOpen(!isGarageOpen));
-  }
-  if (garageDriveBtnEl) {
-    garageDriveBtnEl.addEventListener('click', () => {
-      selectCar(focusedCarIndex, true);
-    });
-  }
-  if (garageBackdropEl) {
-    garageBackdropEl.addEventListener('click', (e) => {
-      if (e.target === garageBackdropEl) {
-        setGarageOpen(false);
-      }
-    });
-  }
+  window.__isGarageOpen = () => window.__pauseMenu ? (window.__pauseMenu.isOpen && window.__pauseMenu.currentView === 'cars') : false;
 
   // 2. Setup Forza Horizon-Style Camera Mode Switcher UI + Dedicated Free Cam Toggle
   function setFreeCamActive(enable) {
@@ -1372,7 +1281,7 @@ async function init() {
     }
 
     const mode = CAMERA_MODES[currentCamIndex];
-    camModeLabelEl.textContent = enable ? 'Free Cam' : mode.name;
+    if (camModeLabelEl) camModeLabelEl.textContent = enable ? 'Free Cam' : mode.name;
     if (freecamToggleBtnEl) {
       freecamToggleBtnEl.classList.toggle('freecam-active', enable);
       freecamToggleBtnEl.textContent = enable ? 'Exit Free Cam (Key F)' : 'Toggle Free Cam (Key F)';
@@ -1380,10 +1289,12 @@ async function init() {
     if (freecamHintEl) {
       freecamHintEl.style.display = enable ? 'block' : 'none';
     }
-    const buttons = camBtnListEl.querySelectorAll('.pill-btn');
-    buttons.forEach((btn, idx) => {
-      btn.classList.toggle('cam-active', !enable && idx === currentCamIndex);
-    });
+    if (camBtnListEl) {
+      const buttons = camBtnListEl.querySelectorAll('.pill-btn');
+      buttons.forEach((btn, idx) => {
+        btn.classList.toggle('cam-active', !enable && idx === currentCamIndex);
+      });
+    }
   }
 
   function selectCameraMode(index) {
@@ -1442,22 +1353,23 @@ async function init() {
     freeCam.dragging = false;
   });
 
-  CAMERA_MODES.forEach((mode, idx) => {
-    const btn = document.createElement('button');
-    btn.className = `pill-btn${idx === 0 ? ' cam-active' : ''}`;
-    btn.textContent = mode.name;
-    btn.addEventListener('click', () => {
-      selectCameraMode(idx);
-      btn.blur();
+  if (camBtnListEl) {
+    CAMERA_MODES.forEach((mode, idx) => {
+      const btn = document.createElement('button');
+      btn.className = `pill-btn${idx === 0 ? ' cam-active' : ''}`;
+      btn.textContent = mode.name;
+      btn.addEventListener('click', () => {
+        selectCameraMode(idx);
+        btn.blur();
+      });
+      camBtnListEl.appendChild(btn);
     });
-    camBtnListEl.appendChild(btn);
-  });
+  }
 
   // Preload remaining 4 cars in the background for instant switching
   CAR_ROSTER.slice(1).forEach((c) => loadRiggedCar(c.url));
 
-  modelStatusEl.textContent = `${CAR_ROSTER[0].fullName} • 5-Part Rig Active`;
-  statusLineEl.textContent = 'Nodes: Chassis_Body + 4x Wheel (FL/FR/RL/RR)';
+  if (statusLineEl) statusLineEl.textContent = 'Nodes: Chassis_Body + 4x Wheel (FL/FR/RL/RR)';
 
   // Continuous Ribbon Skidmark System with Timed Fade-Out (Disappears after 5 seconds, Never Frustum-Culled)
   const MAX_SKID_SEGMENTS = 1200;
@@ -1660,47 +1572,7 @@ async function init() {
       return;
     }
 
-    // Modal Active: Handle Garage Keyboard Navigation
-    if (isGarageOpen) {
-      switch (e.code) {
-        case 'ArrowLeft':
-        case 'KeyA':
-          updateCardFocus((focusedCarIndex - 1 + CAR_ROSTER.length) % CAR_ROSTER.length);
-          e.preventDefault();
-          break;
-        case 'ArrowRight':
-        case 'KeyD':
-          updateCardFocus((focusedCarIndex + 1) % CAR_ROSTER.length);
-          e.preventDefault();
-          break;
-        case 'Enter':
-        case 'Space':
-          selectCar(focusedCarIndex, true);
-          e.preventDefault();
-          break;
-        case 'Escape':
-        case 'KeyG':
-          setGarageOpen(false);
-          e.preventDefault();
-          break;
-        case 'Digit1':
-          selectCar(0);
-          break;
-        case 'Digit2':
-          selectCar(1);
-          break;
-        case 'Digit3':
-          selectCar(2);
-          break;
-        case 'Digit4':
-          selectCar(3);
-          break;
-        case 'Digit5':
-          selectCar(4);
-          break;
-      }
-      return;
-    }
+
 
     switch (e.code) {
       case 'KeyW':
@@ -2041,12 +1913,14 @@ async function init() {
     speedValueEl.textContent = String(Math.round(vehicle.speedKmh));
     gearBadgeEl.textContent = vehicle.gear;
     rpmBarEl.style.width = `${Math.round(vehicle.rpmNormalized * 100)}%`;
-    if (freeCam.active) {
-      statusLineEl.textContent = `FREE CAM: (${freeCam.pos.x.toFixed(0)}, ${freeCam.pos.y.toFixed(0)}, ${freeCam.pos.z.toFixed(0)}) | ${currentFps} FPS`;
-    } else {
-      statusLineEl.textContent = vehicle.isDrifting
-        ? `STATUS: DRIFTING | ${currentFps} FPS | FOV: ${currentFov.toFixed(0)}°`
-        : `STEER: ${(vehicle.currentSteer * (180 / Math.PI)).toFixed(1)}° | ${currentFps} FPS | FOV: ${currentFov.toFixed(0)}°`;
+    if (statusLineEl) {
+      if (freeCam.active) {
+        statusLineEl.textContent = `FREE CAM: (${freeCam.pos.x.toFixed(0)}, ${freeCam.pos.y.toFixed(0)}, ${freeCam.pos.z.toFixed(0)}) | ${currentFps} FPS`;
+      } else {
+        statusLineEl.textContent = vehicle.isDrifting
+          ? `STATUS: DRIFTING | ${currentFps} FPS | FOV: ${currentFov.toFixed(0)}°`
+          : `STEER: ${(vehicle.currentSteer * (180 / Math.PI)).toFixed(1)}° | ${currentFps} FPS | FOV: ${currentFov.toFixed(0)}°`;
+      }
     }
 
     // Update Forza Horizon GPS 3D Road Chevrons & World Map marker / telemetry
@@ -2068,7 +1942,4 @@ async function init() {
 
 init().catch((err) => {
   console.error('Vehicle initialization error:', err);
-  if (modelStatusEl) {
-    modelStatusEl.textContent = `Error: ${err.message}`;
-  }
 });
