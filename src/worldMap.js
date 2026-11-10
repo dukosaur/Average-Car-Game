@@ -312,6 +312,10 @@ export class WorldMapController {
         this.roadsGroupEl.appendChild(joint);
       }
     }
+
+    if (window.__pauseMenu && typeof window.__pauseMenu.syncRoads === 'function') {
+      window.__pauseMenu.syncRoads();
+    }
   }
 
   /**
@@ -373,6 +377,10 @@ export class WorldMapController {
       });
       this.landmarksLayerEl.appendChild(pin);
     }
+
+    if (window.__pauseMenu && typeof window.__pauseMenu.syncLandmarks === 'function') {
+      window.__pauseMenu.syncLandmarks();
+    }
   }
 
   setGpsWaypoint(wx, wz, name = 'WAYPOINT', type = 'custom') {
@@ -388,6 +396,9 @@ export class WorldMapController {
     if (this.hoveredRoad) {
       this.hoveredRoad = null;
     }
+    if (window.__pauseMenu && typeof window.__pauseMenu.syncGps === 'function') {
+      window.__pauseMenu.syncGps();
+    }
   }
 
   /**
@@ -401,6 +412,9 @@ export class WorldMapController {
       if (this.waypointMarkerEl) this.waypointMarkerEl.classList.add('hidden');
       if (this.mapGpsHudEl) this.mapGpsHudEl.classList.add('hidden');
       if (this.hudGpsIndicatorEl) this.hudGpsIndicatorEl.classList.add('hidden');
+      if (window.__pauseMenu && typeof window.__pauseMenu.syncGps === 'function') {
+        window.__pauseMenu.syncGps();
+      }
       return;
     }
 
@@ -478,6 +492,10 @@ export class WorldMapController {
       if (this.hudGpsNameEl) this.hudGpsNameEl.textContent = waypoint.name;
       if (this.hudGpsDistEl) this.hudGpsDistEl.textContent = distStr;
       this.hudGpsIndicatorEl.classList.remove('hidden');
+    }
+
+    if (window.__pauseMenu && typeof window.__pauseMenu.syncGps === 'function') {
+      window.__pauseMenu.syncGps();
     }
   }
 

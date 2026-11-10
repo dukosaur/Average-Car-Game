@@ -44,14 +44,14 @@ export class PauseMenuController {
 
     // Map bounds matching WorldMapController (2048x1920)
     this.mapBounds = {
-      minX: -450.0,
-      maxX: 520.0,
-      minZ: -480.0,
-      maxZ: 420.0,
-      spanX: 970.0,
-      spanZ: 900.0,
-      imgW: 2048,
-      imgH: 1920
+      minX: -300.0,
+      maxX: 260.0,
+      spanX: 560.0,
+      minZ: -292.5,
+      maxZ: 232.5,
+      spanZ: 525.0,
+      imgW: 2048.0,
+      imgH: 1920.0
     };
 
     // DOM Elements
@@ -81,8 +81,12 @@ export class PauseMenuController {
     // Mini Map Elements in Hero Tile
     this.miniMapViewportEl = document.querySelector('.pause-mini-map-viewport');
     this.miniMapPlaneEl = document.getElementById('pause-mini-map-plane');
+    this.miniMapMarkerEl = document.getElementById('pause-mini-map-marker');
     this.miniMapArrowEl = document.getElementById('pause-mini-map-arrow');
-    this.miniMapGpsSvgEl = document.getElementById('pause-mini-map-gps-svg');
+    this.miniMapRoadsGroupEl = document.getElementById('pause-mini-map-roads-group');
+    this.miniMapGpsGroupEl = document.getElementById('pause-mini-map-gps-group');
+    this.miniMapLandmarksEl = document.getElementById('pause-mini-map-landmarks');
+    this.miniMapWaypointEl = document.getElementById('pause-mini-map-waypoint');
 
     // Live previews in tiles
     this.tileGarageImgEl = document.getElementById('pause-garage-current-img');
@@ -134,6 +138,9 @@ export class PauseMenuController {
   }
 
   worldToMapPx(wx, wz) {
+    if (this.worldMap && typeof this.worldMap.worldToMapPx === 'function') {
+      return this.worldMap.worldToMapPx(wx, wz);
+    }
     const px = ((wx - this.mapBounds.minX) / this.mapBounds.spanX) * this.mapBounds.imgW;
     const py = ((wz - this.mapBounds.minZ) / this.mapBounds.spanZ) * this.mapBounds.imgH;
     return { x: px, y: py };
@@ -467,6 +474,9 @@ export class PauseMenuController {
     this.setOpen(false);
     if (this.worldMap && typeof this.worldMap.setOpen === 'function') {
       this.worldMap.setOpen(true);
+      if (typeof this.worldMap.centerOnPlayer === 'function') {
+        this.worldMap.centerOnPlayer(0.90);
+      }
     }
   }
 
@@ -516,6 +526,35 @@ export class PauseMenuController {
     }
   }
 
+  syncRoads() {
+    if (this.miniMapRoadsGroupEl && this.worldMap && this.worldMap.roadsGroupEl) {
+      this.miniMapRoadsGroupEl.innerHTML = this.worldMap.roadsGroupEl.innerHTML;
+    }
+  }
+
+  syncLandmarks() {
+    if (this.miniMapLandmarksEl && this.worldMap && this.worldMap.landmarksLayerEl) {
+      this.miniMapLandmarksEl.innerHTML = this.worldMap.landmarksLayerEl.innerHTML;
+    }
+  }
+
+  syncGps() {
+    if (this.miniMapGpsGroupEl && this.worldMap && this.worldMap.gpsGroupEl) {
+      this.miniMapGpsGroupEl.innerHTML = this.worldMap.gpsGroupEl.innerHTML;
+    }
+    if (this.miniMapWaypointEl) {
+      if (this.worldMap && this.worldMap.gpsNav && this.worldMap.gpsNav.activeWaypoint) {
+        const wp = this.worldMap.gpsNav.activeWaypoint;
+        const wpPx = this.worldToMapPx(wp.x, wp.z);
+        this.miniMapWaypointEl.style.left = `${wpPx.x.toFixed(1)}px`;
+        this.miniMapWaypointEl.style.top = `${wpPx.y.toFixed(1)}px`;
+        this.miniMapWaypointEl.classList.remove('hidden');
+      } else {
+        this.miniMapWaypointEl.classList.add('hidden');
+      }
+    }
+  }
+
   updateMiniMapPreview() {
     if (!this.vehicle || !this.vehicle.rootGroup || !this.miniMapPlaneEl) return;
     const pos = this.vehicle.rootGroup.position;
@@ -525,23 +564,58 @@ export class PauseMenuController {
     const vpRect = this.miniMapViewportEl ? this.miniMapViewportEl.getBoundingClientRect() : { width: 540, height: 440 };
     const containerW = vpRect.width || 540;
     const containerH = vpRect.height || 440;
-    const miniScale = 0.44;
+    // High-fidelity zoom tightly focused on player car, matching Forza Horizon 5 hero map card
+    const miniScale = 0.90;
 
     const offsetX = containerW * 0.5 - p.x * miniScale;
     const offsetY = containerH * 0.5 - p.y * miniScale;
 
     this.miniMapPlaneEl.style.transform = `translate(${offsetX.toFixed(1)}px, ${offsetY.toFixed(1)}px) scale(${miniScale})`;
 
-    // Position and rotate player arrow
-    if (this.miniMapArrowEl) {
-      this.miniMapArrowEl.style.left = `${p.x.toFixed(1)}px`;
-      this.miniMapArrowEl.style.top = `${p.y.toFixed(1)}px`;
+    // Position player marker (marker wrapper sits at p.x, p.y; heading arrow rotates inside)
+    if (this.miniMapMarkerEl) {
+      this.miniMapMarkerEl.style.left = `${p.x.toFixed(1)}px`;
+      this.miniMapMarkerEl.style.top = `${p.y.toFixed(1)}px`;
+    }
 
+    if (this.miniMapArrowEl) {
       const carQuat = this.vehicle.rootGroup.quaternion;
       const headingX = 2 * (carQuat.x * carQuat.z + carQuat.w * carQuat.y);
       const headingZ = 1 - 2 * (carQuat.x * carQuat.x + carQuat.y * carQuat.y);
       const headingDeg = Math.atan2(headingX, -headingZ) * (180.0 / Math.PI);
-      this.miniMapArrowEl.style.transform = `translate(-50%, -50%) rotate(${headingDeg.toFixed(1)}deg)`;
+      this.miniMapArrowEl.style.transform = `rotate(${headingDeg.toFixed(1)}deg)`;
+    }
+
+    // Sync roads from WorldMapController if not populated yet
+    if (this.miniMapRoadsGroupEl && this.worldMap && this.worldMap.roadsGroupEl) {
+      if (this.miniMapRoadsGroupEl.children.length === 0 && this.worldMap.roadsGroupEl.children.length > 0) {
+        this.miniMapRoadsGroupEl.innerHTML = this.worldMap.roadsGroupEl.innerHTML;
+      }
+    }
+
+    // Sync GPS routes
+    if (this.miniMapGpsGroupEl && this.worldMap && this.worldMap.gpsGroupEl) {
+      this.miniMapGpsGroupEl.innerHTML = this.worldMap.gpsGroupEl.innerHTML;
+    }
+
+    // Sync landmark POI pins
+    if (this.miniMapLandmarksEl && this.worldMap && this.worldMap.landmarksLayerEl) {
+      if (this.miniMapLandmarksEl.children.length === 0 && this.worldMap.landmarksLayerEl.children.length > 0) {
+        this.miniMapLandmarksEl.innerHTML = this.worldMap.landmarksLayerEl.innerHTML;
+      }
+    }
+
+    // Sync active destination waypoint marker
+    if (this.miniMapWaypointEl) {
+      if (this.worldMap && this.worldMap.gpsNav && this.worldMap.gpsNav.activeWaypoint) {
+        const wp = this.worldMap.gpsNav.activeWaypoint;
+        const wpPx = this.worldToMapPx(wp.x, wp.z);
+        this.miniMapWaypointEl.style.left = `${wpPx.x.toFixed(1)}px`;
+        this.miniMapWaypointEl.style.top = `${wpPx.y.toFixed(1)}px`;
+        this.miniMapWaypointEl.classList.remove('hidden');
+      } else {
+        this.miniMapWaypointEl.classList.add('hidden');
+      }
     }
 
     // Telemetry text
