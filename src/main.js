@@ -1289,12 +1289,6 @@ async function init() {
     if (freecamHintEl) {
       freecamHintEl.style.display = enable ? 'block' : 'none';
     }
-    if (camBtnListEl) {
-      const buttons = camBtnListEl.querySelectorAll('.pill-btn');
-      buttons.forEach((btn, idx) => {
-        btn.classList.toggle('cam-active', !enable && idx === currentCamIndex);
-      });
-    }
   }
 
   function selectCameraMode(index) {
@@ -1352,19 +1346,6 @@ async function init() {
   window.addEventListener('mouseup', () => {
     freeCam.dragging = false;
   });
-
-  if (camBtnListEl) {
-    CAMERA_MODES.forEach((mode, idx) => {
-      const btn = document.createElement('button');
-      btn.className = `pill-btn${idx === 0 ? ' cam-active' : ''}`;
-      btn.textContent = mode.name;
-      btn.addEventListener('click', () => {
-        selectCameraMode(idx);
-        btn.blur();
-      });
-      camBtnListEl.appendChild(btn);
-    });
-  }
 
   // Preload remaining 4 cars in the background for instant switching
   CAR_ROSTER.slice(1).forEach((c) => loadRiggedCar(c.url));
