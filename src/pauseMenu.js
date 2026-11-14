@@ -42,14 +42,14 @@ export class PauseMenuController {
     this.focusedTileIndex = 1; // Default focus to Hero World Map (Tile 1)
     this.focusedCarIndex = 0;
 
-    // Map bounds matching WorldMapController (2048x1920)
+    // Map bounds matching WorldMapController (2048x1920, ortho_scale=1800)
     this.mapBounds = {
-      minX: -300.0,
-      maxX: 260.0,
-      spanX: 560.0,
-      minZ: -292.5,
-      maxZ: 232.5,
-      spanZ: 525.0,
+      minX: -900.0,
+      maxX: 900.0,
+      spanX: 1800.0,
+      minZ: -843.75,
+      maxZ: 843.75,
+      spanZ: 1687.5,
       imgW: 2048.0,
       imgH: 1920.0
     };
@@ -102,8 +102,9 @@ export class PauseMenuController {
     this.settingsBackBtnEl = document.getElementById('pause-settings-back-btn');
     this.grassOptionBtns = document.querySelectorAll('.pause-grass-opt-btn');
 
-    // Minimalist HUD Pause Prompt (Bottom-Left)
+    // Minimalist HUD Pause Prompt (Top-Left) & Circular Mini-Map (Bottom-Left)
     this.hudPausePromptEl = document.getElementById('hud-pause-prompt');
+    this.hudMinimapWrapEl = document.getElementById('hud-minimap-wrap');
     this.hudPauseBtnEl = document.getElementById('hud-pause-btn');
     this.footerPromptsEl = document.getElementById('pause-footer-prompts');
 
@@ -647,6 +648,9 @@ export class PauseMenuController {
 
     if (this.hudPausePromptEl) {
       this.hudPausePromptEl.classList.toggle('hidden', open);
+    }
+    if (this.hudMinimapWrapEl) {
+      this.hudMinimapWrapEl.classList.toggle('hidden', open);
     }
 
     if (open) {

@@ -27,6 +27,7 @@ Key Upgrades Addressing User Feedback:
 """
 
 import os
+import sys
 import math
 import random
 import json
@@ -34,224 +35,21 @@ import bpy
 import bmesh
 from mathutils import Vector, Matrix
 
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.append(SCRIPT_DIR)
 
-def smoothstep(edge0, edge1, x):
-    if edge1 == edge0:
-        return 1.0 if x >= edge1 else 0.0
-    t = max(0.0, min(1.0, (x - edge0) / (edge1 - edge0)))
-    return t * t * (3.0 - 2.0 * t)
-
-
-def arc_ctrl_pts(cx, cy, radius, deg_start, deg_end, z_start, z_end, count=5):
-    """Generate `count` control points along a smooth circular arc in 3D for round touge hairpins."""
-    pts = []
-    for k in range(count):
-        t = k / float(count - 1)
-        ang = math.radians(deg_start + t * (deg_end - deg_start))
-        x = cx + radius * math.cos(ang)
-        y = cy + radius * math.sin(ang)
-        z = z_start + t * (z_end - z_start)
-        pts.append(Vector((x, y, z)))
-    return pts
-
-
-def catmull_rom_centripetal(p0, p1, p2, p3, t, alpha=0.5):
-    """Centripetal Catmull-Rom spline evaluation in 3D (never forms cusps or self-loops)."""
-    def tj(ti, pa, pb):
-        d = (pb - pa).length
-        return ti + max(1e-4, d) ** alpha
-
-    t0 = 0.0
-    t1 = tj(t0, p0, p1)
-    t2 = tj(t1, p1, p2)
-    t3 = tj(t2, p2, p3)
-
-    u = t1 + t * (t2 - t1)
-    A1 = ((t1 - u) / (t1 - t0)) * p0 + ((u - t0) / (t1 - t0)) * p1
-    A2 = ((t2 - u) / (t2 - t1)) * p1 + ((u - t1) / (t2 - t1)) * p2
-    A3 = ((t3 - u) / (t3 - t2)) * p2 + ((u - t2) / (t3 - t2)) * p3
-
-    B1 = ((t2 - u) / (t2 - t0)) * A1 + ((u - t0) / (t2 - t0)) * A2
-    B2 = ((t3 - u) / (t3 - t1)) * A2 + ((u - t1) / (t3 - t1)) * A3
-
-    return ((t2 - u) / (t2 - t1)) * B1 + ((u - t1) / (t2 - t1)) * B2
-
-
-def sample_smooth_3d_curve(ctrl_pts, step_len=2.5, closed=False):
-    """
-    Sample a 3D Centripetal Catmull-Rom spline passing through `ctrl_pts` at uniform
-    arc-length steps `step_len`. Returns `[(pos_vec3, tangent_vec2_xy), ...]`.
-    """
-    n = len(ctrl_pts)
-    if n < 2:
-        return []
-
-    dense = []
-    segs = n if closed else (n - 1)
-    samples_per_seg = 48
-
-    for i in range(segs):
-        if closed:
-            p0 = ctrl_pts[(i - 1) % n]
-            p1 = ctrl_pts[i % n]
-            p2 = ctrl_pts[(i + 1) % n]
-            p3 = ctrl_pts[(i + 2) % n]
-        else:
-            p0 = ctrl_pts[i - 1] if i > 0 else ctrl_pts[0] + (ctrl_pts[0] - ctrl_pts[1])
-            p1 = ctrl_pts[i]
-            p2 = ctrl_pts[i + 1]
-            p3 = ctrl_pts[i + 2] if i + 2 < n else ctrl_pts[-1] + (ctrl_pts[-1] - ctrl_pts[-2])
-
-        for s in range(samples_per_seg):
-            if i > 0 and s == 0:
-                continue
-            t = s / float(samples_per_seg) if (closed or i < segs - 1) else s / float(samples_per_seg - 1)
-            dense.append(catmull_rom_centripetal(p0, p1, p2, p3, t))
-
-    if closed:
-        dense.append(ctrl_pts[0].copy())
-    elif (dense[-1] - ctrl_pts[-1]).length > 1e-3:
-        dense.append(ctrl_pts[-1].copy())
-
-    cum_len = [0.0]
-    for i in range(1, len(dense)):
-        cum_len.append(cum_len[-1] + (dense[i] - dense[i - 1]).length)
-    total_len = cum_len[-1]
-    num_steps = max(4, int(round(total_len / step_len)))
-    if num_steps % 2 != 0:
-        num_steps += 1
-
-    uniform_pts = []
-    idx = 0
-    for k in range(num_steps + 1):
-        target_d = (k / float(num_steps)) * total_len
-        while idx + 1 < len(cum_len) and cum_len[idx + 1] < target_d:
-            idx += 1
-        if idx + 1 >= len(cum_len):
-            uniform_pts.append(dense[-1].copy())
-        else:
-            d0, d1 = cum_len[idx], cum_len[idx + 1]
-            alpha = (target_d - d0) / max(1e-6, d1 - d0)
-            uniform_pts.append(dense[idx].lerp(dense[idx + 1], alpha))
-
-    if closed:
-        uniform_pts[-1] = uniform_pts[0].copy()
-
-    result = []
-    m = len(uniform_pts)
-    for k in range(m):
-        if closed:
-            prev_p = uniform_pts[(k - 1) % (m - 1)]
-            next_p = uniform_pts[(k + 1) % (m - 1)]
-            tan3 = next_p - prev_p
-        else:
-            if k == 0:
-                tan3 = uniform_pts[1] - uniform_pts[0]
-            elif k == m - 1:
-                tan3 = uniform_pts[-1] - uniform_pts[-2]
-            else:
-                tan3 = uniform_pts[k + 1] - uniform_pts[k - 1]
-        tan2 = Vector((tan3.x, tan3.y, 0.0))
-        if tan2.length > 1e-6:
-            tan2.normalize()
-        else:
-            tan2 = Vector((0.0, 1.0, 0.0))
-        result.append((uniform_pts[k], tan2))
-    return result
-
-
-def closest_sample_index(pt, poly, closed=False):
-    """Find the index `k` in `poly` (`[(pos, tan2), ...]`) closest in 2D to `pt`."""
-    best_k = 0
-    best_d = 99999.0
-    limit = len(poly) - 1 if closed else len(poly)
-    for k in range(limit):
-        p = poly[k][0]
-        d = math.hypot(pt.x - p.x, pt.y - p.y)
-        if d < best_d:
-            best_d = d
-            best_k = k
-    return best_k, best_d
-
-
-def dist_to_polyline_2d(px, py, poly):
-    best_d = 9999.0
-    best_z = 0.0
-    for i in range(len(poly) - 1):
-        pA = poly[i][0]
-        pB = poly[i + 1][0]
-        vx = pB.x - pA.x
-        vy = pB.y - pA.y
-        l2 = vx * vx + vy * vy
-        t = 0.0 if l2 < 1e-8 else max(0.0, min(1.0, ((px - pA.x) * vx + (py - pA.y) * vy) / l2))
-        cx = pA.x + t * vx
-        cy = pA.y + t * vy
-        d = math.hypot(px - cx, py - cy)
-        if d < best_d:
-            best_d = d
-            best_z = pA.z + t * (pB.z - pA.z)
-    return best_d, best_z
-
-
-def trim_branch_for_fillet(
-    samples,
-    start_parent,
-    start_half_w,
-    start_closed,
-    end_parent,
-    end_half_w,
-    end_closed,
-    fillet_dist=7.0,
-):
-    """
-    Trim the start and end of a branch road so its first cross-section ring stops cleanly
-    at `start_half_w + fillet_dist` outside `start_parent` and its last ring stops at
-    `end_half_w + fillet_dist` outside `end_parent`.
-    Also returns the exact parent station indices `(k_start_hub, k_end_hub)` and sides
-    `('left' or 'right')` where the welded T-junction fillets will attach!
-    """
-    i_start = 0
-    while i_start + 1 < len(samples) // 3:
-        d, _ = dist_to_polyline_2d(samples[i_start][0].x, samples[i_start][0].y, start_parent)
-        if d >= start_half_w + fillet_dist:
-            break
-        i_start += 1
-
-    i_end = len(samples) - 1
-    while i_end - 1 > (2 * len(samples)) // 3:
-        d, _ = dist_to_polyline_2d(samples[i_end][0].x, samples[i_end][0].y, end_parent)
-        if d >= end_half_w + fillet_dist:
-            break
-        i_end -= 1
-
-    trimmed = list(samples[i_start : i_end + 1])
-
-    # Find exact attachment index & side on start_parent and end_parent
-    k_s, _ = closest_sample_index(trimmed[0][0], start_parent, closed=start_closed)
-    p_s, tan_s = start_parent[k_s]
-    right_s = Vector((tan_s.y, -tan_s.x, 0.0))
-    side_s = "right" if (trimmed[0][0] - p_s).dot(right_s) > 0.0 else "left"
-
-    k_e, _ = closest_sample_index(trimmed[-1][0], end_parent, closed=end_closed)
-    p_e, tan_e = end_parent[k_e]
-    right_e = Vector((tan_e.y, -tan_e.x, 0.0))
-    side_e = "right" if (trimmed[-1][0] - p_e).dot(right_e) > 0.0 else "left"
-
-    # Smoothly align Z of the first/last 6 rings of `trimmed` so the branch road approaches the parent road level
-    m = len(trimmed)
-    for k in range(min(7, m)):
-        w = (1.0 - (k / 7.0)) ** 1.5
-        pt, tn = trimmed[k]
-        trimmed[k] = (Vector((pt.x, pt.y, (1.0 - w) * pt.z + w * p_s.z)), tn)
-    for k in range(min(7, m)):
-        idx = m - 1 - k
-        w = (1.0 - (k / 7.0)) ** 1.5
-        pt, tn = trimmed[idx]
-        trimmed[idx] = (Vector((pt.x, pt.y, (1.0 - w) * pt.z + w * p_e.z)), tn)
-
-    start_info = (k_s, side_s)
-    end_info = (k_e, side_e)
-    return trimmed, start_info, end_info
+from world_layout import (
+    WORLD_BOUNDS,
+    TERRAIN_MIN_X,
+    TERRAIN_MAX_X,
+    TERRAIN_MIN_Y,
+    TERRAIN_MAX_Y,
+    TERRAIN_GRID_STEP,
+    smoothstep,
+    compute_road_network,
+    natural_terrain_z,
+)
 
 
 def upgrade_road_materials(project_root):
@@ -385,7 +183,7 @@ def extract_single_lantern_template():
 
 
 def extract_suspension_bridge_tower():
-    """Extract the Golden-Gate style Suspension Bridge Tower & Cables from `Highway Bridge 1`."""
+    """Extract the Golden-Gate style Suspension Bridge Tower piers (without chopped cables) from `Highway Bridge 1`."""
     emp = bpy.data.objects.get("Highway Bridge 1")
     if not emp:
         return None
@@ -403,19 +201,21 @@ def extract_suspension_bridge_tower():
         avg_x = sum(xs) / len(xs)
         max_z = max(zs)
         is_tower_pier = 148.0 <= avg_x <= 162.0 and (max_z > 16.3 or min(zs) < 12.0)
-        is_cables = 105.0 <= avg_x <= 205.0 and min(zs) >= 16.20
-        if not (is_tower_pier or is_cables):
+        if not is_tower_pier:
             to_del.append(f)
     if to_del:
         bmesh.ops.delete(bm, geom=to_del, context="FACES")
 
-    scale_x = 0.55
-    scale_y = 0.66
-    scale_z = 0.52
+    scale_x = 0.50
+    scale_y = 0.54
+    scale_z = 0.36
     for v in bm.verts:
         v.co.x = (v.co.x - 155.0) * scale_x
         v.co.y = (v.co.y - (-12.5)) * scale_y
-        v.co.z = (v.co.z - 15.0) * scale_z
+        v.co.z = (v.co.z - 13.3) * scale_z
+        # Extend tower foundations solidly down into the riverbed
+        if v.co.z < -8.0:
+            v.co.z = -18.0
 
     out_me = bpy.data.meshes.new("SuspensionTower_Template")
     bm.to_mesh(out_me)
@@ -427,6 +227,18 @@ def extract_suspension_bridge_tower():
 def add_quad(bm, uv_lay, v0, v1, v2, v3, uv_coord, ensure_up=True):
     try:
         f = bm.faces.new((v0, v1, v2, v3))
+        f.normal_update()
+        if ensure_up and f.normal.z < -0.05:
+            f.normal_flip()
+        for loop in f.loops:
+            loop[uv_lay].uv = uv_coord
+    except ValueError:
+        pass
+
+
+def add_tri(bm, uv_lay, v0, v1, v2, uv_coord, ensure_up=True):
+    try:
+        f = bm.faces.new((v0, v1, v2))
         f.normal_update()
         if ensure_up and f.normal.z < -0.05:
             f.normal_flip()
@@ -459,20 +271,22 @@ def build_spline_road_segment(
     uv_dict,
     samples,
     is_highway=False,
+    road_type=None,
     closed=False,
     open_ranges=None,
     bridge_y_range=None,
+    bridge_ranges=None,
+    tunnel_range=None,
     lantern_bm=None,
     lantern_me=None,
+    guard_pts=None,
 ):
     """
-    Sweep a 2-Lane Road (`10.8m` asphalt + curbs) or 4-Lane Divided Highway (`15.2m` asphalt + curbs).
-    - Structural roadbed & curbs go into `road_bm` (which receives the Rapier 3D trimesh collider).
-    - Decorative 3D white lane markings go into `mark_bm` (visual only -> zero physics raycast overhead!).
+    Sweep a 4-Lane Divided Highway (`15.2m` asphalt + curbs), 2-Lane Secondary Road (`10.8m` asphalt + curbs),
+    or Skinny Technical Backroad (`7.6m` asphalt + curbs).
+    - Structural roadbed, curbs, and tunnel walls go into `road_bm` (which receives the Rapier 3D trimesh collider).
+    - Decorative 3D white lane markings, bridge piers, and tunnel rock overburden go into `mark_bm`.
     - `open_ranges`: list of `(k_center, half_steps, side_str)` where `side_str` is `'left'` or `'right'`.
-      For segments `k` within `[k_center - half_steps, k_center + half_steps - 1]`, that side's curb
-      and white edge stripe are omitted so `build_welded_t_junction` can stitch directly to the exact
-      asphalt and curb vertices!
     """
     n = len(samples)
     if n < 2:
@@ -480,10 +294,29 @@ def build_spline_road_segment(
     if open_ranges is None:
         open_ranges = []
 
-    half_asphalt = 7.6 if is_highway else 5.4
-    curb_w = 1.15
+    if road_type is None:
+        road_type = "highway" if is_highway else "secondary"
+    is_highway = road_type == "highway"
+    is_narrow = road_type == "narrow"
+
+    if is_highway:
+        half_asphalt = 7.6
+        curb_w = 1.15
+    elif is_narrow:
+        half_asphalt = 3.8
+        curb_w = 0.90
+    else:
+        half_asphalt = 5.4
+        curb_w = 1.15
+
     curb_h = 0.16
     num_segs = n - 1
+
+    all_bridges = []
+    if bridge_y_range is not None:
+        all_bridges.append(bridge_y_range)
+    if bridge_ranges is not None:
+        all_bridges.extend(bridge_ranges)
 
     # Determine which segment indices [i -> i+1] have left or right curb open for a T-junction
     seg_open_left = [False] * num_segs
@@ -499,15 +332,25 @@ def build_spline_road_segment(
 
     rings = []
     ground_samples = []
+    tunnel_rings = []
+    cum_s = [0.0] * n
+    for idx_s in range(1, n):
+        cum_s[idx_s] = cum_s[idx_s - 1] + (samples[idx_s][0] - samples[idx_s - 1][0]).length
 
     for i, (pos, tan2) in enumerate(samples):
         right = Vector((tan2.y, -tan2.x, 0.0))
 
         on_bridge = False
-        if bridge_y_range is not None:
-            xmin, xmax, ymin, ymax = bridge_y_range
+        for xmin, xmax, ymin, ymax in all_bridges:
             if xmin <= pos.x <= xmax and ymin <= pos.y <= ymax:
                 on_bridge = True
+                break
+
+        on_tunnel = False
+        if tunnel_range is not None:
+            txmin, txmax, tymin, tymax = tunnel_range
+            if txmin <= pos.x <= txmax and tymin <= pos.y <= tymax:
+                on_tunnel = True
 
         skirt_depth = 0.85 if on_bridge else 4.8
 
@@ -525,22 +368,42 @@ def build_spline_road_segment(
         v6 = road_bm.verts.new((p_r_out.x, p_r_out.y, pos.z + curb_h))
         v7 = road_bm.verts.new((p_r_out.x, p_r_out.y, pos.z - skirt_depth))
 
-        rings.append((v0, v1, v2, v3, v4, v5, v6, v7, pos, right, on_bridge, tan2))
+        rings.append((v0, v1, v2, v3, v4, v5, v6, v7, pos, right, on_bridge, tan2, on_tunnel))
 
+        # Keep ground_samples active on ground AND inside tunnels so `Circuit_Terrain` is carved cleanly
+        # below the tunnel roadbed and NEVER blocks tunnel portals!
         if not on_bridge:
-            ground_samples.append((pos.x, pos.y, pos.z, half_asphalt + curb_w))
+            rw_total = half_asphalt + curb_w + (2.5 if on_tunnel else 0.0)
+            ground_samples.append((pos.x, pos.y, pos.z, rw_total))
+            if guard_pts is not None:
+                for f_off in (-1.04, -0.72, -0.36, 0.0, 0.36, 0.72, 1.04):
+                    guard_pts.append((pos.x + right.x * rw_total * f_off, pos.y + right.y * rw_total * f_off, pos.z))
+        elif guard_pts is not None:
+            # Even on elevated viaducts/bridges, clamp terrain at least 1.34m below the bridge deck
+            # so steep cliffside ridges never poke through bridge undersides or abutments!
+            rw_total = half_asphalt + curb_w + 1.5
+            for f_off in (-1.04, -0.52, 0.0, 0.52, 1.04):
+                guard_pts.append((pos.x + right.x * rw_total * f_off, pos.y + right.y * rw_total * f_off, pos.z - 1.2))
 
-        # Place Street Lanterns every 16 segments (40m) for clean visuals & lower vertex count
-        under_overpass = is_highway and (-18.0 <= pos.x <= 18.0) and (8.0 <= pos.y <= 48.0)
+        # Place Street Lanterns every ~50m (~100m alternate for side roads) for crisp visuals & balanced poly budget
+        under_overpass_1 = (-22.0 <= pos.x <= 22.0) and (118.0 <= pos.y <= 178.0) and pos.z < 6.0
+        under_overpass_2 = (335.0 <= pos.x <= 395.0) and (-110.0 <= pos.y <= -48.0) and pos.z < 9.0
+        under_overpass_3 = (-768.0 <= pos.x <= -710.0) and (-230.0 <= pos.y <= -165.0) and pos.z < 12.0
+        under_overpass_4 = (592.0 <= pos.x <= 652.0) and (442.0 <= pos.y <= 502.0) and pos.z < 22.0
         seg_i = min(i, num_segs - 1)
+        lantern_bucket = int(cum_s[i] / 50.0)
+        is_lantern_step = (i > 6) and (i < n - 7) and (lantern_bucket != int(cum_s[i - 1] / 50.0))
         if (
             lantern_bm is not None
             and lantern_me is not None
-            and (i % 16 == 6)
-            and (4 < i < n - 5)
-            and not under_overpass
+            and is_lantern_step
+            and not under_overpass_1
+            and not under_overpass_2
+            and not under_overpass_3
+            and not under_overpass_4
+            and not on_tunnel
         ):
-            if (is_highway or (i % 32 == 6)) and not seg_open_left[seg_i]:
+            if (is_highway or (lantern_bucket % 2 == 0)) and not seg_open_left[seg_i]:
                 l_pos = pos - right * (half_asphalt + curb_w * 0.65) + Vector((0.0, 0.0, curb_h))
                 l_ang = math.atan2(right.y, right.x) - math.pi * 0.5
                 l_inst = lantern_me.copy()
@@ -556,16 +419,28 @@ def build_spline_road_segment(
                 lantern_bm.from_mesh(r_inst)
                 bpy.data.meshes.remove(r_inst)
 
-        # Concrete bridge support pillars (visual -> `mark_bm`)
-        if on_bridge and (i % 12 == 6) and pos.z > 3.5:
-            if abs(pos.x) > 13.0 or pos.y < -80.0:
-                pw = 1.35
-                pd = 1.35
+        # Concrete bridge support pillars every ~30m (visual -> `mark_bm`), with strict exclusion over ALL lower roads
+        # and inside the main open-water suspension span!
+        is_pillar_step = (i > 2) and (int(cum_s[i] / 30.0) != int(cum_s[i - 1] / 30.0))
+        in_main_suspension = is_highway and (-595.0 <= pos.y <= -505.0) and (195.0 <= pos.x <= 385.0)
+        if on_bridge and is_pillar_step and pos.z > 4.0 and not in_main_suspension:
+            near_hwy_underpass = math.hypot(pos.x - 0.0, pos.y - 150.0) < 26.0
+            near_river_underpass = math.hypot(pos.x - 365.0, pos.y - (-80.0)) < 26.0
+            near_west_underpass = math.hypot(pos.x - (-740.0), pos.y - (-195.0)) < 26.0
+            near_autumn_underpass = math.hypot(pos.x - 625.0, pos.y - 470.0) < 26.0
+            if (
+                not near_hwy_underpass
+                and not near_river_underpass
+                and not near_west_underpass
+                and not near_autumn_underpass
+            ):
+                pw = 1.35 if not is_narrow else 1.0
+                pd = 1.35 if not is_narrow else 1.0
                 fwd = Vector((-right.y, right.x, 0.0))
-                for side_s in (-half_asphalt * 0.55, half_asphalt * 0.55):
+                for side_s in (-half_asphalt * 0.58, half_asphalt * 0.58):
                     p_center = pos + right * side_s
                     z_top = pos.z - 0.2
-                    z_bot = -14.0
+                    z_bot = -20.0
                     c0 = p_center - right * pw - fwd * pd
                     c1 = p_center + right * pw - fwd * pd
                     c2 = p_center + right * pw + fwd * pd
@@ -583,6 +458,45 @@ def build_spline_road_segment(
                     add_quad(mark_bm, mark_uv, vb2, vb3, vt3, vt2, uv_dict["wall"])
                     add_quad(mark_bm, mark_uv, vb3, vb0, vt0, vt3, uv_dict["wall"])
 
+        # Build 3D Vaulted Tunnel Cross-Section Ring + Alpine Overburden Arch when `on_tunnel` is True
+        if on_tunnel:
+            w_out = half_asphalt + curb_w
+            w_arch = half_asphalt * 0.62
+            h_wall = 4.6
+            h_arch = 6.9
+            h_crown = 7.4
+            # Inner structural tunnel vault vertices in `road_bm`
+            tv_l0 = v1
+            tv_l1 = road_bm.verts.new((pos.x - right.x * w_out, pos.y - right.y * w_out, pos.z + h_wall))
+            tv_l2 = road_bm.verts.new((pos.x - right.x * w_arch, pos.y - right.y * w_arch, pos.z + h_arch))
+            tv_c = road_bm.verts.new((pos.x, pos.y, pos.z + h_crown))
+            tv_r2 = road_bm.verts.new((pos.x + right.x * w_arch, pos.y + right.y * w_arch, pos.z + h_arch))
+            tv_r1 = road_bm.verts.new((pos.x + right.x * w_out, pos.y + right.y * w_out, pos.z + h_wall))
+            tv_r0 = v6
+
+            # Outer Alpine Rock Overburden Cap vertices in `mark_bm` (sits strictly ABOVE the tunnel vault!)
+            tx0, tx1 = tunnel_range[0], tunnel_range[1]
+            t_along = max(0.0, min(1.0, (pos.x - tx0) / max(1.0, tx1 - tx0)))
+            arch_env = math.sin(math.pi * t_along)
+            cap_peak_h = 7.75 + 5.8 * arch_env
+            w_cap_far = w_out + 1.8 + 4.2 * arch_env
+            w_cap_mid = w_out + 0.8 + 2.0 * arch_env
+            mv_l_far = mark_bm.verts.new((pos.x - right.x * w_cap_far, pos.y - right.y * w_cap_far, pos.z - 0.8))
+            mv_l_mid = mark_bm.verts.new((pos.x - right.x * w_cap_mid, pos.y - right.y * w_cap_mid, pos.z + h_wall + 0.9 + 1.4 * arch_env))
+            mv_l_top = mark_bm.verts.new((pos.x - right.x * (w_arch + 0.9), pos.y - right.y * (w_arch + 0.9), pos.z + cap_peak_h - 0.6))
+            mv_c_top = mark_bm.verts.new((pos.x, pos.y, pos.z + cap_peak_h))
+            mv_r_top = mark_bm.verts.new((pos.x + right.x * (w_arch + 0.9), pos.y + right.y * (w_arch + 0.9), pos.z + cap_peak_h - 0.6))
+            mv_r_mid = mark_bm.verts.new((pos.x + right.x * w_cap_mid, pos.y + right.y * w_cap_mid, pos.z + h_wall + 0.9 + 1.4 * arch_env))
+            mv_r_far = mark_bm.verts.new((pos.x + right.x * w_cap_far, pos.y + right.y * w_cap_far, pos.z - 0.8))
+
+            tunnel_rings.append((
+                i, pos, right,
+                (tv_l0, tv_l1, tv_l2, tv_c, tv_r2, tv_r1, tv_r0),
+                (mv_l_far, mv_l_mid, mv_l_top, mv_c_top, mv_r_top, mv_r_mid, mv_r_far),
+            ))
+        else:
+            tunnel_rings.append(None)
+
     for i in range(num_segs):
         rA = rings[i]
         rB = rings[i + 1]
@@ -593,7 +507,7 @@ def build_spline_road_segment(
         # 1. Main asphalt road bed (`road_bm`)
         add_quad(road_bm, road_uv, rA[3], rA[4], rB[4], rB[3], uv_dict["asphalt"])
 
-        # 2. Bridge underside (`mark_bm`)
+        # 2. Bridge underside & raised bridge side parapets (`mark_bm`)
         if on_bridge:
             u0 = mark_bm.verts.new(rA[7].co)
             u1 = mark_bm.verts.new(rA[0].co)
@@ -604,6 +518,62 @@ def build_spline_road_segment(
         posA, rightA = rA[8], rA[9]
         posB, rightB = rB[8], rB[9]
         z_line = 0.015
+
+        # 2.5 Enclosed Vaulted Mountain Tunnel segments (`road_bm`, `mark_bm`, `lantern_bm`)
+        trA = tunnel_rings[i]
+        trB = tunnel_rings[i + 1]
+        if trA is not None and trB is not None:
+            _, _, _, tvA, mvA = trA
+            _, _, _, tvB, mvB = trB
+            # Tunnel interior concrete walls & arched ceiling (inward-facing normals)
+            for k_t in range(6):
+                uv_t = uv_dict["wall"] if k_t in (0, 5) else uv_dict["curb"]
+                add_quad(road_bm, road_uv, tvA[k_t], tvB[k_t], tvB[k_t + 1], tvA[k_t + 1], uv_t, ensure_up=False)
+
+            # Tunnel exterior alpine rock & snow cap (`mark_bm`, upward normals)
+            for k_m in range(6):
+                uv_m = uv_dict["white"] if k_m in (2, 3) else uv_dict["wall"]
+                add_quad(mark_bm, mark_uv, mvA[k_m], mvA[k_m + 1], mvB[k_m + 1], mvB[k_m], uv_m, ensure_up=True)
+
+            # Portal archways at tunnel entrance and exit
+            is_portal_start = (i == 0) or (tunnel_rings[i - 1] is None)
+            is_portal_end = (i + 1 == num_segs) or (tunnel_rings[i + 1] is None)
+            if is_portal_start:
+                for k_p in range(6):
+                    p_in0 = mark_bm.verts.new(tvA[k_p].co)
+                    p_in1 = mark_bm.verts.new(tvA[k_p + 1].co)
+                    add_quad(mark_bm, mark_uv, p_in0, p_in1, mvA[k_p + 1], mvA[k_p], uv_dict["curb"], ensure_up=False)
+            if is_portal_end:
+                for k_p in range(6):
+                    p_in0 = mark_bm.verts.new(tvB[k_p].co)
+                    p_in1 = mark_bm.verts.new(tvB[k_p + 1].co)
+                    add_quad(mark_bm, mark_uv, p_in0, mvB[k_p], mvB[k_p + 1], p_in1, uv_dict["curb"], ensure_up=False)
+
+            # Warm glowing tunnel overhead light strips & side wall guide strips (`lantern_bm` with `emit_mat`)
+            is_tun_light = (int(cum_s[i + 1] / 7.5) != int(cum_s[i] / 7.5))
+            if lantern_bm is not None and is_tun_light:
+                z_light = 7.22
+                for l_off0, l_off1 in [(-0.85, -0.35), (0.35, 0.85)]:
+                    la0 = lantern_bm.verts.new((posA.x + rightA.x * l_off0, posA.y + rightA.y * l_off0, posA.z + z_light))
+                    la1 = lantern_bm.verts.new((posA.x + rightA.x * l_off1, posA.y + rightA.y * l_off1, posA.z + z_light))
+                    lb1 = lantern_bm.verts.new((posB.x + rightB.x * l_off1, posB.y + rightB.y * l_off1, posB.z + z_light))
+                    lb0 = lantern_bm.verts.new((posB.x + rightB.x * l_off0, posB.y + rightB.y * l_off0, posB.z + z_light))
+                    try:
+                        f_l = lantern_bm.faces.new((la0, la1, lb1, lb0))
+                        f_l.material_index = 1
+                    except ValueError:
+                        pass
+                w_guide = half_asphalt + curb_w - 0.08
+                for s_sign in (-1.0, 1.0):
+                    ga0 = lantern_bm.verts.new((posA.x + rightA.x * s_sign * w_guide, posA.y + rightA.y * s_sign * w_guide, posA.z + 1.25))
+                    ga1 = lantern_bm.verts.new((posA.x + rightA.x * s_sign * w_guide, posA.y + rightA.y * s_sign * w_guide, posA.z + 1.48))
+                    gb1 = lantern_bm.verts.new((posB.x + rightB.x * s_sign * w_guide, posB.y + rightB.y * s_sign * w_guide, posB.z + 1.48))
+                    gb0 = lantern_bm.verts.new((posB.x + rightB.x * s_sign * w_guide, posB.y + rightB.y * s_sign * w_guide, posB.z + 1.25))
+                    try:
+                        f_g = lantern_bm.faces.new((ga0, ga1, gb1, gb0))
+                        f_g.material_index = 1
+                    except ValueError:
+                        pass
 
         # 3. Left sidewalk curb (`road_bm`) & Left white edge stripe (`mark_bm`)
         if not open_left:
@@ -638,9 +608,10 @@ def build_spline_road_segment(
                 vb0 = mark_bm.verts.new((posB.x + rightB.x * o0, posB.y + rightB.y * o0, posB.z + z_line))
                 add_quad(mark_bm, mark_uv, va0, va1, vb1, vb0, uv_dict["white"])
 
-        # 6. 3D Dashed Lane Lines (`mark_bm`)
-        if i % 2 == 0:
-            dash_offsets = [(-3.85, -3.61), (3.61, 3.85)] if is_highway else [(-0.13, 0.13)]
+        # 6. 3D Dashed Lane Lines (`mark_bm`), uniform 2.8m stripe / 2.8m gap regardless of step_len
+        s_mid = 0.5 * (cum_s[i] + cum_s[i + 1])
+        if int(s_mid / 2.8) % 2 == 0:
+            dash_offsets = [(-3.85, -3.61), (3.61, 3.85)] if is_highway else [(-0.11, 0.11) if is_narrow else (-0.13, 0.13)]
             for d0, d1 in dash_offsets:
                 da0 = mark_bm.verts.new((posA.x + rightA.x * d0, posA.y + rightA.y * d0, posA.z + z_line))
                 da1 = mark_bm.verts.new((posA.x + rightA.x * d1, posA.y + rightA.y * d1, posA.z + z_line))
@@ -741,6 +712,9 @@ def build_welded_t_junction(
 
     ctrl_L = calc_fillet_control_point(p_L_start, dir_b_to_p, p_L_end, dir_p_L_in)
     ctrl_R = calc_fillet_control_point(p_R_start, dir_b_to_p, p_R_end, dir_p_R_in)
+    # Pin Bezier control point Z to branch mouth Z so corner curbs & apron edges depart with 0% vertical slope jump!
+    ctrl_L.z = p_L_start.z
+    ctrl_R.z = p_R_start.z
 
     # Build the (rows + 1) x (cols + 1) grid of asphalt BMVerts
     # Row 0 (at Branch end): b_v3 .. b_v4
@@ -753,23 +727,37 @@ def build_welded_t_junction(
         co = p_L_start.lerp(p_R_start, u)
         grid_v[0][j] = road_bm.verts.new(co)
 
-    # Stitch Branch end cap quad to our Row 0 subdivided vertices so there is zero T-vertex gap on the branch end
-    for j in range(cols):
-        # Tiny zero-area / coplanar bridge triangle fan to weld `b_v3 -> b_v4` edge cleanly
-        pass
+    # Weld Row 0 subdivided vertices directly into the branch end quad so there is zero T-vertex seam or shading crease
+    end_faces = [f for f in b_v3.link_faces if b_v4 in f.verts and len(f.verts) == 4]
+    if end_faces:
+        f_end = end_faces[0]
+        other_verts = [v for v in f_end.verts if v != b_v3 and v != b_v4]
+        if len(other_verts) == 2:
+            if (other_verts[0].co - b_v3.co).length <= (other_verts[1].co - b_v3.co).length:
+                v_adj_3, v_adj_4 = other_verts[0], other_verts[1]
+            else:
+                v_adj_3, v_adj_4 = other_verts[1], other_verts[0]
+            road_bm.faces.remove(f_end)
+            mid_c = cols // 2
+            for j in range(mid_c):
+                add_tri(road_bm, road_uv, v_adj_3, grid_v[0][j + 1], grid_v[0][j], uv_dict["asphalt"])
+            add_tri(road_bm, road_uv, v_adj_3, v_adj_4, grid_v[0][mid_c], uv_dict["asphalt"])
+            for j in range(mid_c, cols):
+                add_tri(road_bm, road_uv, v_adj_4, grid_v[0][j + 1], grid_v[0][j], uv_dict["asphalt"])
 
     for j in range(cols + 1):
         grid_v[rows][j] = p_asphalt_verts[j]
 
     for m in range(1, rows):
         v_t = m / float(rows)
+        v_ease = v_t * v_t * (3.0 - 2.0 * v_t)
         left_pt = bezier2(p_L_start, ctrl_L, p_L_end, v_t)
         right_pt = bezier2(p_R_start, ctrl_R, p_R_end, v_t)
         for j in range(cols + 1):
             u = j / float(cols)
             top_pt = p_asphalt_verts[j].co
             bot_pt = p_L_start.lerp(p_R_start, u)
-            # Coons patch blending between the curved Left/Right Bezier boundaries and the exact Parent/Branch edges!
+            # Coons patch blending in XY + C1 Hermite smoothstep in Z so there is zero vertical crease across b_v3..b_v4!
             lin_lr = left_pt.lerp(right_pt, u)
             lin_bt = bot_pt.lerp(top_pt, v_t)
             bilin = (
@@ -777,6 +765,7 @@ def build_welded_t_junction(
                 + v_t * ((1.0 - u) * p_L_end + u * p_R_end)
             )
             co = lin_lr + lin_bt - bilin
+            co.z = bot_pt.z + v_ease * (top_pt.z - bot_pt.z)
             grid_v[m][j] = road_bm.verts.new(co)
 
     # Create all `rows * cols` asphalt quads in `road_bm`
@@ -853,9 +842,19 @@ def build_welded_t_junction(
                 out_m.normalize()
 
             if m == 0:
-                c_rings.append((v_wall_start, v_cout_start, v_cin_start, v_asph_start, co_a, out_m))
+                out_start = Vector((v_cout_start.co.x - v_cin_start.co.x, v_cout_start.co.y - v_cin_start.co.y, 0.0))
+                if out_start.length > 1e-6:
+                    out_start.normalize()
+                else:
+                    out_start = out_m
+                c_rings.append((v_wall_start, v_cout_start, v_cin_start, v_asph_start, co_a, out_start))
             elif m == rows:
-                c_rings.append((v_wall_end, v_cout_end, v_cin_end, v_asph_end, co_a, out_m))
+                out_end = Vector((v_cout_end.co.x - v_cin_end.co.x, v_cout_end.co.y - v_cin_end.co.y, 0.0))
+                if out_end.length > 1e-6:
+                    out_end.normalize()
+                else:
+                    out_end = out_m
+                c_rings.append((v_wall_end, v_cout_end, v_cin_end, v_asph_end, co_a, out_end))
             else:
                 p_out = co_a + out_m * curb_w
                 vw = road_bm.verts.new((p_out.x, p_out.y, co_a.z - skirt_depth))
@@ -905,20 +904,25 @@ def build_welded_t_junction(
     return apron_samples
 
 
-def create_smooth_terrain_material(xs, ys, z_grid):
+def create_smooth_terrain_material(xs, ys, z_grid, corridor_grid, cell_size=10.0):
     """
-    Generate a high-resolution 1024x1024 procedurally painted terrain texture (`TerrainSmoothMap.png`)
-    with soft organic color transitions, Forza Horizon-style countryside field patterns, a teal river
-    channel with sandy banks, and alpine mountain ridges.
+    Generate a high-resolution 1536x1536 procedurally painted multi-biome terrain texture (`TerrainSmoothMap.png`)
+    with exact per-pixel analytical shoreline evaluation (ZERO grid/sawtooth artifacts!) covering all 6 biomes:
+      1. NW Snowy Alpine Massif (+76m) & Granite Cliffs
+      2. NE Golden Autumn Highlands (+42.5m) & Vast Emerald Reservoir Lake + Mid-Lake Island
+      3. Far-East High Cliff Escarpment (+49m)
+      4. SW Monument Red-Rock Canyon & Desert Mesa (+28m)
+      5. Central Emerald Festival Valley & Winding River Gorge
+      6. Southern Golden Beaches, Western Cove, Turquoise Lagoon & Open Ocean Bay
     """
-    tex_w, tex_h = 1024, 1024
+    tex_w, tex_h = 1536, 1536
     min_x, max_x = xs[0], xs[-1]
     min_y, max_y = ys[0], ys[-1]
     span_x = max_x - min_x
     span_y = max_y - min_y
     nx, ny = len(xs), len(ys)
 
-    def sample_z_bilinear(wx, wy):
+    def sample_z_linear(wx, wy):
         fx = max(0.0, min(nx - 1.001, ((wx - min_x) / span_x) * (nx - 1)))
         fy = max(0.0, min(ny - 1.001, ((wy - min_y) / span_y) * (ny - 1)))
         ix, iy = int(fx), int(fy)
@@ -929,6 +933,24 @@ def create_smooth_terrain_material(xs, ys, z_grid):
         z11 = z_grid[iy + 1][ix + 1]
         return (1.0 - ty) * ((1.0 - tx) * z00 + tx * z10) + ty * ((1.0 - tx) * z01 + tx * z11)
 
+    def sample_z_smooth(wx, wy):
+        fx = max(0.0, min(nx - 1.001, ((wx - min_x) / span_x) * (nx - 1)))
+        fy = max(0.0, min(ny - 1.001, ((wy - min_y) / span_y) * (ny - 1)))
+        ix, iy = int(fx), int(fy)
+        tx, ty = fx - ix, fy - iy
+        sx = tx * tx * (3.0 - 2.0 * tx)
+        sy = ty * ty * (3.0 - 2.0 * ty)
+        z00 = z_grid[iy][ix]
+        z10 = z_grid[iy][ix + 1]
+        z01 = z_grid[iy + 1][ix]
+        z11 = z_grid[iy + 1][ix + 1]
+        z_interp = (1.0 - sy) * ((1.0 - sx) * z00 + sx * z10) + sy * ((1.0 - sx) * z01 + sx * z11)
+        if -12.5 < z_interp < 4.2:
+            z_exact, _ = compute_terrain_surface_z(wx, wy, corridor_grid, cell_size)
+            w_ex = smoothstep(4.2, 2.0, z_interp)
+            return (1.0 - w_ex) * z_interp + w_ex * z_exact
+        return z_interp
+
     px = [0.0] * (tex_w * tex_h * 4)
     for py in range(tex_h):
         v = py / float(tex_h - 1)
@@ -936,39 +958,110 @@ def create_smooth_terrain_material(xs, ys, z_grid):
         for px_i in range(tex_w):
             u = px_i / float(tex_w - 1)
             wx = min_x + u * span_x
-            tz = sample_z_bilinear(wx, wy)
-            tz_dx = sample_z_bilinear(wx + 4.0, wy) - tz
-            tz_dy = sample_z_bilinear(wx, wy + 4.0) - tz
-            slope = math.hypot(tz_dx, tz_dy) / 4.0
+            tz = sample_z_smooth(wx, wy)
+            # Central difference over full 18m span using linear height sampler
+            tz_dx = sample_z_linear(wx + 9.0, wy) - sample_z_linear(wx - 9.0, wy)
+            tz_dy = sample_z_linear(wx, wy + 9.0) - sample_z_linear(wx, wy - 9.0)
+            slope = math.hypot(tz_dx, tz_dy) / 18.0
 
-            field_u = math.sin(wx * 0.055 + wy * 0.025) * math.cos(wy * 0.05 - wx * 0.02)
-            micro = 0.018 * math.sin(wx * 0.30) * math.cos(wy * 0.30)
+            # Multi-scale organic FBM meadow waves
+            field_u = (
+                0.48 * math.sin(wx * 0.015 + wy * 0.011 + 0.6)
+                + 0.32 * math.sin(wx * 0.025 - wy * 0.022 + 1.9)
+                + 0.20 * math.cos(wx * 0.012 - wy * 0.031 - 0.8)
+            )
+            dappling = (
+                0.55 * math.sin(wx * 0.068 + wy * 0.052)
+                + 0.45 * math.cos(wx * 0.048 - wy * 0.075 + 1.2)
+            )
+            micro = 0.012 * math.sin(wx * 0.19 + wy * 0.15) + 0.010 * dappling
 
-            t_field = smoothstep(-0.45, 0.45, field_u)
-            r = 0.17 * (1.0 - t_field) + 0.25 * t_field + micro
-            g = 0.33 * (1.0 - t_field) + 0.41 * t_field + micro
-            b = 0.16 * (1.0 - t_field) + 0.19 * t_field + micro * 0.5
+            # Base lush vibrant emerald & sunlit clover countryside meadow
+            t_field = smoothstep(-0.55, 0.55, field_u)
+            r = 0.14 * (1.0 - t_field) + 0.21 * t_field + micro
+            g = 0.39 * (1.0 - t_field) + 0.48 * t_field + micro
+            b = 0.12 * (1.0 - t_field) + 0.16 * t_field + micro * 0.5
 
-            t_high = smoothstep(4.5, 18.0, tz)
-            r = r * (1.0 - t_high) + (0.24 + micro) * t_high
-            g = g * (1.0 - t_high) + (0.36 + micro) * t_high
-            b = b * (1.0 - t_high) + (0.18 + micro) * t_high
+            # Organic undulating biome boundaries (no straight latitude/longitude seams!)
+            wy_bio_w = wy + 26.0 * math.sin(wx * 0.014 + 0.5)
+            wx_bio_e = wx + 28.0 * math.cos(wy * 0.013 - 0.4)
+            wy_bio_n = wy + 26.0 * math.sin(wx * 0.012 + 1.1)
 
-            t_rock = max(smoothstep(0.62, 1.05, slope), smoothstep(22.0, 30.0, tz))
-            r = r * (1.0 - t_rock) + (0.29 + micro * 0.5) * t_rock
-            g = g * (1.0 - t_rock) + (0.32 + micro * 0.5) * t_rock
-            b = b * (1.0 - t_rock) + (0.34 + micro * 0.5) * t_rock
+            # 1. NE Golden Autumn Highlands (bold warm amber-gold-copper plateau)
+            t_autumn = smoothstep(85.0, 310.0, wx_bio_e) * smoothstep(75.0, 285.0, wy_bio_n) * smoothstep(-0.5, 6.0, tz)
+            if t_autumn > 0.0:
+                aut_var = 0.5 + 0.5 * math.sin(wx * 0.022 - wy * 0.019)
+                ar = 0.56 * (1.0 - aut_var) + 0.67 * aut_var + micro
+                ag = 0.36 * (1.0 - aut_var) + 0.44 * aut_var + micro * 0.8
+                ab = 0.08 * (1.0 - aut_var) + 0.12 * aut_var + micro * 0.4
+                r = r * (1.0 - 0.90 * t_autumn) + ar * (0.90 * t_autumn)
+                g = g * (1.0 - 0.90 * t_autumn) + ag * (0.90 * t_autumn)
+                b = b * (1.0 - 0.90 * t_autumn) + ab * (0.90 * t_autumn)
 
-            if tz < -1.5:
-                t_sand = smoothstep(-1.5, -4.2, tz)
-                r = r * (1.0 - t_sand) + 0.38 * t_sand
-                g = g * (1.0 - t_sand) + 0.34 * t_sand
-                b = b * (1.0 - t_sand) + 0.26 * t_sand
+            # 2. SW Monument Red-Rock Canyon & Desert Scrubland (organic boundary)
+            t_canyon = (
+                (1.0 - smoothstep(-320.0, -90.0, wx_bio_e))
+                * smoothstep(-580.0, -445.0, wy_bio_w)
+                * (1.0 - smoothstep(85.0, 215.0, wy_bio_w))
+            )
+            if t_canyon > 0.0:
+                sand_warm = 0.92 * t_canyon
+                r = r * (1.0 - sand_warm) + (0.66 + micro) * sand_warm
+                g = g * (1.0 - sand_warm) + (0.44 + micro * 0.8) * sand_warm
+                b = b * (1.0 - sand_warm) + (0.24 + micro * 0.5) * sand_warm
+                # Elevation strata bands & terracotta mesa cliffs
+                strata = 0.5 + 0.5 * math.sin(tz * 1.15)
+                c_rock = max(smoothstep(5.5, 15.0, tz), smoothstep(0.20, 0.52, slope)) * t_canyon
+                mesa_r = 0.71 + 0.06 * strata + micro
+                mesa_g = 0.31 + 0.05 * strata + micro * 0.7
+                mesa_b = 0.17 + 0.02 * strata + micro * 0.4
+                r = r * (1.0 - c_rock) + mesa_r * c_rock
+                g = g * (1.0 - c_rock) + mesa_g * c_rock
+                b = b * (1.0 - c_rock) + mesa_b * c_rock
 
-                t_water = smoothstep(-4.5, -7.2, tz)
-                r = r * (1.0 - t_water) + 0.10 * t_water
-                g = g * (1.0 - t_water) + 0.32 * t_water
-                b = b * (1.0 - t_water) + 0.42 * t_water
+            # 3. Highland alpine meadows (rich pine-forest deep green in NW foothills)
+            t_high = smoothstep(8.0, 27.0, tz) * (1.0 - 0.85 * t_autumn) * (1.0 - 0.88 * t_canyon)
+            r = r * (1.0 - t_high) + (0.16 + micro) * t_high
+            g = g * (1.0 - t_high) + (0.31 + micro) * t_high
+            b = b * (1.0 - t_high) + (0.17 + micro) * t_high
+
+            # 4. Steep granite/slate cliff faces & high mountain ridges (keep NE Autumn golden!)
+            t_rock = max(smoothstep(0.46, 0.86, slope), smoothstep(26.5, 36.0, tz)) * (1.0 - 0.75 * t_canyon) * (1.0 - 0.78 * t_autumn)
+            r = r * (1.0 - t_rock) + (0.34 + micro * 0.5) * t_rock
+            g = g * (1.0 - t_rock) + (0.37 + micro * 0.5) * t_rock
+            b = b * (1.0 - t_rock) + (0.42 + micro * 0.5) * t_rock
+
+            # 5. Smoothly-feathered Glacial Snow Cap on NW Alpine Massif (zero rectangular seam!)
+            snow_region = smoothstep(65.0, 185.0, wy_bio_w) * (1.0 - smoothstep(20.0, 175.0, wx_bio_e))
+            if snow_region > 0.0 and tz > 29.0:
+                t_snow = snow_region * smoothstep(29.0, 38.0, tz) * (1.0 - 0.40 * smoothstep(0.68, 1.25, slope))
+                r = r * (1.0 - t_snow) + (0.92 + micro * 0.3) * t_snow
+                g = g * (1.0 - t_snow) + (0.95 + micro * 0.3) * t_snow
+                b = b * (1.0 - t_snow) + (0.99 + micro * 0.3) * t_snow
+
+            # Smooth Golden Sandy Coastal Beaches, Lakeshores, and Crystal Turquoise-to-Sapphire Water Basins
+            t_coast = smoothstep(-475.0, -565.0, wy) * smoothstep(-620.0, -260.0, wx)
+            sand_top = -1.25 + 3.25 * t_coast
+            if tz < sand_top:
+                t_sand = smoothstep(sand_top, -3.15, tz)
+                sand_r = 0.34 + 0.37 * t_coast
+                sand_g = 0.35 + 0.27 * t_coast
+                sand_b = 0.26 + 0.19 * t_coast
+                r = r * (1.0 - t_sand) + (sand_r + micro * 0.4) * t_sand
+                g = g * (1.0 - t_sand) + (sand_g + micro * 0.4) * t_sand
+                b = b * (1.0 - t_sand) + (sand_b + micro * 0.4) * t_sand
+
+                # Crystal turquoise shallow water ring right inside water edge (tz < -3.15m)
+                t_shallows = smoothstep(-3.10, -4.85, tz)
+                r = r * (1.0 - t_shallows) + (0.12 + 0.01 * dappling) * t_shallows
+                g = g * (1.0 - t_shallows) + (0.48 + 0.02 * dappling) * t_shallows
+                b = b * (1.0 - t_shallows) + (0.58 + 0.02 * dappling) * t_shallows
+
+                # Rich deep azure / sapphire water core
+                t_deep = smoothstep(-4.85, -8.80, tz)
+                r = r * (1.0 - t_deep) + (0.06 + 0.008 * dappling) * t_deep
+                g = g * (1.0 - t_deep) + (0.31 + 0.015 * dappling) * t_deep
+                b = b * (1.0 - t_deep) + (0.48 + 0.015 * dappling) * t_deep
 
             idx = (py * tex_w + px_i) * 4
             px[idx] = max(0.0, min(1.0, r))
@@ -981,6 +1074,7 @@ def create_smooth_terrain_material(xs, ys, z_grid):
     img.pack()
 
     mat = bpy.data.materials.new("TerrainMaterial")
+    mat.use_nodes = True
     nt = mat.node_tree
     nt.nodes.clear()
     out_node = nt.nodes.new("ShaderNodeOutputMaterial")
@@ -1042,15 +1136,16 @@ def export_terrain_height_road_map(xs, ys, z_grid, ground_road_samples, output_d
             r = (val // 256) / 255.0
             g = (val % 256) / 255.0
 
-            # Road clearance and slope validity mask into B:
-            # Allows grass right up to 0.35m of curb (eliminates the empty cutout moat!)
-            if d_clear < 0.35 or slope >= 0.85 or tz < -2.2:
+            # Road clearance, snow/water exclusion, and slope validity mask into B:
+            min_grass_z = 2.0 if wy < -280.0 else -1.5
+            is_snow_cap = (wx < 175.0 and wy > 65.0 and tz > 29.5)
+            if d_clear < 0.75 or slope >= 0.85 or tz < min_grass_z or is_snow_cap or tz > 52.0:
                 b = 0.0
             else:
-                b = max(0.0, min(1.0, (d_clear - 0.35) / 1.0))
+                b = max(0.0, min(1.0, (d_clear - 0.75) / 1.0))
 
             # Meadow validity into A:
-            if slope < 0.85 and tz >= -2.2:
+            if slope < 0.85 and tz >= min_grass_z and not is_snow_cap and tz <= 52.0:
                 a = 1.0
             else:
                 a = 0.0
@@ -1070,38 +1165,12 @@ def export_terrain_height_road_map(xs, ys, z_grid, ground_road_samples, output_d
     print(f"Exported TerrainHeightRoadMap -> {out_path} ({os.path.getsize(out_path)} bytes)")
 
 
-def natural_terrain_z(wx, wy):
-    """
-    Sculpted natural terrain elevation function defining rolling hills, mountain peaks, and river gorge.
-    """
-    w_mtn = 26.0 * math.exp(-(((wx + 205.0) / 95.0) ** 2 + ((wy - 85.0) / 135.0) ** 2))
-    nw_peak = 22.0 * math.exp(-(((wx + 95.0) / 80.0) ** 2 + ((wy - 215.0) / 70.0) ** 2))
-    e_ridge = 13.5 * math.exp(-(((wx - 215.0) / 70.0) ** 2 + ((wy + 10.0) / 140.0) ** 2))
-
-    river_center_y = -164.0 + 8.0 * math.sin(wx / 55.0)
-    gorge_y = math.exp(-(((wy - river_center_y) / 24.0) ** 2))
-    gorge_x = smoothstep(-100.0, -55.0, wx) * (1.0 - smoothstep(105.0, 145.0, wx))
-    river_gorge = -9.5 * gorge_y * gorge_x
-
-    hills = 2.4 * math.sin(wx / 42.0) * math.cos(wy / 42.0) + 1.4 * math.sin((wx + wy) / 30.0)
-    rim = max(
-        0.0,
-        (-295.0 - wx) / 65.0,
-        (wx - 255.0) / 65.0,
-        (-225.0 - wy) / 65.0,
-        (wy - 265.0) / 65.0,
-    )
-    h_rim = 30.0 * (rim ** 1.5) if rim > 0.0 else 0.0
-
-    return w_mtn + nw_peak + e_ridge + river_gorge + hills + h_rim
-
-
-def build_corridor_grid(ground_road_samples, cell_size=10.0):
+def build_corridor_grid(ground_road_samples, cell_size=12.0):
     corridor_grid = {}
     for rx, ry, rz, rw in ground_road_samples:
         gx0 = int(math.floor(rx / cell_size))
         gy0 = int(math.floor(ry / cell_size))
-        rad_cells = int(math.ceil((rw + 52.0) / cell_size))
+        rad_cells = int(math.ceil((rw + 56.0) / cell_size))
         for dx in range(-rad_cells, rad_cells + 1):
             for dy in range(-rad_cells, rad_cells + 1):
                 key = (gx0 + dx, gy0 + dy)
@@ -1111,54 +1180,66 @@ def build_corridor_grid(ground_road_samples, cell_size=10.0):
     return corridor_grid
 
 
-def query_road_clearance(wx, wy, corridor_grid, cell_size=10.0):
+def query_road_clearance(wx, wy, corridor_grid, cell_size=12.0):
     gx0 = int(math.floor(wx / cell_size))
     gy0 = int(math.floor(wy / cell_size))
     pts = corridor_grid.get((gx0, gy0))
     if not pts:
         return 999.0, 0.0
     best_clearance = 999.0
-    weighted_z = 0.0
-    w_sum = 0.0
+    best_z = 0.0
+    d_list = []
     for rx, ry, rz, rw in pts:
         d_edge = max(0.0, math.hypot(wx - rx, wy - ry) - rw)
+        d_list.append((d_edge, rz))
         if d_edge < best_clearance:
             best_clearance = d_edge
-        w = 1.0 / ((d_edge + 1.5) ** 2.6)
-        weighted_z += w * rz
-        w_sum += w
-    return best_clearance, (weighted_z / w_sum if w_sum > 0.0 else 0.0)
+            best_z = rz
+    # Localize elevation weighting strictly to the nearest road level (+4.5m band)
+    # so nearby parallel switchbacks or higher embankments cannot pull terrain up under lower roads.
+    weighted_z = 0.0
+    w_sum = 0.0
+    cutoff = best_clearance + 4.5
+    for d_edge, rz in d_list:
+        if d_edge <= cutoff:
+            w = 1.0 / ((d_edge - best_clearance + 0.5) ** 4.0)
+            weighted_z += w * rz
+            w_sum += w
+    return best_clearance, (weighted_z / w_sum if w_sum > 0.0 else best_z)
 
 
-def compute_terrain_surface_z(wx, wy, corridor_grid, cell_size=10.0):
+def compute_terrain_surface_z(wx, wy, corridor_grid, cell_size=12.0):
     nat_z = natural_terrain_z(wx, wy)
     d_clear, z_road = query_road_clearance(wx, wy, corridor_grid, cell_size)
-    road_bed_z = z_road - 0.52
+    # Flush shoulder height: 0.34m below crown matches curb skirt bottom (-0.30m) snugly without giant gray cliff skirts
+    road_bed_z = z_road - 0.34
 
-    if d_clear <= 0.01:
+    if d_clear <= 2.4:
         tz = road_bed_z
-    elif d_clear < 46.0:
-        is_gorge = wy < -125.0 and -95.0 < wx < 135.0
-        blend_dist = 18.0 if is_gorge else 46.0
-        w = smoothstep(0.0, blend_dist, d_clear)
+    elif d_clear < 44.0:
+        # Smooth, organic bank transition next to water bodies so rivers, lakes, and lagoons stay deep and gentle!
+        t_water_prox = smoothstep(-0.5, -5.0, nat_z)
+        blend_dist = 44.0 * (1.0 - t_water_prox) + 20.0 * t_water_prox
+        w = smoothstep(2.4, blend_dist, d_clear)
         tz = (1.0 - w) * road_bed_z + w * nat_z
-        if d_clear < 11.0:
-            tz = min(tz, road_bed_z + 0.10 * (d_clear / 11.0))
+        if d_clear < 12.0:
+            tz = min(tz, road_bed_z + 0.14 * ((d_clear - 2.4) / 9.6))
     else:
         tz = nat_z
     return tz, d_clear
 
 
-def build_smooth_terrain(ground_road_samples):
+def build_smooth_terrain(ground_road_samples, road_guard_pts=None):
     """
-    Build an optimized smooth-shaded 3D terrain mesh (`Circuit_Terrain`) at 10m grid step
-    (64% fewer triangles for high FPS while preserving smooth normals and exact road clearance!).
+    Build a high-resolution smooth-shaded 3D terrain mesh (`Circuit_Terrain`) at 8m grid step
+    across the expanded 1960m x 1840m world with 2-pass Laplacian smoothing, shoulder re-clamp,
+    exact barycentric anti-clip guard over all ground roads, and guaranteed upward (+Z) face normals!
     """
-    cell_size = 10.0
+    cell_size = 12.0
     corridor_grid = build_corridor_grid(ground_road_samples, cell_size)
 
-    xs = [float(x) for x in range(-360, 325, 10)]
-    ys = [float(y) for y in range(-280, 335, 10)]
+    xs = [float(x) for x in range(int(TERRAIN_MIN_X), int(TERRAIN_MAX_X) + 1, int(TERRAIN_GRID_STEP))]
+    ys = [float(y) for y in range(int(TERRAIN_MIN_Y), int(TERRAIN_MAX_Y) + 1, int(TERRAIN_GRID_STEP))]
     nx, ny = len(xs), len(ys)
     min_x, max_x = xs[0], xs[-1]
     min_y, max_y = ys[0], ys[-1]
@@ -1166,15 +1247,90 @@ def build_smooth_terrain(ground_road_samples):
     span_y = max_y - min_y
 
     z_grid = [[0.0] * nx for _ in range(ny)]
+    clr_grid = [[999.0] * nx for _ in range(ny)]
+    znear_grid = [[0.0] * nx for _ in range(ny)]
+    for j, wy in enumerate(ys):
+        for i, wx in enumerate(xs):
+            d_clear, z_road = query_road_clearance(wx, wy, corridor_grid, cell_size)
+            tz, _ = compute_terrain_surface_z(wx, wy, corridor_grid, cell_size)
+            z_grid[j][i] = tz
+            clr_grid[j][i] = d_clear
+            znear_grid[j][i] = z_road
+
+    # 2 passes of Laplacian smoothing outside road corridors so shorelines and hillsides are butter-smooth
+    for _ in range(2):
+        next_z = [row[:] for row in z_grid]
+        for j in range(1, ny - 1):
+            for i in range(1, nx - 1):
+                d_c = clr_grid[j][i]
+                if d_c > 3.0:
+                    w_s = smoothstep(3.0, 11.0, d_c) * 0.42
+                    avg_nb = 0.25 * (z_grid[j - 1][i] + z_grid[j + 1][i] + z_grid[j][i - 1] + z_grid[j][i + 1])
+                    next_z[j][i] = (1.0 - w_s) * z_grid[j][i] + w_s * avg_nb
+        z_grid = next_z
+
+    # Re-clamp roadside shoulder vertices after Laplacian smoothing so slopes stay snug without protruding
+    for j in range(ny):
+        for i in range(nx):
+            d_c = clr_grid[j][i]
+            if d_c < 10.0:
+                z_near = znear_grid[j][i]
+                max_z = z_near - 0.34 + 0.14 * smoothstep(2.0, 10.0, d_c)
+                if z_grid[j][i] > max_z:
+                    z_grid[j][i] = max_z
+                if d_c <= 2.4:
+                    min_z = z_near - 0.48
+                    if z_grid[j][i] < min_z:
+                        z_grid[j][i] = min_z
+
+    # Exact barycentric triangle anti-clip guard across every ground road surface and T-junction apron
+    guard_pts = list(road_guard_pts) if road_guard_pts else []
+    for rx, ry, rz, rw in ground_road_samples:
+        guard_pts.append((rx, ry, rz))
+        if rw > 9.0:
+            r_off = rw * 0.65
+            for ox, oy in ((-r_off, 0.0), (r_off, 0.0), (0.0, -r_off), (0.0, r_off),
+                           (-r_off * 0.65, -r_off * 0.65), (r_off * 0.65, -r_off * 0.65),
+                           (-r_off * 0.65, r_off * 0.65), (r_off * 0.65, r_off * 0.65)):
+                guard_pts.append((rx + ox, ry + oy, rz))
+
+    grid_step = float(TERRAIN_GRID_STEP)
+    for _pass in range(3):
+        for px, py, pz in guard_pts:
+            fi = (px - min_x) / grid_step
+            fj = (py - min_y) / grid_step
+            i = int(math.floor(fi))
+            j = int(math.floor(fj))
+            if i < 0 or i >= nx - 1 or j < 0 or j >= ny - 1:
+                continue
+            u = fi - i
+            v = fj - j
+            z00 = z_grid[j][i]
+            z10 = z_grid[j][i + 1]
+            z11 = z_grid[j + 1][i + 1]
+            z01 = z_grid[j + 1][i]
+            if u >= v:
+                tz = z00 * (1.0 - u) + z10 * (u - v) + z11 * v
+                if tz > pz - 0.14:
+                    diff = tz - (pz - 0.14)
+                    z_grid[j][i] -= diff
+                    z_grid[j][i + 1] -= diff
+                    z_grid[j + 1][i + 1] -= diff
+            else:
+                tz = z00 * (1.0 - v) + z11 * u + z01 * (v - u)
+                if tz > pz - 0.14:
+                    diff = tz - (pz - 0.14)
+                    z_grid[j][i] -= diff
+                    z_grid[j + 1][i + 1] -= diff
+                    z_grid[j + 1][i] -= diff
+
     bm = bmesh.new()
     uv_lay = bm.loops.layers.uv.new("UVMap")
     v_grid = [[None] * nx for _ in range(ny)]
 
     for j, wy in enumerate(ys):
         for i, wx in enumerate(xs):
-            tz, _ = compute_terrain_surface_z(wx, wy, corridor_grid, cell_size)
-            z_grid[j][i] = tz
-            v_grid[j][i] = bm.verts.new((wx, wy, tz))
+            v_grid[j][i] = bm.verts.new((wx, wy, z_grid[j][i]))
 
     for j in range(ny - 1):
         for i in range(nx - 1):
@@ -1200,13 +1356,20 @@ def build_smooth_terrain(ground_road_samples):
             f2.loops[1][uv_lay].uv = (u1, v1)
             f2.loops[2][uv_lay].uv = (u0, v1)
 
-    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    # CRITICAL: Guarantee 100% of terrain faces point UPWARD (+Z in Blender -> +Y in Three.js)
+    # so directional sunlight illuminates hills and Three.js grass placement never rejects triangles!
+    bm.normal_update()
+    for f in bm.faces:
+        if f.normal.z < 0.0:
+            f.normal_flip()
+    bm.normal_update()
+
     terrain_me = bpy.data.meshes.new("Circuit_Terrain_Mesh")
     bm.to_mesh(terrain_me)
     bm.free()
     terrain_me.update()
 
-    terrain_mat = create_smooth_terrain_material(xs, ys, z_grid)
+    terrain_mat = create_smooth_terrain_material(xs, ys, z_grid, corridor_grid, cell_size)
     terrain_me.materials.append(terrain_mat)
 
     terrain_obj = bpy.data.objects.new("Circuit_Terrain", terrain_me)
@@ -1214,33 +1377,106 @@ def build_smooth_terrain(ground_road_samples):
     return terrain_obj, xs, ys, z_grid
 
 
+def build_water_surface(xs, ys, z_grid):
+    """
+    Build a 3D water surface mesh (`Circuit_Water`) at `Z = -3.25m` with normalized water depth
+    encoded into `UVMap.x` (`u_depth = clamp((water_z - tz) / 3.2, 0.0, 1.0)`) so Three.js can
+    smoothly feather shoreline alpha to 0.0 without any jagged polygon intersection!
+    """
+    water_z = -3.25
+    nx, ny = len(xs), len(ys)
+    bm = bmesh.new()
+    uv_lay = bm.loops.layers.uv.new("UVMap")
+    v_grid = [[None] * nx for _ in range(ny)]
+    d_grid = [[0.0] * nx for _ in range(ny)]
+
+    for j in range(ny):
+        for i in range(nx):
+            d_grid[j][i] = max(0.0, min(1.0, (water_z - z_grid[j][i]) / 3.2))
+
+    for j in range(ny - 1):
+        for i in range(nx - 1):
+            if min(z_grid[j][i], z_grid[j][i + 1], z_grid[j + 1][i + 1], z_grid[j + 1][i]) < water_z + 0.6:
+                for jj, ii in ((j, i), (j, i + 1), (j + 1, i + 1), (j + 1, i)):
+                    if v_grid[jj][ii] is None:
+                        v_grid[jj][ii] = bm.verts.new((xs[ii], ys[jj], water_z))
+                v00 = v_grid[j][i]
+                v10 = v_grid[j][i + 1]
+                v11 = v_grid[j + 1][i + 1]
+                v01 = v_grid[j + 1][i]
+                try:
+                    f = bm.faces.new((v00, v10, v11, v01))
+                    f.smooth = True
+                    f.loops[0][uv_lay].uv = (d_grid[j][i], 0.0)
+                    f.loops[1][uv_lay].uv = (d_grid[j][i + 1], 0.0)
+                    f.loops[2][uv_lay].uv = (d_grid[j + 1][i + 1], 1.0)
+                    f.loops[3][uv_lay].uv = (d_grid[j + 1][i], 1.0)
+                except ValueError:
+                    pass
+
+    bm.normal_update()
+    for f in bm.faces:
+        if f.normal.z < 0.0:
+            f.normal_flip()
+    bm.normal_update()
+
+    water_me = bpy.data.meshes.new("Circuit_Water_Mesh")
+    bm.to_mesh(water_me)
+    bm.free()
+    water_me.update()
+
+    w_mat = bpy.data.materials.new("WaterMaterial")
+    w_mat.use_nodes = True
+    nt = w_mat.node_tree
+    nt.nodes.clear()
+    out_node = nt.nodes.new("ShaderNodeOutputMaterial")
+    bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
+    bsdf.inputs["Base Color"].default_value = (0.07, 0.36, 0.49, 1.0)
+    bsdf.inputs["Roughness"].default_value = 0.08
+    bsdf.inputs["Metallic"].default_value = 0.12
+    nt.links.new(bsdf.outputs["BSDF"], out_node.inputs["Surface"])
+    water_me.materials.append(w_mat)
+
+    water_obj = bpy.data.objects.new("Circuit_Water", water_me)
+    bpy.context.scene.collection.objects.link(water_obj)
+    return water_obj
+
+
 def populate_nature_props(ground_road_samples, project_root):
     """
-    Populates stylized low-poly trees, rocks, and bushes from `raw_assets/Ultimate Nature Pack by Quaternius/FBX`
-    across the terrain ridges, groves, canyon walls, and meadows.
-    Guarantees strict road clearance (>= 5.5m for rocks, >= 6.8m for trees) so no prop ever clips roads.
-    Merged into `Circuit_Trees`, `Circuit_Rocks`, and `Circuit_Vegetation` for 3 total draw calls.
+    Populates stylized low-poly trees, snow pines, palm trees, willows, cacti, rocks, and bushes
+    from `raw_assets/Ultimate Nature Pack by Quaternius/FBX` across all 6 expanded biomes.
+    Guarantees strict road, bridge, and tunnel clearance so no prop ever clips drivable surfaces.
     """
     fbx_dir = os.path.join(project_root, "raw_assets", "Ultimate Nature Pack by Quaternius", "FBX")
     if not os.path.exists(fbx_dir):
         print("Warning: Quaternius Nature Pack FBX directory not found:", fbx_dir)
-        return None, None, None
+        return []
 
-    cell_size = 10.0
+    cell_size = 12.0
     corridor_grid = build_corridor_grid(ground_road_samples, cell_size)
 
-    # 1. Load template models
     models_to_load = {
         "pine1": "PineTree_1.fbx",
+        "pine2": "PineTree_2.fbx",
+        "pine_snow1": "PineTree_Snow_1.fbx",
+        "pine_snow2": "PineTree_Snow_2.fbx",
         "pine_autumn": "PineTree_Autumn_1.fbx",
         "common1": "CommonTree_1.fbx",
         "common2": "CommonTree_2.fbx",
         "autumn1": "CommonTree_Autumn_1.fbx",
         "autumn2": "CommonTree_Autumn_2.fbx",
         "birch1": "BirchTree_1.fbx",
+        "birch_autumn": "BirchTree_Autumn_1.fbx",
+        "willow1": "Willow_1.fbx",
+        "willow_autumn": "Willow_Autumn_1.fbx",
+        "palm1": "PalmTree_1.fbx",
+        "palm2": "PalmTree_2.fbx",
+        "cactus1": "Cactus_1.fbx",
         "rock1": "Rock_1.fbx",
         "rock2": "Rock_2.fbx",
         "rock3": "Rock_3.fbx",
+        "rock_snow1": "Rock_Snow_1.fbx",
         "rock_moss1": "Rock_Moss_1.fbx",
         "rock_moss2": "Rock_Moss_2.fbx",
         "bush1": "Bush_1.fbx",
@@ -1249,193 +1485,316 @@ def populate_nature_props(ground_road_samples, project_root):
         "woodlog": "WoodLog.fbx",
     }
 
+    # Shared vibrant opaque materials (FBX imports default to Alpha=0.0 and overly dark colors in Blender 5.2!)
+    palette_overrides = {
+        "Green": (0.17, 0.43, 0.13, 1.0),
+        "DarkGreen": (0.10, 0.30, 0.10, 1.0),
+        "Orange": (0.74, 0.31, 0.08, 1.0),
+        "LightOrange": (0.86, 0.55, 0.13, 1.0),
+        "Wood": (0.26, 0.15, 0.09, 1.0),
+        "White": (0.86, 0.84, 0.79, 1.0),
+        "Black": (0.12, 0.11, 0.10, 1.0),
+        "Rock": (0.35, 0.37, 0.40, 1.0),
+        "Snow": (0.92, 0.95, 0.99, 1.0),
+        "Berry": (0.78, 0.14, 0.18, 1.0),
+        "Mushroom_Top": (0.76, 0.22, 0.15, 1.0),
+        "Mushroom_Bottom": (0.84, 0.79, 0.70, 1.0),
+    }
+    shared_nature_mats = {}
+
+    def get_clean_nature_mat(raw_mat):
+        if not raw_mat:
+            return None
+        base_name = raw_mat.name.split(".")[0]
+        if base_name in shared_nature_mats:
+            return shared_nature_mats[base_name]
+        m = bpy.data.materials.new(f"Nature_{base_name}")
+        m.use_nodes = True
+        nt = m.node_tree
+        nt.nodes.clear()
+        out_n = nt.nodes.new("ShaderNodeOutputMaterial")
+        bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
+        rgba = palette_overrides.get(base_name, (0.22, 0.40, 0.16, 1.0))
+        bsdf.inputs["Base Color"].default_value = rgba
+        bsdf.inputs["Alpha"].default_value = 1.0
+        bsdf.inputs["Roughness"].default_value = 0.80 if "Rock" not in base_name else 0.88
+        bsdf.inputs["Metallic"].default_value = 0.0
+        nt.links.new(bsdf.outputs["BSDF"], out_n.inputs["Surface"])
+        shared_nature_mats[base_name] = m
+        return m
+
     templates = {}
     for key, fbx_name in models_to_load.items():
         fbx_path = os.path.join(fbx_dir, fbx_name)
         if os.path.exists(fbx_path):
             bpy.ops.import_scene.fbx(filepath=fbx_path)
             obj = bpy.context.selected_objects[0]
-            for col in list(obj.users_collection):
-                col.objects.unlink(obj)
+            # Replace duplicate/transparent FBX materials with clean opaque shared materials
+            for slot_i in range(len(obj.data.materials)):
+                obj.data.materials[slot_i] = get_clean_nature_mat(obj.data.materials[slot_i])
+            # Normalize template origin transform so GLTF primitives align with Three.js InstancedMesh
+            obj.location = (0.0, 0.0, 0.0)
+            obj.rotation_euler = (0.0, 0.0, 0.0)
+            obj.scale = (1.0, 1.0, 1.0)
+            # Lightly decimate high-vertex templates to keep GPU instanced batches super fast
+            if len(obj.data.vertices) > 280:
+                bpy.context.view_layer.objects.active = obj
+                mod = obj.modifiers.new(name="DecimateLowPoly", type="DECIMATE")
+                mod.ratio = 0.34
+                bpy.ops.object.modifier_apply(modifier=mod.name)
+            obj.name = f"NatTmpl_{key}"
+            obj.data.name = f"NatTmpl_{key}_Mesh"
             templates[key] = obj
 
     random.seed(42)
-
     obstacles = []
+    nature_instances = []
 
-    tree_instances = []
-    dummy_trees = bpy.data.objects.new("Circuit_Trees", bpy.data.meshes.new("Circuit_Trees_Mesh"))
-    bpy.context.scene.collection.objects.link(dummy_trees)
-    tree_instances.append(dummy_trees)
+    def is_in_structure_exclusion(wx, wy):
+        # Exclude all bridges, viaducts, and tunnel portals across the expanded 17 km network
+        if -82.0 <= wx <= 82.0 and 112.0 <= wy <= 188.0:
+            return True  # Overpass Bridge 1 over Main Highway
+        if 282.0 <= wx <= 452.0 and -145.0 <= wy <= -12.0:
+            return True  # Overpass Bridge 2 over River Gorge
+        if 160.0 <= wx <= 425.0 and -595.0 <= wy <= -505.0:
+            return True  # Southern Ocean Inlet Suspension Bridge
+        if -788.0 <= wx <= -675.0 and -265.0 <= wy <= -122.0:
+            return True  # Red-Rock Canyon Viaduct Bridge (hwy_west over canyon_cut)
+        if 792.0 <= wx <= 895.0 and -248.0 <= wy <= 172.0:
+            return True  # East Cliffside Skybridge Viaduct
+        if 552.0 <= wx <= 705.0 and 388.0 <= wy <= 532.0:
+            return True  # Autumn Highland Skybridge Bridge
+        if -290.0 <= wx <= -15.0 and 478.0 <= wy <= 585.0:
+            return True  # Alpine Summit Tunnel & Rock Overburden
+        return False
 
-    rock_instances = []
-    dummy_rocks = bpy.data.objects.new("Circuit_Rocks", bpy.data.meshes.new("Circuit_Rocks_Mesh"))
-    bpy.context.scene.collection.objects.link(dummy_rocks)
-    rock_instances.append(dummy_rocks)
-
-    veg_instances = []
-    dummy_veg = bpy.data.objects.new("Circuit_Vegetation", bpy.data.meshes.new("Circuit_Vegetation_Mesh"))
-    bpy.context.scene.collection.objects.link(dummy_veg)
-    veg_instances.append(dummy_veg)
-
-    # Helper to instantiate a template
-    def spawn_prop(tmpl_key, wx, wy, tz, scale, rot_z, category_list):
-        tmpl = templates.get(tmpl_key)
-        if not tmpl:
+    def spawn_prop(tmpl_key, wx, wy, tz, scale, rot_z, _category_list=None):
+        if tmpl_key not in templates:
             return None
-        cp = tmpl.copy()
-        cp.data = tmpl.data.copy()
-        cp.location = (wx, wy, tz)
-        cp.rotation_euler = (0, 0, rot_z)
-        cp.scale = (scale, scale, scale)
-        bpy.context.scene.collection.objects.link(cp)
-        category_list.append(cp)
-        return cp
+        # Store directly in Three.js Y-up coordinates: [key, x, y=tz, z=-wy, scale, rotY]
+        nature_instances.append([
+            tmpl_key,
+            round(wx, 2),
+            round(tz, 2),
+            round(-wy, 2),
+            round(scale, 2),
+            round(rot_z, 3),
+        ])
+        return True
 
-    # A. Alpine Pine Groves on Western Mountain, NW Peak, and Eastern Ridge
-    pine_clusters = [
-        (-210, 85, 14, 24.0), (-180, 140, 12, 22.0), (-240, 50, 12, 25.0),
-        (-95, 215, 15, 22.0), (-60, 245, 12, 20.0), (-130, 230, 10, 22.0),
-        (215, 20, 12, 22.0), (235, -30, 10, 20.0), (195, 80, 10, 22.0),
-        (-270, -80, 12, 25.0), (160, 200, 10, 20.0), (240, 140, 10, 22.0)
-    ]
-    for cx, cy, count, radius in pine_clusters:
-        for _ in range(count):
-            ox = random.gauss(0, radius * 0.45)
-            oy = random.gauss(0, radius * 0.45)
-            wx, wy = cx + ox, cy + oy
-            # Strict flyover bridge deck exclusion (avoids canopies poking through bridges)
-            if -75.0 <= wx <= 75.0 and 8.0 <= wy <= 40.0:
-                continue
-            if -35.0 <= wx <= 75.0 and -180.0 <= wy <= -145.0:
-                continue
-            tz, d_clear = compute_terrain_surface_z(wx, wy, corridor_grid, cell_size)
-            if d_clear < 7.2 or tz < 5.0:
-                continue
-            tmpl_key = "pine_autumn" if random.random() < 0.25 else "pine1"
-            sc = random.uniform(2.5, 4.0)
-            spawn_prop(tmpl_key, wx, wy, tz, sc, random.uniform(0, math.pi * 2), tree_instances)
+    tree_grid = {}
+    rock_grid = {}
+    PROP_CELL = 16.0
 
-    # B. Deciduous Broadleaf & Golden Autumn Trees in Meadow Groves (Matching Reference Images 1, 2, 3)
-    meadow_clusters = [
-        # Roadside groves along Start Straight & Highway:
-        (26, 15, 7, 10.0), (28, 55, 8, 12.0), (28, -35, 7, 10.0), (32, -70, 8, 12.0),
-        (-26, 15, 7, 10.0), (-28, 55, 8, 12.0), (-28, -35, 7, 10.0), (-32, -70, 8, 12.0),
-        # Infield rolling meadows & valley groves:
-        (-50, -40, 10, 18.0), (45, 35, 12, 18.0), (85, -65, 10, 18.0),
-        (-115, 30, 10, 18.0), (-40, 125, 10, 18.0), (65, 115, 11, 18.0),
-        (125, 25, 10, 18.0), (-165, -30, 10, 18.0), (175, -100, 10, 18.0),
-        (-85, -110, 9, 18.0), (15, -115, 9, 16.0), (105, 125, 10, 18.0),
-        (-75, -135, 8, 15.0), (55, -130, 8, 15.0), (110, -135, 8, 15.0)
-    ]
-    for cx, cy, count, radius in meadow_clusters:
-        for _ in range(count):
-            ox = random.gauss(0, radius * 0.45)
-            oy = random.gauss(0, radius * 0.45)
-            wx, wy = cx + ox, cy + oy
-            # Strict flyover bridge deck exclusion (avoids canopies poking through bridges)
-            if -75.0 <= wx <= 75.0 and 8.0 <= wy <= 40.0:
-                continue
-            if -35.0 <= wx <= 75.0 and -180.0 <= wy <= -145.0:
-                continue
-            tz, d_clear = compute_terrain_surface_z(wx, wy, corridor_grid, cell_size)
-            if d_clear < 6.8 or tz < -2.0:
-                continue
-            r = random.random()
-            if cy < -120.0 and r < 0.65:
-                tmpl_key = "birch1"
-            elif r < 0.45:
-                tmpl_key = "autumn1" if random.random() < 0.5 else "autumn2"
-            else:
-                tmpl_key = "common1" if random.random() < 0.5 else "common2"
-            sc = random.uniform(2.7, 4.2)
-            spawn_prop(tmpl_key, wx, wy, tz, sc, random.uniform(0, math.pi * 2), tree_instances)
+    def _register_cell(grid, wx, wy):
+        key = (int(math.floor(wx / PROP_CELL)), int(math.floor(wy / PROP_CELL)))
+        if key not in grid:
+            grid[key] = []
+        grid[key].append((wx, wy))
 
-    # C. Boulders & Rocks with Bushes, Ferns and Logs (Matching Reference Images 1, 2, 4)
-    rock_clusters = [
-        # Prominent roadside granite boulders along Highway straights & curves:
-        (22, 5, 5, 6.0), (23, 40, 5, 7.0), (24, -20, 5, 6.0), (24, -55, 5, 7.0),
-        (-22, 5, 5, 6.0), (-23, 40, 5, 7.0), (-24, -20, 5, 6.0), (-24, -55, 5, 7.0),
-        # Meadow boulders & mountain rocks:
-        (-35, 20, 6, 8.0), (30, 50, 5, 8.0), (-85, 65, 6, 9.0), (60, -30, 5, 8.0),
-        (-135, 85, 6, 9.0), (95, 75, 5, 8.0), (-40, -75, 5, 8.0), (135, -45, 5, 8.0),
-        (-165, -150, 7, 10.0), (155, -155, 7, 10.0), (-65, -165, 6, 9.0), (65, -165, 6, 9.0),
-        (-225, 45, 6, 10.0), (185, 85, 5, 9.0), (-105, 175, 6, 9.0), (85, 195, 5, 9.0),
-        (-20, 95, 5, 8.0), (15, -45, 4, 6.0), (-150, -70, 5, 8.0), (170, 10, 5, 8.0)
-    ]
-    for cx, cy, count, radius in rock_clusters:
-        for i in range(count):
-            ox = random.gauss(0, radius * 0.40)
-            oy = random.gauss(0, radius * 0.40)
-            wx, wy = cx + ox, cy + oy
-            tz, d_clear = compute_terrain_surface_z(wx, wy, corridor_grid, cell_size)
-            if d_clear < 5.5 or tz < -2.2:
-                continue
-            tmpl_key = random.choice(["rock1", "rock2", "rock3", "rock_moss1", "rock_moss2"])
-            sc = random.uniform(1.8, 3.6)
-            rock_z = tz - 0.12 * sc
-            spawn_prop(tmpl_key, wx, wy, rock_z, sc, random.uniform(0, math.pi * 2), rock_instances)
+    def _has_nearby(grid, wx, wy, min_dist):
+        gx0 = int(math.floor(wx / PROP_CELL))
+        gy0 = int(math.floor(wy / PROP_CELL))
+        r_cells = int(math.ceil(min_dist / PROP_CELL))
+        for dx in range(-r_cells, r_cells + 1):
+            for dy in range(-r_cells, r_cells + 1):
+                for tx, ty in grid.get((gx0 + dx, gy0 + dy), ()):
+                    if math.hypot(wx - tx, wy - ty) < min_dist:
+                        return True
+        return False
 
-            rock_radius = sc * 1.35
+    def can_place_tree(wx, wy, min_dist=13.5):
+        return not _has_nearby(tree_grid, wx, wy, min_dist)
+
+    def can_place_rock(wx, wy, min_dist=14.0):
+        if _has_nearby(rock_grid, wx, wy, min_dist):
+            return False
+        if _has_nearby(tree_grid, wx, wy, 6.0):
+            return False
+        return True
+
+    def pick_biome_tree(wx, wy, tz):
+        # 1. Broad High Alpine Snow Summit (NW quadrant above snowline 29.5m)
+        if tz > 29.5 and wy > 140.0 and wx < 130.0:
+            return "pine_snow1" if random.random() < 0.52 else "pine_snow2"
+        # 2. Southern Golden Beaches, Lagoon & Palm Peninsula
+        if wy < -485.0 and tz < 15.0:
+            return "palm1" if random.random() < 0.52 else "palm2"
+        # 3. Western Alpine Mountain Touge & Caldera Conifers
+        if wx < -200.0 and wy > 120.0:
+            return random.choice(["pine1", "pine2", "pine1", "pine1"])
+        # 4. NE Golden Autumn Highlands (100% warm golden/copper autumn species; check BEFORE east cliff!)
+        if wx > 135.0 and wy > 115.0:
+            return random.choice(["autumn1", "autumn2", "birch_autumn", "pine_autumn"])
+        # 5. Far-East High Cliff Escarpment (south of autumn highlands)
+        if wx > 650.0 and wy <= 140.0 and tz > 16.0:
+            return random.choice(["pine1", "pine2", "birch1"])
+        # 6. Emerald Reservoir Lake, Forested Island & Winding River Gorge Shorelines
+        if wx > 190.0 and -485.0 < wy < 250.0 and tz < 8.5:
+            return random.choice(["willow1", "willow_autumn", "birch1"])
+        # 7. Central Emerald Valley & Rolling Countryside
+        return random.choice(["common1", "common2", "birch1", "pine1"])
+
+    def try_place_tree(wx, wy, min_road_clr=8.2, min_tree_spacing=13.5):
+        if not (-875.0 <= wx <= 875.0 and -795.0 <= wy <= 795.0):
+            return False
+        if is_in_structure_exclusion(wx, wy):
+            return False
+        # Leave SW Red-Rock Desert Canyon open for cacti & desert rock monoliths
+        if wx < -115.0 and -560.0 < wy < 220.0 and random.random() < 0.88:
+            return False
+        if not can_place_tree(wx, wy, min_tree_spacing):
+            return False
+        tz, d_clear = compute_terrain_surface_z(wx, wy, corridor_grid, cell_size)
+        min_z = 2.0 if wy < -510.0 else -0.35
+        if d_clear < min_road_clr or tz < min_z or tz > 66.0:
+            return False
+        tz_dx, _ = compute_terrain_surface_z(wx + 3.0, wy, corridor_grid, cell_size)
+        tz_dy, _ = compute_terrain_surface_z(wx, wy + 3.0, corridor_grid, cell_size)
+        slope = math.hypot(tz_dx - tz, tz_dy - tz) / 3.0
+        if slope > 0.72:
+            return False
+
+        tmpl_key = pick_biome_tree(wx, wy, tz)
+        sc = random.uniform(2.8, 4.4)
+        spawn_prop(tmpl_key, wx, wy, tz - 0.10, sc, random.uniform(0, math.pi * 2))
+        _register_cell(tree_grid, wx, wy)
+        obstacles.append({
+            "x": round(wx, 2),
+            "y": round(wy, 2),
+            "z": round(tz, 2),
+            "r": round(sc * 0.45, 2),
+            "type": "tree"
+        })
+        return True
+
+    # PASS 1: Roadside Scenic Tree Framing along all 11 routes (Poisson-disc spaced, zero overlap)
+    for idx in range(0, len(ground_road_samples), 4):
+        rx, ry, rz, rw = ground_road_samples[idx]
+        nxt = ground_road_samples[(idx + 1) % len(ground_road_samples)]
+        dx, dy = nxt[0] - rx, nxt[1] - ry
+        seg_l = math.hypot(dx, dy)
+        if seg_l < 1e-4:
+            continue
+        nx_perp, ny_perp = dy / seg_l, -dx / seg_l
+        for side in (-1.0, 1.0):
+            if random.random() < 0.56:
+                lat = rw + random.uniform(8.8, 28.0)
+                jx = random.uniform(-3.5, 3.5)
+                jy = random.uniform(-3.5, 3.5)
+                wx = rx + nx_perp * side * lat + jx
+                wy = ry + ny_perp * side * lat + jy
+                try_place_tree(wx, wy, min_road_clr=8.0, min_tree_spacing=14.0)
+
+    # PASS 2: Natural Forest Groves, Alpine Forests & Mid-Lake Island Canopies (Blue-Noise Grid)
+    for gx in range(-850, 860, 26):
+        for gy in range(-765, 775, 26):
+            wx = gx + random.uniform(-9.5, 9.5)
+            wy = gy + random.uniform(-9.5, 9.5)
+            grove_wave = math.sin(wx * 0.018 + wy * 0.014) + 0.5 * math.cos(wx * 0.032 - wy * 0.026)
+            if grove_wave < -0.10 and random.random() < 0.72:
+                continue
+            try_place_tree(wx, wy, min_road_clr=9.2, min_tree_spacing=15.5)
+
+    # PASS 3: SW Monument Red-Rock Desert Cacti, Scrub & Sandstone Monolith Boulders
+    for _ in range(160):
+        wx = random.uniform(-855.0, -120.0)
+        wy = random.uniform(-540.0, 210.0)
+        if is_in_structure_exclusion(wx, wy):
+            continue
+        tz, d_clear = compute_terrain_surface_z(wx, wy, corridor_grid, cell_size)
+        if 7.5 <= d_clear <= 140.0 and 0.2 <= tz <= 25.5 and can_place_tree(wx, wy, 9.0):
+            sc = random.uniform(2.5, 3.9)
+            spawn_prop("cactus1", wx, wy, tz, sc, random.uniform(0, math.pi * 2))
+            _register_cell(tree_grid, wx, wy)
             obstacles.append({
                 "x": round(wx, 2),
                 "y": round(wy, 2),
-                "z": round(rock_z, 2),
-                "r": round(rock_radius, 2),
-                "type": "rock"
+                "z": round(tz, 2),
+                "r": round(sc * 0.55, 2),
+                "type": "bush"
             })
-
-            # Accompanying bushes/ferns/logs around boulders (Matching Image 2 & 4)
-            if i == 0 or random.random() < 0.65:
-                v_ox = random.uniform(1.2, 2.5) * (1 if random.random() < 0.5 else -1)
-                v_oy = random.uniform(1.2, 2.5) * (1 if random.random() < 0.5 else -1)
-                v_wx, v_wy = wx + v_ox, wy + v_oy
-                v_tz, v_clear = compute_terrain_surface_z(v_wx, v_wy, corridor_grid, cell_size)
-                if v_clear >= 4.5 and v_tz >= -2.0:
-                    v_key = random.choice(["bush1", "bush_berry", "plant1", "woodlog"])
-                    v_sc = random.uniform(1.2, 2.0)
-                    spawn_prop(v_key, v_wx, v_wy, v_tz, v_sc, random.uniform(0, math.pi * 2), veg_instances)
-
-                    v_radius = v_sc * 1.15
+            # Scatter occasional red-rock bluff boulders alongside cacti
+            if random.random() < 0.30 and can_place_rock(wx + 8.0, wy - 6.0, 16.0):
+                bwx = wx + random.uniform(6.0, 12.0)
+                bwy = wy + random.uniform(-10.0, 10.0)
+                btz, bd_clr = compute_terrain_surface_z(bwx, bwy, corridor_grid, cell_size)
+                if bd_clr >= 8.5 and btz >= 0.2:
+                    bsc = random.uniform(2.8, 5.0)
+                    bkey = random.choice(["rock1", "rock2", "rock3"])
+                    spawn_prop(bkey, bwx, bwy, btz - 0.18 * bsc, bsc, random.uniform(0, math.pi * 2))
+                    _register_cell(rock_grid, bwx, bwy)
                     obstacles.append({
-                        "x": round(v_wx, 2),
-                        "y": round(v_wy, 2),
-                        "z": round(v_tz, 2),
-                        "r": round(v_radius, 2),
-                        "type": "bush"
+                        "x": round(bwx, 2),
+                        "y": round(bwy, 2),
+                        "z": round(btz - 0.18 * bsc, 2),
+                        "r": round(bsc * 1.35, 2),
+                        "type": "rock"
                     })
 
-    # Join tree instances into single `Circuit_Trees` mesh
-    bpy.ops.object.select_all(action='DESELECT')
-    for o in tree_instances: o.select_set(True)
-    bpy.context.view_layer.objects.active = dummy_trees
-    bpy.ops.object.join()
-    dummy_trees.name = "Circuit_Trees"
-
-    # Join rock instances into single `Circuit_Rocks` mesh
-    bpy.ops.object.select_all(action='DESELECT')
-    for o in rock_instances: o.select_set(True)
-    bpy.context.view_layer.objects.active = dummy_rocks
-    bpy.ops.object.join()
-    dummy_rocks.name = "Circuit_Rocks"
-
-    # Join vegetation instances into single `Circuit_Vegetation` mesh
-    bpy.ops.object.select_all(action='DESELECT')
-    for o in veg_instances: o.select_set(True)
-    bpy.context.view_layer.objects.active = dummy_veg
-    bpy.ops.object.join()
-    dummy_veg.name = "Circuit_Vegetation"
+    # PASS 4: Well-Spaced Scenic Boulders & Roadside Undergrowth Bushes/Ferns
+    for idx in range(0, len(ground_road_samples), 8):
+        rx, ry, rz, rw = ground_road_samples[idx]
+        nxt = ground_road_samples[(idx + 1) % len(ground_road_samples)]
+        dx, dy = nxt[0] - rx, nxt[1] - ry
+        seg_l = math.hypot(dx, dy)
+        if seg_l < 1e-4:
+            continue
+        nx_perp, ny_perp = dy / seg_l, -dx / seg_l
+        for side in (-1.0, 1.0):
+            if random.random() < 0.42:
+                lat = rw + random.uniform(6.8, 22.0)
+                wx = rx + nx_perp * side * lat + random.uniform(-2.5, 2.5)
+                wy = ry + ny_perp * side * lat + random.uniform(-2.5, 2.5)
+                if is_in_structure_exclusion(wx, wy) or not can_place_rock(wx, wy, 15.0):
+                    continue
+                tz, d_clear = compute_terrain_surface_z(wx, wy, corridor_grid, cell_size)
+                min_z = 2.0 if wy < -510.0 else -0.5
+                if d_clear < 6.4 or tz < min_z or tz > 66.0:
+                    continue
+                if tz > 29.5 and wy > 140.0 and wx < 130.0:
+                    tmpl_key = "rock_snow1"
+                else:
+                    tmpl_key = random.choice(["rock1", "rock2", "rock3", "rock_moss1", "rock_moss2"])
+                sc = random.uniform(1.8, 3.6)
+                rock_z = tz - 0.12 * sc
+                spawn_prop(tmpl_key, wx, wy, rock_z, sc, random.uniform(0, math.pi * 2))
+                _register_cell(rock_grid, wx, wy)
+                obstacles.append({
+                    "x": round(wx, 2),
+                    "y": round(wy, 2),
+                    "z": round(rock_z, 2),
+                    "r": round(sc * 1.35, 2),
+                    "type": "rock"
+                })
+                # Companion bush / fern / log next to boulder
+                if tz < 29.0 and random.random() < 0.72:
+                    v_wx = wx + random.uniform(1.5, 2.8) * (1 if random.random() < 0.5 else -1)
+                    v_wy = wy + random.uniform(1.5, 2.8) * (1 if random.random() < 0.5 else -1)
+                    v_tz, v_clear = compute_terrain_surface_z(v_wx, v_wy, corridor_grid, cell_size)
+                    if v_clear >= 5.5 and v_tz >= min_z:
+                        v_key = random.choice(["bush1", "bush_berry", "plant1", "woodlog"])
+                        v_sc = random.uniform(1.3, 2.2)
+                        spawn_prop(v_key, v_wx, v_wy, v_tz, v_sc, random.uniform(0, math.pi * 2))
+                        obstacles.append({
+                            "x": round(v_wx, 2),
+                            "y": round(v_wy, 2),
+                            "z": round(v_tz, 2),
+                            "r": round(v_sc * 1.15, 2),
+                            "type": "bush"
+                        })
 
     obstacles_file = os.path.join(project_root, "public", "assets", "nature_obstacles.json")
     with open(obstacles_file, "w") as f:
         json.dump(obstacles, f)
-    print(f"Saved {len(obstacles)} nature obstacles -> {obstacles_file} for precise grass exclusion.")
+    print(f"Saved {len(obstacles)} nature obstacles -> {obstacles_file} for precise grass & physics exclusion.")
 
-    print(f"Populated Nature: Trees ({len(dummy_trees.data.vertices)} verts), "
-          f"Rocks ({len(dummy_rocks.data.vertices)} verts), "
-          f"Vegetation ({len(dummy_veg.data.vertices)} verts)")
+    instances_file = os.path.join(project_root, "public", "assets", "nature_instances.json")
+    with open(instances_file, "w") as f:
+        json.dump(nature_instances, f)
+    print(f"Saved {len(nature_instances)} GPU instanced nature transforms across {len(templates)} templates -> {instances_file}")
 
-    return dummy_trees, dummy_rocks, dummy_veg
+    return list(templates.values())
 
 
 def build_circuit():
@@ -1444,7 +1803,6 @@ def build_circuit():
     os.makedirs(output_dir, exist_ok=True)
     output_glb = os.path.join(output_dir, "circuit_track.glb")
 
-    # 0. Load source blend file to retrieve all materials and templates
     blend_path = os.path.join(project_root, "raw_assets", "Low Poly Road Pack", "Low Poly Road Pack.blend")
     if os.path.exists(blend_path):
         bpy.ops.wm.open_mainfile(filepath=blend_path)
@@ -1453,252 +1811,213 @@ def build_circuit():
     lantern_me = extract_single_lantern_template()
     bridge_tower_me = extract_suspension_bridge_tower()
 
-    # Clean out template objects from blend so we build a clean circuit
     bpy.ops.object.select_all(action='SELECT')
     bpy.ops.object.delete()
 
     # =========================================================================
-    # 1. ROUTE 1: CLOSED-LOOP 4-LANE HORIZON EXPRESS HIGHWAY (1.55 km)
+    # 1. COMPUTE EXPANDED 11-ROUTE, 15.4 KM ROAD NETWORK FROM SHARED LAYOUT
     # =========================================================================
-    hwy_ctrl = [
-        Vector((0.0, -70.0, 0.0)),
-        Vector((0.0, 0.0, 0.0)),       # Player spawn at (0, 0, 0) facing +Y!
-        Vector((0.0, 85.0, 0.0)),
-        Vector((18.0, 145.0, 2.2)),
-        Vector((75.0, 172.0, 5.0)),
-        Vector((152.0, 150.0, 7.5)),
-        Vector((202.0, 82.0, 9.5)),
-        Vector((212.0, 0.0, 10.8)),
-        Vector((198.0, -85.0, 10.2)),
-        Vector((145.0, -148.0, 10.5)),
-        Vector((65.0, -164.0, 10.8)),  # Suspension Bridge East Span
-        Vector((-25.0, -164.0, 10.4)), # Suspension Bridge West Span
-        Vector((-108.0, -146.0, 5.2)),
-        Vector((-115.0, -98.0, 2.2)),
-        Vector((-55.0, -95.0, 0.6)),
-    ]
-    hwy_samples = sample_smooth_3d_curve(hwy_ctrl, step_len=2.5, closed=True)
+    step_len = 1.5
+    routes_spec, open_ranges_by_id, _landmarks = compute_road_network(step_len=step_len)
 
-    # =========================================================================
-    # 2. ROUTE 2: WEST MOUNTAIN TOUGE HAIRPIN SWITCHBACK PASS (1.15 km)
-    # =========================================================================
-    # Approaches the highway nearly perpendicularly at both ends so the welded T-junctions are super clean!
-    touge_ctrl = (
-        [
-            Vector((-115.0, -98.0, 2.2)),   # Leaves Main Highway outer ('left') side
-            Vector((-142.0, -98.0, 3.0)),
-            Vector((-165.0, -68.0, 4.5)),   # T-junction R5_start
-            Vector((-165.0, -28.0, 6.2)),   # T-junction R3_start
-        ]
-        + arc_ctrl_pts(-232.0, 12.0, 22.0, 270.0, 90.0, 7.8, 10.6, count=5)
-        + arc_ctrl_pts(-162.0, 56.0, 22.0, -90.0, 90.0, 12.0, 14.8, count=5)
-        + arc_ctrl_pts(-234.0, 100.0, 22.0, 270.0, 90.0, 16.2, 19.2, count=5)
-        + arc_ctrl_pts(-162.0, 148.0, 23.0, -90.0, 95.0, 20.6, 23.8, count=5)
-        + [
-            Vector((-195.0, 196.0, 24.8)),
-            Vector((-145.0, 232.0, 23.0)),
-            Vector((-75.0, 232.0, 17.5)),
-            Vector((15.0, 222.0, 10.5)),
-            Vector((68.0, 198.0, 6.2)),
-            Vector((75.0, 172.0, 5.0)),     # Rejoins Main Highway outer ('left') side nearly perpendicularly!
-        ]
-    )
-    touge_raw = sample_smooth_3d_curve(touge_ctrl, step_len=2.5, closed=False)
-    touge_samples, touge_s_info, touge_e_info = trim_branch_for_fillet(
-        touge_raw, hwy_samples, 7.6, True, hwy_samples, 7.6, True, fillet_dist=7.0
-    )
-
-    # =========================================================================
-    # 3. ROUTE 3: CENTRAL CROSSTOWN OVERPASS & EAST VALLEY S-CURVES (0.62 km)
-    # =========================================================================
-    overpass_ctrl = [
-        Vector((-165.0, -28.0, 6.2)),   # Joins West Touge Foothills perpendicularly
-        Vector((-135.0, -28.0, 6.6)),
-        Vector((-65.0, 18.0, 8.8)),
-        Vector((0.0, 28.0, 9.6)),       # Elevated Overpass Span +9.6m directly over Route 1!
-        Vector((62.0, 24.0, 8.2)),
-        Vector((112.0, -8.0, 6.4)),     # East Valley S-Curve
-        Vector((168.0, -76.0, 9.4)),
-        Vector((198.0, -85.0, 10.2)),   # Joins East Ridge Highway perpendicularly
-    ]
-    overpass_raw = sample_smooth_3d_curve(overpass_ctrl, step_len=2.5, closed=False)
-    overpass_samples, over_s_info, over_e_info = trim_branch_for_fillet(
-        overpass_raw, touge_samples, 5.4, False, hwy_samples, 7.6, True, fillet_dist=7.0
-    )
-
-    # =========================================================================
-    # 4. ROUTE 4: NORTH-EAST MEADOW VALLEY CONNECTOR (0.34 km)
-    # =========================================================================
-    valley_ctrl = [
-        Vector((112.0, -8.0, 6.4)),     # Joins Route 3 perpendicularly
-        Vector((132.0, 18.0, 5.2)),
-        Vector((92.0, 78.0, 2.5)),
-        Vector((32.0, 85.0, 0.4)),
-        Vector((0.0, 85.0, 0.0)),       # Joins Main Highway North Straight perpendicularly
-    ]
-    valley_raw = sample_smooth_3d_curve(valley_ctrl, step_len=2.5, closed=False)
-    valley_samples, val_s_info, val_e_info = trim_branch_for_fillet(
-        valley_raw, overpass_samples, 5.4, False, hwy_samples, 7.6, True, fillet_dist=7.0
-    )
-
-    # =========================================================================
-    # 5. ROUTE 5: SOUTH-WEST CANYON FOOTHILL SHORTCUT (0.28 km)
-    # =========================================================================
-    sw_shortcut_ctrl = [
-        Vector((-165.0, -68.0, 4.5)),   # Joins West Touge lower straight perpendicularly
-        Vector((-132.0, -64.0, 3.5)),
-        Vector((-55.0, -45.0, 1.0)),
-        Vector((0.0, -45.0, 0.0)),      # Joins Main Highway South Straight perpendicularly
-    ]
-    sw_shortcut_raw = sample_smooth_3d_curve(sw_shortcut_ctrl, step_len=2.5, closed=False)
-    sw_samples, sw_s_info, sw_e_info = trim_branch_for_fillet(
-        sw_shortcut_raw, touge_samples, 5.4, False, hwy_samples, 7.6, True, fillet_dist=7.0
-    )
-
-    # =========================================================================
-    # 6. SWEEP ALL 5 ROUTES & WELD ALL 8 T-JUNCTION FILLET CONNECTORS!
-    # =========================================================================
     road_bm = bmesh.new()
     road_uv = road_bm.loops.layers.uv.new("UVMap")
     mark_bm = bmesh.new()
     mark_uv = mark_bm.loops.layers.uv.new("UVMap")
     lantern_bm = bmesh.new()
     ground_road_samples = []
+    road_guard_pts = []
 
-    half_open_steps = 4  # 4 * 2.5m = +-10m (20m mouth opening on parent road)
+    half_open_steps = max(2, int(round(10.0 / step_len)))  # ~+-10m (20m mouth opening on parent road)
+    rings_by_id = {}
+    samples_by_id = {}
 
-    hwy_open_ranges = [
-        (touge_s_info[0], half_open_steps, touge_s_info[1]),
-        (touge_e_info[0], half_open_steps, touge_e_info[1]),
-        (over_e_info[0], half_open_steps, over_e_info[1]),
-        (val_e_info[0], half_open_steps, val_e_info[1]),
-        (sw_e_info[0], half_open_steps, sw_e_info[1]),
-    ]
-    hwy_rings, g1 = build_spline_road_segment(
-        road_bm,
-        road_uv,
-        mark_bm,
-        mark_uv,
-        uv_dict,
-        hwy_samples,
-        is_highway=True,
-        closed=True,
-        open_ranges=hwy_open_ranges,
-        bridge_y_range=(-95.0, 125.0, -185.0, -140.0),
-        lantern_bm=lantern_bm,
-        lantern_me=lantern_me,
-    )
-    ground_road_samples.extend(g1)
-
-    touge_open_ranges = [
-        (over_s_info[0], half_open_steps, over_s_info[1]),
-        (sw_s_info[0], half_open_steps, sw_s_info[1]),
-    ]
-    touge_rings, g2 = build_spline_road_segment(
-        road_bm,
-        road_uv,
-        mark_bm,
-        mark_uv,
-        uv_dict,
-        touge_samples,
-        is_highway=False,
-        closed=False,
-        open_ranges=touge_open_ranges,
-        bridge_y_range=None,
-        lantern_bm=lantern_bm,
-        lantern_me=lantern_me,
-    )
-    ground_road_samples.extend(g2)
-
-    overpass_open_ranges = [
-        (val_s_info[0], half_open_steps, val_s_info[1]),
-    ]
-    overpass_rings, g3 = build_spline_road_segment(
-        road_bm,
-        road_uv,
-        mark_bm,
-        mark_uv,
-        uv_dict,
-        overpass_samples,
-        is_highway=False,
-        closed=False,
-        open_ranges=overpass_open_ranges,
-        bridge_y_range=(-68.0, 68.0, 0.0, 50.0),
-        lantern_bm=lantern_bm,
-        lantern_me=lantern_me,
-    )
-    ground_road_samples.extend(g3)
-
-    valley_rings, g4 = build_spline_road_segment(
-        road_bm,
-        road_uv,
-        mark_bm,
-        mark_uv,
-        uv_dict,
-        valley_samples,
-        is_highway=False,
-        closed=False,
-        open_ranges=[],
-        bridge_y_range=None,
-        lantern_bm=lantern_bm,
-        lantern_me=lantern_me,
-    )
-    ground_road_samples.extend(g4)
-
-    sw_rings, g5 = build_spline_road_segment(
-        road_bm,
-        road_uv,
-        mark_bm,
-        mark_uv,
-        uv_dict,
-        sw_samples,
-        is_highway=False,
-        closed=False,
-        open_ranges=[],
-        bridge_y_range=None,
-        lantern_bm=lantern_bm,
-        lantern_me=lantern_me,
-    )
-    ground_road_samples.extend(g5)
-
-    # Weld all 8 T-Junction Fillet Connectors!
-    junctions = [
-        (hwy_rings, True, touge_s_info[0], touge_s_info[1], touge_rings[0], True),
-        (hwy_rings, True, touge_e_info[0], touge_e_info[1], touge_rings[-1], False),
-        (touge_rings, False, over_s_info[0], over_s_info[1], overpass_rings[0], True),
-        (hwy_rings, True, over_e_info[0], over_e_info[1], overpass_rings[-1], False),
-        (overpass_rings, False, val_s_info[0], val_s_info[1], valley_rings[0], True),
-        (hwy_rings, True, val_e_info[0], val_e_info[1], valley_rings[-1], False),
-        (touge_rings, False, sw_s_info[0], sw_s_info[1], sw_rings[0], True),
-        (hwy_rings, True, sw_e_info[0], sw_e_info[1], sw_rings[-1], False),
-    ]
-    for p_rings, p_closed, k_c, side_str, b_ring, is_b_start in junctions:
-        g_junc = build_welded_t_junction(
+    for r in routes_spec:
+        rid = r["id"]
+        samples = r["trimmed"]
+        samples_by_id[rid] = samples
+        r_rings, g_samples = build_spline_road_segment(
             road_bm,
             road_uv,
             mark_bm,
             mark_uv,
             uv_dict,
-            p_rings,
-            p_closed,
-            k_c,
-            half_open_steps,
-            side_str,
-            b_ring,
-            is_b_start,
+            samples,
+            road_type=r["type"],
+            closed=r["closed"],
+            open_ranges=open_ranges_by_id.get(rid, []),
+            bridge_ranges=r.get("bridge_ranges", []),
+            tunnel_range=r.get("tunnel_range"),
+            lantern_bm=lantern_bm,
+            lantern_me=lantern_me,
+            guard_pts=road_guard_pts,
         )
-        ground_road_samples.extend(g_junc)
+        rings_by_id[rid] = r_rings
+        ground_road_samples.extend(g_samples)
 
-    # Add twin Golden-Gate Suspension Bridge Towers from `Low Poly Road Pack` into `mark_bm` (visual mesh)!
+    # Weld ALL 20 T-Junction Fillet Connectors seamlessly!
+    for r in routes_spec:
+        rid = r["id"]
+        b_rings = rings_by_id[rid]
+        if "start_parent" in r and r["start_parent"]:
+            pid, p_closed, (k_c, side_str) = r["start_parent"]
+            g_junc = build_welded_t_junction(
+                road_bm,
+                road_uv,
+                mark_bm,
+                mark_uv,
+                uv_dict,
+                rings_by_id[pid],
+                p_closed,
+                k_c,
+                half_open_steps,
+                side_str,
+                b_rings[0],
+                True,
+            )
+            ground_road_samples.extend(g_junc)
+        if "end_parent" in r and r["end_parent"]:
+            pid, p_closed, (k_c, side_str) = r["end_parent"]
+            g_junc = build_welded_t_junction(
+                road_bm,
+                road_uv,
+                mark_bm,
+                mark_uv,
+                uv_dict,
+                rings_by_id[pid],
+                p_closed,
+                k_c,
+                half_open_steps,
+                side_str,
+                b_rings[-1],
+                False,
+            )
+            ground_road_samples.extend(g_junc)
+
+    # Add twin Golden-Gate Suspension Bridge Towers & continuous catenary cables aligned to the Ocean Inlet Bridge!
     if bridge_tower_me:
-        for tower_pos, tower_rot in [
-            (Vector((65.0, -163.5, 10.75)), math.radians(2.0)),
-            (Vector((-25.0, -163.5, 10.35)), math.radians(-2.0)),
-        ]:
-            t_inst = bridge_tower_me.copy()
-            t_inst.transform(Matrix.Translation(tower_pos) @ Matrix.Rotation(tower_rot, 4, "Z"))
-            mark_bm.from_mesh(t_inst)
-            bpy.data.meshes.remove(t_inst)
+        hwy_samples = samples_by_id["hwy"]
+        # Collect continuous bridge span indices for the South Ocean Inlet Bridge (x in 175..405, y in -595..-505)
+        br_indices = [
+            idx for idx, (pt, _) in enumerate(hwy_samples)
+            if 175.0 <= pt.x <= 405.0 and -595.0 <= pt.y <= -505.0
+        ]
+        if len(br_indices) >= 10:
+            # Sort indices along the bridge (West -> East)
+            if hwy_samples[br_indices[0]][0].x > hwy_samples[br_indices[-1]][0].x:
+                br_indices.reverse()
+
+            # Compute cumulative arc-length along the suspension bridge span
+            br_s = [0.0] * len(br_indices)
+            for k in range(1, len(br_indices)):
+                p0 = hwy_samples[br_indices[k - 1]][0]
+                p1 = hwy_samples[br_indices[k]][0]
+                br_s[k] = br_s[k - 1] + math.hypot(p1.x - p0.x, p1.y - p0.y)
+
+            # Find closest indices for Tower 1 (X=225) and Tower 2 (X=355)
+            k_t1 = min(range(len(br_indices)), key=lambda k: abs(hwy_samples[br_indices[k]][0].x - 225.0))
+            k_t2 = min(range(len(br_indices)), key=lambda k: abs(hwy_samples[br_indices[k]][0].x - 355.0))
+            if k_t1 > k_t2:
+                k_t1, k_t2 = k_t2, k_t1
+
+            saddle_h = (126.3 - 13.3) * 0.36  # Exact saddle height of scaled SuspensionTower_Template
+            z_t1_saddle = hwy_samples[br_indices[k_t1]][0].z + saddle_h
+            z_t2_saddle = hwy_samples[br_indices[k_t2]][0].z + saddle_h
+
+            for k_t in (k_t1, k_t2):
+                best_pt, best_tan = hwy_samples[br_indices[k_t]]
+                # Local X of tower is along road tangent, local Y is across road width
+                tower_rot = math.atan2(best_tan.y, best_tan.x)
+                t_inst = bridge_tower_me.copy()
+                t_inst.transform(Matrix.Translation(best_pt) @ Matrix.Rotation(tower_rot, 4, "Z"))
+                mark_bm.from_mesh(t_inst)
+                bpy.data.meshes.remove(t_inst)
+
+            # Build continuous main catenary cables & vertical suspenders on both sides (+-9.45m)
+            cable_lat = 9.45
+            s_0, s_t1, s_t2, s_1 = br_s[0], br_s[k_t1], br_s[k_t2], br_s[-1]
+
+            def cable_z_at(k):
+                s = br_s[k]
+                deck_z = hwy_samples[br_indices[k]][0].z
+                if s <= s_t1:
+                    u = (s - s_0) / max(1.0, s_t1 - s_0)
+                    return (deck_z + 0.35) + (z_t1_saddle - (deck_z + 0.35)) * (u * u)
+                elif s <= s_t2:
+                    u = (s - s_t1) / max(1.0, s_t2 - s_t1)
+                    sag = 4.0 * u * (1.0 - u)
+                    z_lin = z_t1_saddle + u * (z_t2_saddle - z_t1_saddle)
+                    z_low = deck_z + 3.2
+                    return z_lin - sag * (z_lin - z_low)
+                else:
+                    u = (s_1 - s) / max(1.0, s_1 - s_t2)
+                    return (deck_z + 0.35) + (z_t2_saddle - (deck_z + 0.35)) * (u * u)
+
+            def add_cable_prism(p0, p1, rad=0.26):
+                dv = p1 - p0
+                if dv.length < 1e-5:
+                    return
+                f_dir = dv.normalized()
+                up_ref = Vector((0.0, 0.0, 1.0)) if abs(f_dir.z) < 0.95 else Vector((1.0, 0.0, 0.0))
+                s_vec = f_dir.cross(up_ref).normalized() * rad
+                u_vec = s_vec.cross(f_dir).normalized() * rad
+                ring0 = [
+                    mark_bm.verts.new(p0 - s_vec - u_vec),
+                    mark_bm.verts.new(p0 + s_vec - u_vec),
+                    mark_bm.verts.new(p0 + s_vec + u_vec),
+                    mark_bm.verts.new(p0 - s_vec + u_vec),
+                ]
+                ring1 = [
+                    mark_bm.verts.new(p1 - s_vec - u_vec),
+                    mark_bm.verts.new(p1 + s_vec - u_vec),
+                    mark_bm.verts.new(p1 + s_vec + u_vec),
+                    mark_bm.verts.new(p1 - s_vec + u_vec),
+                ]
+                for side_i in range(4):
+                    ni = (side_i + 1) % 4
+                    add_quad(mark_bm, mark_uv, ring0[side_i], ring0[ni], ring1[ni], ring1[side_i], uv_dict["wall"], ensure_up=False)
+
+            for side_sign in (-1.0, 1.0):
+                cable_pts = []
+                for k in range(len(br_indices)):
+                    pt, tn = hwy_samples[br_indices[k]]
+                    rt = Vector((tn.y, -tn.x, 0.0)).normalized()
+                    cz = cable_z_at(k)
+                    cable_pts.append(Vector((pt.x + rt.x * cable_lat * side_sign, pt.y + rt.y * cable_lat * side_sign, cz)))
+
+                    # Vertical suspender cable every ~10m (skipping right inside the tower columns)
+                    if 2 <= k <= len(br_indices) - 3 and k % 4 == 0 and abs(k - k_t1) > 1 and abs(k - k_t2) > 1:
+                        p_bot = Vector((pt.x + rt.x * cable_lat * side_sign, pt.y + rt.y * cable_lat * side_sign, pt.z + 0.15))
+                        p_top = cable_pts[-1]
+                        if p_top.z - p_bot.z > 0.6:
+                            add_cable_prism(p_bot, p_top, rad=0.075)
+
+                for k in range(len(cable_pts) - 1):
+                    add_cable_prism(cable_pts[k], cable_pts[k + 1], rad=0.25)
+
+    # Add crisp Low-Poly Horizon Festival Start/Finish Gantry Arch ahead of spawn (X=0, Y=42, Z=0)
+    def add_box_uv(bm, uv_l, cx, cy, z0, z1, hx, hy, uv_box):
+        v000 = bm.verts.new((cx - hx, cy - hy, z0))
+        v100 = bm.verts.new((cx + hx, cy - hy, z0))
+        v110 = bm.verts.new((cx + hx, cy + hy, z0))
+        v010 = bm.verts.new((cx - hx, cy + hy, z0))
+        v001 = bm.verts.new((cx - hx, cy - hy, z1))
+        v101 = bm.verts.new((cx + hx, cy - hy, z1))
+        v111 = bm.verts.new((cx + hx, cy + hy, z1))
+        v011 = bm.verts.new((cx - hx, cy + hy, z1))
+        add_quad(bm, uv_l, v000, v100, v101, v001, uv_box)
+        add_quad(bm, uv_l, v100, v110, v111, v101, uv_box)
+        add_quad(bm, uv_l, v110, v010, v011, v111, uv_box)
+        add_quad(bm, uv_l, v010, v000, v001, v011, uv_box)
+        add_quad(bm, uv_l, v001, v101, v111, v011, uv_box)
+
+    gantry_y = 42.0
+    for sx in (-9.6, 9.6):
+        add_box_uv(mark_bm, mark_uv, sx, gantry_y, -0.2, 8.2, 0.55, 0.75, uv_dict["wall"])
+        add_box_uv(mark_bm, mark_uv, sx, gantry_y, 7.2, 8.4, 0.72, 0.92, uv_dict["white"])
+    add_box_uv(mark_bm, mark_uv, 0.0, gantry_y, 6.9, 8.7, 10.6, 0.85, uv_dict["wall"])
+    add_box_uv(mark_bm, mark_uv, 0.0, gantry_y - 0.88, 7.2, 8.4, 9.2, 0.08, uv_dict["white"])
+    add_box_uv(mark_bm, mark_uv, 0.0, gantry_y + 0.88, 7.2, 8.4, 9.2, 0.08, uv_dict["white"])
 
     road_final_me = bpy.data.meshes.new("Circuit_Road_Mesh")
     road_bm.to_mesh(road_final_me)
@@ -1733,12 +2052,12 @@ def build_circuit():
     bpy.context.scene.collection.objects.link(lantern_obj)
 
     # =========================================================================
-    # 7. BUILD OPTIMIZED SMOOTH-SHADED 3D TERRAIN (`Circuit_Terrain`)
+    # 10. BUILD SMOOTH 3D TERRAIN (`Circuit_Terrain`) & WATER (`Circuit_Water`)
     # =========================================================================
-    terrain_obj, xs, ys, z_grid = build_smooth_terrain(ground_road_samples)
+    terrain_obj, xs, ys, z_grid = build_smooth_terrain(ground_road_samples, road_guard_pts=road_guard_pts)
+    water_obj = build_water_surface(xs, ys, z_grid)
     export_terrain_height_road_map(xs, ys, z_grid, ground_road_samples, output_dir)
 
-    # Save road corridors for Three.js static grass placement
     road_corridors_file = os.path.join(output_dir, "road_corridors.json")
     road_data = [[round(rx, 2), round(ry, 2), round(rz, 2), round(rw, 2)] for rx, ry, rz, rw in ground_road_samples]
     with open(road_corridors_file, "w") as f:
@@ -1746,24 +2065,22 @@ def build_circuit():
     print(f"Exported {len(road_data)} road corridor samples -> {road_corridors_file}")
 
     # =========================================================================
-    # 7.5 POPULATE NATURE PROPS (Trees, Rocks, Bushes from Ultimate Nature Pack)
+    # 11. POPULATE NATURE PROPS (EXPORT CLEAN TEMPLATES + JSON INSTANCE TRANSFORMS)
     # =========================================================================
-    tree_obj, rock_obj, veg_obj = populate_nature_props(ground_road_samples, project_root)
+    template_objs = populate_nature_props(ground_road_samples, project_root)
 
     # =========================================================================
-    # 8. EXPORT COMPLETE WORLD (`Circuit_Road`, `Circuit_Markings`, `Circuit_Terrain`, `Scenery_Props`, `Circuit_Trees`, `Circuit_Rocks`, `Circuit_Vegetation`)
+    # 12. EXPORT COMPLETE WORLD (`circuit_track.glb`)
     # =========================================================================
     bpy.ops.object.select_all(action="DESELECT")
     road_obj.select_set(True)
     mark_obj.select_set(True)
     terrain_obj.select_set(True)
+    water_obj.select_set(True)
     lantern_obj.select_set(True)
-    if tree_obj:
-        tree_obj.select_set(True)
-    if rock_obj:
-        rock_obj.select_set(True)
-    if veg_obj:
-        veg_obj.select_set(True)
+    for tmpl_obj in template_objs:
+        if tmpl_obj:
+            tmpl_obj.select_set(True)
     bpy.context.view_layer.objects.active = road_obj
 
     bpy.ops.export_scene.gltf(
@@ -1775,7 +2092,7 @@ def build_circuit():
         export_materials="EXPORT",
     )
     print(
-        f"Successfully exported Forza Horizon-Style Road Network + Smooth 3D Terrain -> {output_glb} "
+        f"Successfully exported Expanded Multi-Biome Road Network + Terrain + Water -> {output_glb} "
         f"({os.path.getsize(output_glb)} bytes)"
     )
 

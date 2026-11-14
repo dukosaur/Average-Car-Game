@@ -30,11 +30,11 @@
         height: 100%;
       }
       /* ==========================================================================
-         Minimalist In-Game HUD Pause Prompt (Bottom-Left)
+         Minimalist In-Game HUD Pause Prompt (Top-Left)
          ========================================================================== */
       .hud-pause-prompt {
         position: absolute;
-        bottom: 24px;
+        top: 22px;
         left: 24px;
         display: flex;
         align-items: center;
@@ -56,7 +56,7 @@
       .hud-pause-prompt.hidden {
         opacity: 0;
         pointer-events: none;
-        transform: translateY(6px);
+        transform: translateY(-6px);
       }
       .hud-pause-key {
         display: inline-flex;
@@ -67,8 +67,8 @@
         font-weight: 800;
         letter-spacing: 0.06em;
         color: #ffffff;
-        background: rgba(255, 255, 255, 0.12);
-        border: 1px solid rgba(255, 255, 255, 0.22);
+        background: rgba(16, 18, 22, 0.62);
+        border: 1px solid rgba(255, 255, 255, 0.24);
         border-radius: 6px;
         padding: 4px 8px;
         box-shadow: 0 3px 8px rgba(0, 0, 0, 0.45);
@@ -79,8 +79,112 @@
         font-size: 13px;
         font-weight: 600;
         letter-spacing: 0.04em;
-        color: #d1d5db;
-        text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
+        color: #e5e7eb;
+        text-shadow: 0 2px 6px rgba(0, 0, 0, 0.85);
+      }
+
+      /* ==========================================================================
+         Forza Horizon 6 Style Circular Radar Mini-Map (Bottom-Left)
+         ========================================================================== */
+      .hud-minimap-wrap {
+        position: absolute;
+        bottom: 20px;
+        left: 24px;
+        z-index: 48;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        user-select: none;
+        cursor: pointer;
+        transition: opacity 0.24s cubic-bezier(0.16, 1, 0.3, 1),
+                    transform 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      .hud-minimap-wrap:hover {
+        transform: translateY(-2px) scale(1.015);
+      }
+      .hud-minimap-wrap:active {
+        transform: translateY(0) scale(0.985);
+      }
+      .hud-minimap-wrap.hidden {
+        opacity: 0;
+        pointer-events: none;
+        transform: translateY(10px) scale(0.96);
+      }
+      .hud-minimap-circle {
+        position: relative;
+        width: 244px;
+        height: 244px;
+        border-radius: 50%;
+        background: radial-gradient(
+          circle at 50% 60%,
+          rgba(22, 26, 33, 0.38) 0%,
+          rgba(16, 19, 25, 0.56) 68%,
+          rgba(10, 12, 17, 0.72) 100%
+        );
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        border: 1.8px solid rgba(255, 255, 255, 0.56);
+        box-shadow:
+          0 10px 28px rgba(0, 0, 0, 0.48),
+          inset 0 0 18px rgba(0, 0, 0, 0.35);
+        overflow: hidden;
+      }
+      #hud-minimap-canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      .hud-minimap-bar {
+        margin-top: -8px;
+        z-index: 2;
+        display: flex;
+        align-items: center;
+        background: rgba(18, 21, 27, 0.84);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        border-radius: 7px;
+        overflow: hidden;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.52);
+      }
+      .hud-minimap-bar-seg {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        font-size: 10.5px;
+        font-weight: 800;
+        letter-spacing: 0.07em;
+        color: #f3f4f6;
+        text-transform: uppercase;
+      }
+      .hud-minimap-bar-seg + .hud-minimap-bar-seg {
+        border-left: 1px solid rgba(255, 255, 255, 0.16);
+      }
+      .hud-minimap-key {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 16px;
+        height: 15px;
+        padding: 0 4px;
+        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.92);
+        color: #0d1117;
+        font-size: 9.5px;
+        font-weight: 900;
+        line-height: 1;
+      }
+      .hud-minimap-route-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #18e4ff;
+        box-shadow: 0 0 8px rgba(24, 228, 255, 0.85);
+      }
+      .hud-minimap-route-dot.idle {
+        background: rgba(255, 255, 255, 0.45);
+        box-shadow: none;
       }
 
       #telemetry {
@@ -1693,10 +1797,26 @@
   </head>
   <body>
     <div id="app">
-      <!-- Minimalist In-Game HUD Pause Prompt (Bottom-Left) -->
+      <!-- Minimalist In-Game HUD Pause Prompt (Top-Left) -->
       <div id="hud-pause-prompt" class="hud-pause-prompt" tabindex="0" role="button" title="Open Pause Menu (Esc)">
         <span class="hud-pause-key">ESC</span>
         <span class="hud-pause-label">Pause</span>
+      </div>
+      <!-- Forza Horizon 6 Style Circular Radar Mini-Map (Bottom-Left) -->
+      <div id="hud-minimap-wrap" class="hud-minimap-wrap" tabindex="0" role="button">
+        <div class="hud-minimap-circle">
+          <canvas id="hud-minimap-canvas" width="488" height="488"></canvas>
+        </div>
+        <div class="hud-minimap-bar">
+          <div class="hud-minimap-bar-seg">
+            <span class="hud-minimap-key">M</span>
+            <span>MAP</span>
+          </div>
+          <div class="hud-minimap-bar-seg">
+            <span id="hud-minimap-dot" class="hud-minimap-route-dot idle"></span>
+            <span id="hud-minimap-status">FREE ROAM</span>
+          </div>
+        </div>
       </div>
       <!-- Forza Horizon Apple-Glass Pause Menu Overlay -->
       <div id="pause-menu-overlay" class="pause-menu-overlay hidden">
@@ -1765,7 +1885,7 @@
               <div class="pause-glass-tile pause-tile-map" id="pause-tile-map" tabindex="0">
                 <div class="pause-mini-map-viewport">
                   <div class="pause-mini-map-plane" id="pause-mini-map-plane">
-                    <img class="pause-mini-map-satellite" src="/assets/satellite_world_map.png?v=4" alt="Satellite Map Preview" />
+                    <img class="pause-mini-map-satellite" src="/assets/satellite_world_map.png?v=37" alt="Satellite Map Preview" />
                     <!-- Mini SVG Road Overlay Traced Over Map (Inherits full road network + active GPS routes) -->
                     <svg class="pause-mini-map-roads" id="pause-mini-map-roads-svg" viewBox="0 0 2048 1920" xmlns="http://www.w3.org/2000/svg">
                       <defs>
@@ -1951,7 +2071,7 @@
           <!-- Pannable & Zoomable World Plane (2048x1920) -->
           <div class="map-plane" id="map-plane">
             <!-- 1. Top-Down Satellite Photographic Base -->
-            <img class="map-satellite-img" src="/assets/satellite_world_map.png?v=4" alt="Satellite World Map" draggable="false" />
+            <img class="map-satellite-img" src="/assets/satellite_world_map.png?v=37" alt="Satellite World Map" draggable="false" />
 
             <!-- 2. Layered SVG Vector Road Lines -->
             <svg class="map-routes-svg" id="map-routes-svg" viewBox="0 0 2048 1920" xmlns="http://www.w3.org/2000/svg">

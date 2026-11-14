@@ -268,12 +268,12 @@ function createStylized3DClouds(scene, sun) {
   }
 
   for (let c = 0; c < clusterCount; c++) {
-    // Distribute in a natural ring around the circuit perimeter so clouds crown the hills in all directions
+    // Distribute in a natural ring around the expanded circuit perimeter so clouds crown the hills in all directions
     const angle = (c / clusterCount) * Math.PI * 2 + (rand() - 0.5) * 0.35;
-    const dist = 145 + rand() * 240;
+    const dist = 340 + rand() * 340;
     const cx = Math.sin(angle) * dist;
     const cz = Math.cos(angle) * dist;
-    const cy = 48 + rand() * 58;
+    const cy = 62 + rand() * 68;
 
     const baseRadius = 22 + rand() * 18;
     const puffCount = 11 + Math.floor(rand() * 6);
@@ -447,9 +447,9 @@ function createStaticGrassField(terrainMesh, roadCorridors, obstacles, scene, su
   if (!terrainMesh) return null;
 
   const bladeCount = 5;
-  const CHUNK_SIZE = 28.0;
-  const MIN_X = -360.0;
-  const MIN_Z = -280.0;
+  const CHUNK_SIZE = 44.0;
+  const MIN_X = -980.0;
+  const MIN_Z = -920.0;
 
   // 1. Stylized 5-blade organic curved grass cluster geometry (15 triangles per cluster)
   // Slightly broader base widths guarantee full lush ground coverage with ~17% fewer polygons
@@ -477,9 +477,9 @@ function createStaticGrassField(terrainMesh, roadCorridors, obstacles, scene, su
     const perpX = -sinB;
     const perpZ = cosB;
 
-    const baseWidth = isFlower ? 0.10 : (0.22 + (b % 2) * 0.035);
-    const height = isFlower ? 1.15 : (0.90 + (b % 2) * 0.14);
-    const lean = 0.18 + (b % 2) * 0.07;
+    const baseWidth = isFlower ? 0.12 : (0.25 + (b % 2) * 0.04);
+    const height = isFlower ? 1.24 : (1.02 + (b % 2) * 0.16);
+    const lean = 0.20 + (b % 2) * 0.08;
 
     const baseIdx = b * 5;
 
@@ -577,7 +577,7 @@ function createStaticGrassField(terrainMesh, roadCorridors, obstacles, scene, su
         for (let i = 0; i < list.length; i++) {
           const obs = list[i];
           const d = Math.hypot(px - obs.x, pz - obs.z);
-          const threshold = obs.type === 'rock' ? obs.r * 1.02 : obs.r * 0.75;
+          const threshold = obs.type === 'rock' ? obs.r * 1.02 : (obs.type === 'tree' ? obs.r * 0.92 : obs.r * 0.75);
           if (d < threshold) return true;
         }
       }
@@ -622,16 +622,22 @@ function createStaticGrassField(terrainMesh, roadCorridors, obstacles, scene, su
     const triArea = norm.length() * 0.5;
     norm.normalize();
 
-    // Slopes <= 40 degrees (normal.y >= 0.72) and above water (avgY >= -2.2)
+    // Slopes <= 42 degrees (|normal.y| >= 0.68), above water/shoreline, and below NW alpine snowline (+29.5m)
     const avgY = (vA.y + vB.y + vC.y) / 3.0;
-    if (norm.y < 0.72 || avgY < -2.2) continue;
-
     const midX = (vA.x + vB.x + vC.x) / 3.0;
     const midZ = (vA.z + vB.z + vC.z) / 3.0;
-    const distFromCenter = Math.hypot(midX, midZ);
+    const minGrassY = midZ > 495.0 ? 2.2 : -0.8;
+    const ny = Math.abs(norm.y);
+    const isSnowCap = midX < 175.0 && midZ < -65.0 && avgY > 29.5;
+    if (ny < 0.68 || avgY < minGrassY || isSnowCap || avgY > 52.0) continue;
 
-    // Well-balanced performance-optimized density: slightly reduced cluster count while broader blades keep ground lush
-    let density = distFromCenter < 190 ? 0.27 : (distFromCenter < 290 ? 0.17 : 0.09);
+    // Prioritize lush grass along road corridors while keeping open meadows performant
+    const triRoadClr = getRoadClearance(midX, midZ);
+    let density = triRoadClr < 30.0 ? 0.44 : (triRoadClr < 68.0 ? 0.18 : 0.05);
+    // Keep SW Red-Rock desert scrub sparse for authentic mesa contrast
+    if (midX < -120.0 && midZ > -200.0 && midZ < 560.0) {
+      density *= 0.28;
+    }
     let numCandidates = Math.round(triArea * density);
     if (numCandidates < 1 && rand() < (triArea * density)) numCandidates = 1;
 
@@ -673,7 +679,7 @@ function createStaticGrassField(terrainMesh, roadCorridors, obstacles, scene, su
 
   console.log(`Generated ${totalClustersPlaced} grass clusters (${totalClustersPlaced * bladeCount} blades) partitioned into ${chunkBuckets.size} spatial chunks across 100% of the world!`);
 
-  // Rich, deep, saturated meadow palette (emerald, vibrant clover, spring lime, sunlit chartreuse)
+  // Per-biome grass color palettes matching TerrainSmoothMap.png seams seamlessly
   const grassPalette = [
     new THREE.Color(0x246212), // Deep emerald
     new THREE.Color(0x2f7717), // Rich lush meadow green
@@ -682,6 +688,33 @@ function createStaticGrassField(terrainMesh, roadCorridors, obstacles, scene, su
     new THREE.Color(0x286914), // Deep valley green
     new THREE.Color(0x4da327), // Bright spring chartreuse
   ];
+  const autumnGrassPalette = [
+    new THREE.Color(0xb87616),
+    new THREE.Color(0xc98a1c),
+    new THREE.Color(0xd49b24),
+    new THREE.Color(0x9e5f14),
+    new THREE.Color(0xdba82e),
+    new THREE.Color(0xa86b18),
+  ];
+  const desertGrassPalette = [
+    new THREE.Color(0x8a7d44),
+    new THREE.Color(0x9c894b),
+    new THREE.Color(0x736b3a),
+    new THREE.Color(0xa89254),
+    new THREE.Color(0x7f7540),
+  ];
+  const coastGrassPalette = [
+    new THREE.Color(0x6f8d38),
+    new THREE.Color(0x849c42),
+    new THREE.Color(0x989d4e),
+    new THREE.Color(0x5c7f30),
+    new THREE.Color(0x78923a),
+  ];
+  const smoothstepJs = (e0, e1, x) => {
+    const t = Math.max(0.0, Math.min(1.0, (x - e0) / (e1 - e0)));
+    return t * t * (3.0 - 2.0 * t);
+  };
+  const tmpBiomeCol = new THREE.Color();
 
   // 4. GPU Wind Wave, Smooth Distance Fade-In & Stylized Lighting Shaders
   const vertexShader = `
@@ -816,8 +849,8 @@ function createStaticGrassField(terrainMesh, roadCorridors, obstacles, scene, su
       ...THREE.UniformsLib.fog,
       uTime: { value: 0.0 },
       uCameraPos: { value: new THREE.Vector3() },
-      uFadeStart: { value: 120.0 },  // Full height/width up to 120m
-      uFadeEnd: { value: 175.0 },    // Smoothly collapses into terrain between 120m and 175m (ZERO pop-in)
+      uFadeStart: { value: 92.0 },  // Full height/width up to 92m
+      uFadeEnd: { value: 145.0 },    // Smoothly collapses into terrain between 92m and 145m (ZERO pop-in)
       uSunPosition: { value: new THREE.Vector3().copy(sun) },
       uSunColor: { value: new THREE.Color(0xfff6e3) },
       uHemiSky: { value: new THREE.Color(0x8ec3f8) },
@@ -851,10 +884,36 @@ function createStaticGrassField(terrainMesh, roadCorridors, obstacles, scene, su
       if (p.z < minZ) minZ = p.z;
       if (p.z > maxZ) maxZ = p.z;
 
+      const wx = p.x;
+      const wy = -p.z; // Blender Y coordinate = -Three.js Z
+      const wyBioW = wy + 26.0 * Math.sin(wx * 0.014 + 0.5);
+      const wxBioE = wx + 28.0 * Math.cos(wy * 0.013 - 0.4);
+      const wyBioN = wy + 26.0 * Math.sin(wx * 0.012 + 1.1);
+
+      const tAutumn = smoothstepJs(85.0, 310.0, wxBioE) * smoothstepJs(75.0, 285.0, wyBioN);
+      const tDesert = (1.0 - smoothstepJs(-320.0, -90.0, wxBioE))
+        * smoothstepJs(-580.0, -445.0, wyBioW)
+        * (1.0 - smoothstepJs(85.0, 215.0, wyBioW));
+      const tCoast = (1.0 - smoothstepJs(-565.0, -455.0, wy)) * (1.0 - tDesert * 0.8);
+
       const gCol = grassPalette[Math.floor(rand() * grassPalette.length)];
-      colors[i * 3 + 0] = gCol.r;
-      colors[i * 3 + 1] = gCol.g;
-      colors[i * 3 + 2] = gCol.b;
+      tmpBiomeCol.copy(gCol);
+      if (tAutumn > 0.02) {
+        const aCol = autumnGrassPalette[Math.floor(rand() * autumnGrassPalette.length)];
+        tmpBiomeCol.lerp(aCol, Math.min(1.0, tAutumn * 0.94));
+      }
+      if (tDesert > 0.02) {
+        const dCol = desertGrassPalette[Math.floor(rand() * desertGrassPalette.length)];
+        tmpBiomeCol.lerp(dCol, Math.min(1.0, tDesert * 0.92));
+      }
+      if (tCoast > 0.02) {
+        const cCol = coastGrassPalette[Math.floor(rand() * coastGrassPalette.length)];
+        tmpBiomeCol.lerp(cCol, Math.min(1.0, tCoast * 0.82));
+      }
+
+      colors[i * 3 + 0] = tmpBiomeCol.r;
+      colors[i * 3 + 1] = tmpBiomeCol.g;
+      colors[i * 3 + 2] = tmpBiomeCol.b;
 
       if (rand() < 0.08) {
         flowerTypes[i] = Math.floor(rand() * 5.0);
@@ -912,8 +971,8 @@ function createStaticGrassField(terrainMesh, roadCorridors, obstacles, scene, su
     const camPos = isFreeCam && freeCamPos ? freeCamPos : cam.position;
     grassMat.uniforms.uCameraPos.value.copy(camPos);
 
-    // Distance threshold aligned with fade-out boundary (185m)
-    const maxDistSq = 185.0 * 185.0;
+    // Distance threshold aligned with fade-out boundary (152m)
+    const maxDistSq = 152.0 * 152.0;
 
     const density = window.__grassDensity || 'high';
     if (density === 'off') {
@@ -954,45 +1013,365 @@ function createStaticGrassField(terrainMesh, roadCorridors, obstacles, scene, su
   return { grassChunks, grassMat, updateCulling };
 }
 
-async function buildTestGround(scene, world, maxAnisotropy = 8, sun) {
-  const groundSize = 1600;
+function createStylizedWaterMaterial(sun) {
+  const vertexShader = `
+    #include <common>
+    #include <fog_pars_vertex>
 
-  // Deep safety catch floor at Y = -45m (far below the -11m Suspension Bridge Canyon)
-  const safetyBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, -45.0, 0));
+    varying vec2 vUv;
+    varying vec3 vWorldPos;
+
+    void main() {
+      vUv = uv;
+      vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+      vWorldPos = worldPosition.xyz;
+      vec4 mvPosition = viewMatrix * worldPosition;
+      gl_Position = projectionMatrix * mvPosition;
+      #include <fog_vertex>
+    }
+  `;
+
+  const fragmentShader = `
+    #include <common>
+    #include <fog_pars_fragment>
+
+    varying vec2 vUv;
+    varying vec3 vWorldPos;
+
+    uniform float uTime;
+    uniform vec3 uSunPosition;
+
+    void main() {
+      // vUv.x encodes normalized water depth: smoothly feather alpha to 0 at shoreline (ZERO jagged polygon edges!)
+      float depthFactor = clamp(vUv.x, 0.0, 1.0);
+      float shoreAlpha = smoothstep(0.02, 0.42, depthFactor);
+      if (shoreAlpha < 0.01) discard;
+
+      // Animated dual-harmonic water surface waves
+      vec2 p = vWorldPos.xz * 0.16;
+      float w1 = sin(p.x * 1.3 + uTime * 1.8 + sin(p.y * 0.9 + uTime * 1.1));
+      float w2 = cos(p.y * 1.5 - uTime * 1.5 + cos(p.x * 1.1 - uTime * 1.3));
+      float ripple = (w1 + w2) * 0.5;
+
+      vec3 norm = normalize(vec3(
+        cos(p.x * 1.3 + uTime * 1.8) * 0.08,
+        1.0,
+        sin(p.y * 1.5 - uTime * 1.5) * 0.08
+      ));
+
+      vec3 shallowCol = vec3(0.11, 0.54, 0.64);
+      vec3 deepCol    = vec3(0.04, 0.27, 0.46);
+      vec3 waterCol   = mix(shallowCol, deepCol, smoothstep(0.15, 0.85, depthFactor));
+
+      // Subtle shoreline foam shimmer right where waves lap the bank
+      float foamBand = (1.0 - smoothstep(0.05, 0.28, depthFactor)) * smoothstep(-0.2, 0.6, ripple);
+      waterCol = mix(waterCol, vec3(0.78, 0.94, 0.98), foamBand * 0.38);
+
+      // Fresnel sky reflection & golden-hour sun specular glints
+      vec3 viewDir = normalize(cameraPosition - vWorldPos);
+      vec3 sunDir = normalize(uSunPosition);
+      float fresnel = pow(1.0 - max(0.0, dot(viewDir, norm)), 3.2);
+      waterCol = mix(waterCol, vec3(0.52, 0.78, 0.95), fresnel * 0.42);
+
+      vec3 halfVec = normalize(sunDir + viewDir);
+      float spec = pow(max(0.0, dot(norm, halfVec)), 72.0);
+      waterCol += vec3(1.0, 0.95, 0.82) * spec * 0.85;
+
+      gl_FragColor = vec4(waterCol, shoreAlpha * 0.90);
+
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
+      #include <fog_fragment>
+    }
+  `;
+
+  return new THREE.ShaderMaterial({
+    vertexShader,
+    fragmentShader,
+    uniforms: {
+      ...THREE.UniformsLib.fog,
+      uTime: { value: 0.0 },
+      uSunPosition: { value: new THREE.Vector3().copy(sun) },
+    },
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    fog: true,
+  });
+}
+
+function createInstancedNatureField(templateMap, natureInstances, obstacles, scene, world) {
+  if (!templateMap || !templateMap.size || !natureInstances || !natureInstances.length) {
+    return null;
+  }
+
+  const CHUNK_SIZE = 160.0;
+  const MIN_X = -1000.0;
+  const MIN_Z = -1000.0;
+  const NO_SHADOW_KEYS = new Set(['bush1', 'bush_berry', 'plant1', 'woodlog']);
+
+  // 1. Bucket all nature instances into 160m x 160m spatial chunks, grouped by template key
+  const chunkBuckets = new Map();
+  for (let i = 0; i < natureInstances.length; i++) {
+    const item = natureInstances[i];
+    const key = item[0];
+    if (!templateMap.has(key)) continue;
+    const x = item[1];
+    const y = item[2];
+    const z = item[3];
+    const s = item[4];
+    const rotY = item[5];
+
+    const col = Math.floor((x - MIN_X) / CHUNK_SIZE);
+    const row = Math.floor((z - MIN_Z) / CHUNK_SIZE);
+    const chunkKey = `${col}_${row}`;
+    let bucket = chunkBuckets.get(chunkKey);
+    if (!bucket) {
+      bucket = new Map();
+      chunkBuckets.set(chunkKey, bucket);
+    }
+    let list = bucket.get(key);
+    if (!list) {
+      list = [];
+      bucket.set(key, list);
+    }
+    list.push([x, y, z, s, rotY]);
+  }
+
+  const dummy = new THREE.Object3D();
+  const natureChunks = [];
+  let totalBatches = 0;
+
+  for (const [, keyMap] of chunkBuckets.entries()) {
+    let minX = 9999.0, maxX = -9999.0;
+    let minY = 9999.0, maxY = -9999.0;
+    let minZ = 9999.0, maxZ = -9999.0;
+    const meshes = [];
+
+    for (const [key, list] of keyMap.entries()) {
+      const parts = templateMap.get(key);
+      if (!parts || !parts.length) continue;
+      const count = list.length;
+      const canCastShadow = !NO_SHADOW_KEYS.has(key);
+
+      // Update chunk AABB (with generous canopy/boulder padding)
+      for (let i = 0; i < count; i++) {
+        const [x, y, z, s] = list[i];
+        const padXZ = s * 2.2;
+        const padY = s * 4.5;
+        if (x - padXZ < minX) minX = x - padXZ;
+        if (x + padXZ > maxX) maxX = x + padXZ;
+        if (y - 1.5 < minY) minY = y - 1.5;
+        if (y + padY > maxY) maxY = y + padY;
+        if (z - padXZ < minZ) minZ = z - padXZ;
+        if (z + padXZ > maxZ) maxZ = z + padXZ;
+      }
+
+      for (let pIdx = 0; pIdx < parts.length; pIdx++) {
+        const part = parts[pIdx];
+        const instMesh = new THREE.InstancedMesh(part.geometry, part.material, count);
+        for (let i = 0; i < count; i++) {
+          const [x, y, z, s, rotY] = list[i];
+          dummy.position.set(x, y, z);
+          dummy.rotation.set(0, rotY, 0);
+          dummy.scale.set(s, s, s);
+          dummy.updateMatrix();
+          if (part.localMatrix) {
+            dummy.matrix.multiply(part.localMatrix);
+          }
+          instMesh.setMatrixAt(i, dummy.matrix);
+        }
+        instMesh.instanceMatrix.needsUpdate = true;
+        instMesh.frustumCulled = false; // Handled manually at chunk level
+        instMesh.receiveShadow = true;
+        instMesh.castShadow = false;
+        scene.add(instMesh);
+        meshes.push({ mesh: instMesh, canCastShadow });
+        totalBatches++;
+      }
+    }
+
+    if (meshes.length > 0) {
+      const box = new THREE.Box3(
+        new THREE.Vector3(minX, minY, minZ),
+        new THREE.Vector3(maxX, maxY, maxZ)
+      );
+      const center = new THREE.Vector3(
+        (minX + maxX) * 0.5,
+        (minY + maxY) * 0.5,
+        (minZ + maxZ) * 0.5
+      );
+      natureChunks.push({ box, center, meshes });
+    }
+  }
+
+  // 2. Attach lightweight Rapier primitive colliders (rock spheres & tree trunk cylinders) onto one fixed RigidBody
+  if (world && obstacles && obstacles.length > 0) {
+    const natBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
+    let colliderCount = 0;
+    for (let i = 0; i < obstacles.length; i++) {
+      const obs = obstacles[i];
+      if (obs.type === 'rock') {
+        const rad = Math.max(0.55, obs.r * 0.72);
+        const desc = RAPIER.ColliderDesc.ball(rad)
+          .setTranslation(obs.x, obs.z + rad * 0.6, -obs.y)
+          .setFriction(0.85)
+          .setRestitution(0.0);
+        world.createCollider(desc, natBody);
+        colliderCount++;
+      } else if (obs.type === 'tree') {
+        const rad = Math.max(0.45, obs.r * 0.45);
+        const desc = RAPIER.ColliderDesc.cylinder(3.2, rad)
+          .setTranslation(obs.x, obs.z + 2.8, -obs.y)
+          .setFriction(0.8)
+          .setRestitution(0.0);
+        world.createCollider(desc, natBody);
+        colliderCount++;
+      }
+    }
+    console.log(`Instanced Nature Field: ${natureInstances.length} props in ${natureChunks.length} chunks (${totalBatches} GPU batches), ${colliderCount} Rapier colliders.`);
+  }
+
+  const projScreenMatrix = new THREE.Matrix4();
+  const frustum = new THREE.Frustum();
+  const MAX_DIST_SQ = 560.0 * 560.0;
+  // Center-to-center distance <= 170m guarantees all overlapping 160m chunk props within <90m cast crisp shadows
+  const SHADOW_DIST_SQ = 175.0 * 175.0;
+
+  function updateCulling(cam, isFreeCam, freeCamPos, shadowCenter) {
+    cam.updateMatrixWorld();
+    projScreenMatrix.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+    frustum.setFromProjectionMatrix(projScreenMatrix);
+    const camPos = isFreeCam && freeCamPos ? freeCamPos : cam.position;
+
+    for (let i = 0; i < natureChunks.length; i++) {
+      const ch = natureChunks[i];
+      const distSq = ch.center.distanceToSquared(camPos);
+      const visible = distSq <= MAX_DIST_SQ && frustum.intersectsBox(ch.box);
+      const castShadowNow = visible && shadowCenter
+        ? ch.center.distanceToSquared(shadowCenter) <= SHADOW_DIST_SQ
+        : false;
+      for (let m = 0; m < ch.meshes.length; m++) {
+        const entry = ch.meshes[m];
+        entry.mesh.visible = visible;
+        entry.mesh.castShadow = entry.canCastShadow && castShadowNow;
+      }
+    }
+  }
+
+  return { natureChunks, updateCulling };
+}
+
+async function buildTestGround(scene, world, maxAnisotropy = 8, sun) {
+  const groundSize = 3600;
+  const waterMat = createStylizedWaterMaterial(sun);
+
+  // Deep safety catch floor at Y = -50m (far below the -12m Suspension Bridge Canyon)
+  const safetyBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, -50.0, 0));
   const safetyCollider = RAPIER.ColliderDesc.cuboid(groundSize * 0.5, 0.5, groundSize * 0.5)
     .setFriction(0.95)
     .setRestitution(0.0);
   world.createCollider(safetyCollider, safetyBody);
 
-  const [obstacles, roadCorridors] = await Promise.all([
-    fetch('/assets/nature_obstacles.json?v=27').then((r) => r.json()).catch(() => []),
-    fetch('/assets/road_corridors.json?v=27').then((r) => r.json()).catch(() => []),
+  const [obstacles, roadCorridors, natureInstances] = await Promise.all([
+    fetch('/assets/nature_obstacles.json?v=37').then((r) => r.json()).catch(() => []),
+    fetch('/assets/road_corridors.json?v=37').then((r) => r.json()).catch(() => []),
+    fetch('/assets/nature_instances.json?v=37').then((r) => r.json()).catch(() => []),
   ]);
 
   return new Promise((resolve) => {
     const circuitLoader = new GLTFLoader();
     circuitLoader.load(
-      '/assets/circuit_track.glb?v=27',
+      '/assets/circuit_track.glb?v=37',
       (gltf) => {
         const trackRoot = gltf.scene;
         let roadMesh = null;
         let terrainMesh = null;
+        const templateMap = new Map();
+
+        const getTemplateKey = (obj) => {
+          let cur = obj;
+          let topKey = null;
+          while (cur) {
+            if (cur.name && cur.name.startsWith('NatTmpl_')) {
+              topKey = cur.name.slice('NatTmpl_'.length);
+            }
+            cur = cur.parent;
+          }
+          return topKey;
+        };
+
+        const tuneNatureMaterials = (matOrArr, keyName) => {
+          if (!matOrArr) return;
+          const isRockTmpl = keyName && keyName.includes('rock');
+          const mats = Array.isArray(matOrArr) ? matOrArr : [matOrArr];
+          for (const m of mats) {
+            m.opacity = 1.0;
+            m.transparent = false;
+            m.depthWrite = true;
+            if (isRockTmpl) {
+              m.roughness = 0.88;
+              m.metalness = 0.02;
+            } else {
+              m.roughness = 0.72;
+              m.metalness = 0.0;
+              if (m.color && !m._boostedFoliage) {
+                const hsl = {};
+                m.color.getHSL(hsl);
+                m.color.setHSL(hsl.h, Math.min(1.0, hsl.s * 1.22), Math.min(0.92, hsl.l * 1.06));
+                m._boostedFoliage = true;
+              }
+            }
+            m.needsUpdate = true;
+          }
+        };
 
         trackRoot.traverse((child) => {
+          if (child.name && child.name.startsWith('NatTmpl_')) {
+            child.visible = false;
+          }
           if (child.isMesh) {
-            const isRoad = child.name === 'Circuit_Road';
-            const isTerrain = child.name === 'Circuit_Terrain';
-            const isMarkings = child.name === 'Circuit_Markings';
-            const isTrees = child.name === 'Circuit_Trees';
-            const isRocks = child.name === 'Circuit_Rocks';
-            const isVegetation = child.name === 'Circuit_Vegetation';
-            const isProps = child.name.includes('Lantern') || child.name.includes('Props') || child.name.includes('Tower');
+            const tmplKey = getTemplateKey(child);
+            if (tmplKey) {
+              child.visible = false;
+              tuneNatureMaterials(child.material, tmplKey);
+              let localMatrix = null;
+              if (!child.name.startsWith('NatTmpl_') && (child.position.lengthSq() > 1e-6 || child.quaternion.w < 0.9999)) {
+                child.updateMatrix();
+                localMatrix = child.matrix.clone();
+              }
+              if (!templateMap.has(tmplKey)) templateMap.set(tmplKey, []);
+              templateMap.get(tmplKey).push({
+                geometry: child.geometry,
+                material: child.material,
+                localMatrix,
+              });
+              return;
+            }
+
+            const pName = child.parent ? child.parent.name : '';
+            const isRoad = child.name === 'Circuit_Road' || pName === 'Circuit_Road';
+            const isTerrain = child.name === 'Circuit_Terrain' || pName === 'Circuit_Terrain';
+            const isWater = child.name === 'Circuit_Water' || pName === 'Circuit_Water';
+            const isMarkings = child.name === 'Circuit_Markings' || pName === 'Circuit_Markings';
+            const isProps = child.name.includes('Lantern') || child.name.includes('Props') || child.name.includes('Tower') || pName.includes('Props');
 
             if (isRoad) roadMesh = child;
-            if (isTerrain) terrainMesh = child;
+            if (isTerrain) {
+              terrainMesh = child;
+              child.geometry.computeVertexNormals();
+            }
+
+            if (isWater) {
+              child.material = waterMat;
+              child.renderOrder = 1;
+              child.castShadow = false;
+              child.receiveShadow = true;
+              return;
+            }
 
             child.receiveShadow = true;
-            child.castShadow = isProps || isTrees || isRocks;
+            child.castShadow = isProps;
 
             if (child.material) {
               const mats = Array.isArray(child.material) ? child.material : [child.material];
@@ -1001,21 +1380,40 @@ async function buildTestGround(scene, world, maxAnisotropy = 8, sun) {
                 m.transparent = false;
                 m.depthWrite = true;
                 if (isMarkings) {
-                  m.roughness = 0.38;
-                  m.metalness = 0.0;
+                  m.roughness = 0.35;
+                  m.metalness = 0.04;
                   if (m.color) m.color.setRGB(1.0, 1.0, 1.0);
                 } else if (isRoad) {
-                  m.roughness = 0.76;
-                  m.metalness = 0.02;
+                  m.roughness = 0.62;
+                  m.metalness = 0.05;
                 } else if (isTerrain) {
-                  m.roughness = 0.88;
+                  m.roughness = 0.84;
                   m.metalness = 0.0;
-                } else if (isRocks) {
-                  m.roughness = 0.92;
-                  m.metalness = 0.0;
+                  // Inject procedural multi-scale up-close micro-grain so terrain never looks blurry near the car!
+                  m.onBeforeCompile = (shader) => {
+                    shader.vertexShader = shader.vertexShader.replace(
+                      '#include <common>',
+                      '#include <common>\nvarying vec3 vTerrainWorldPos;'
+                    );
+                    shader.vertexShader = shader.vertexShader.replace(
+                      '#include <worldpos_vertex>',
+                      '#include <worldpos_vertex>\nvTerrainWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;'
+                    );
+                    shader.fragmentShader = shader.fragmentShader.replace(
+                      '#include <common>',
+                      '#include <common>\nvarying vec3 vTerrainWorldPos;'
+                    );
+                    shader.fragmentShader = shader.fragmentShader.replace(
+                      '#include <map_fragment>',
+                      `#include <map_fragment>
+                       float g1 = sin(vTerrainWorldPos.x * 1.7 + vTerrainWorldPos.z * 1.3) * cos(vTerrainWorldPos.z * 1.9 - vTerrainWorldPos.x * 1.1);
+                       float g2 = sin(vTerrainWorldPos.x * 5.3 - vTerrainWorldPos.z * 4.7) * 0.5;
+                       diffuseColor.rgb *= (1.0 + (g1 * 0.032 + g2 * 0.018));`
+                    );
+                  };
                 } else {
-                  m.roughness = 0.82;
-                  m.metalness = 0.0;
+                  m.roughness = 0.78;
+                  m.metalness = 0.02;
                 }
 
                 if (m.map) {
@@ -1034,8 +1432,8 @@ async function buildTestGround(scene, world, maxAnisotropy = 8, sun) {
               }
             }
 
-            // Attach exact Rapier 3D Trimesh colliders to structural roadbed, terrain, and boulders (Circuit_Rocks)
-            if (isRoad || isTerrain || isRocks) {
+            // Attach exact Rapier 3D Trimesh colliders to structural roadbed & terrain
+            if (isRoad || isTerrain) {
               child.updateWorldMatrix(true, false);
               const geo = child.geometry.clone();
               geo.applyMatrix4(child.matrixWorld);
@@ -1055,7 +1453,7 @@ async function buildTestGround(scene, world, maxAnisotropy = 8, sun) {
               }
               const staticBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
               const trimeshDesc = RAPIER.ColliderDesc.trimesh(vertices, indices)
-                .setFriction(isRoad ? 1.0 : (isRocks ? 0.85 : 0.9))
+                .setFriction(isRoad ? 1.0 : 0.9)
                 .setRestitution(0.0);
               world.createCollider(trimeshDesc, staticBody);
             }
@@ -1063,15 +1461,18 @@ async function buildTestGround(scene, world, maxAnisotropy = 8, sun) {
         });
         scene.add(trackRoot);
 
+        // Spawn spatially chunked GPU InstancedMesh nature field & lightweight Rapier colliders
+        const natureField = createInstancedNatureField(templateMap, natureInstances, obstacles, scene, world);
+
         // Spawn permanent static world-space grass field across terrain triangles
         const grassField = createStaticGrassField(terrainMesh, roadCorridors, obstacles, scene, sun);
 
-        resolve({ grassField });
+        resolve({ grassField, natureField, waterMat });
       },
       undefined,
       (err) => {
         console.warn('Could not load circuit_track.glb:', err);
-        resolve({ grassField: null });
+        resolve({ grassField: null, natureField: null, waterMat: null });
       }
     );
   });
@@ -1156,9 +1557,9 @@ async function init() {
 
   // Stylized atmospheric distance haze: crystal clear within 70m for vibrant green meadows, trees, roads & cars,
   // then smoothly fading distant mountains and ridges into the rich, dreamy horizon haze up to 420m (Matching Image 1 & 3)
-  scene.fog = new THREE.Fog(0x9cc8e8, 70, 420);
+  scene.fog = new THREE.Fog(0x9cc8e8, 160, 1080);
 
-  const camera = new THREE.PerspectiveCamera(56, window.innerWidth / window.innerHeight, 0.1, 1800);
+  const camera = new THREE.PerspectiveCamera(56, window.innerWidth / window.innerHeight, 0.1, 3600);
   camera.position.set(0, 2.5, -5.5);
 
   // Afternoon golden hour sun: elevation 34°, azimuth 212° (warm southwest sun)
@@ -1177,13 +1578,13 @@ async function init() {
   const hemiLight = new THREE.HemisphereLight(0x8ec3f8, 0x485838, 1.35);
   scene.add(hemiLight);
 
-  const dirLight = new THREE.DirectionalLight(0xfff6e3, 2.65);
+  const dirLight = new THREE.DirectionalLight(0xfff6e3, 2.75);
   dirLight.position.set(sun.x * 100, sun.y * 100, sun.z * 100);
   dirLight.castShadow = true;
-  dirLight.shadow.mapSize.set(2048, 2048);
+  dirLight.shadow.mapSize.set(1024, 1024);
   dirLight.shadow.camera.near = 1;
-  dirLight.shadow.camera.far = 140;
-  const d = 30;
+  dirLight.shadow.camera.far = 165;
+  const d = 38;
   dirLight.shadow.camera.left = -d;
   dirLight.shadow.camera.right = d;
   dirLight.shadow.camera.top = d;
@@ -1194,7 +1595,7 @@ async function init() {
   scene.add(dirLight.target);
 
   // Soft opposite sky fill light so shadows in mountain valleys and under bridges aren't pitch black
-  const fillLight = new THREE.DirectionalLight(0x9fc0db, 0.60);
+  const fillLight = new THREE.DirectionalLight(0x9fc0db, 0.65);
   fillLight.position.set(-sun.x * 80, 45, -sun.z * 80);
   scene.add(fillLight);
 
@@ -1202,7 +1603,7 @@ async function init() {
   const world = new RAPIER.World(gravity);
 
   const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
-  const { grassField } = await buildTestGround(scene, world, maxAnisotropy, sun);
+  const { grassField, natureField, waterMat } = await buildTestGround(scene, world, maxAnisotropy, sun);
 
   const { parts } = await loadRiggedCar(CAR_ROSTER[0].url);
 
@@ -1294,6 +1695,21 @@ async function init() {
   function selectCameraMode(index) {
     currentCamIndex = ((index % CAMERA_MODES.length) + CAMERA_MODES.length) % CAMERA_MODES.length;
     setFreeCamActive(false);
+  }
+
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.has('freecam')) {
+    setFreeCamActive(true);
+    const px = parseFloat(urlParams.get('camx'));
+    const py = parseFloat(urlParams.get('camy'));
+    const pz = parseFloat(urlParams.get('camz'));
+    const pYaw = parseFloat(urlParams.get('yaw'));
+    const pPitch = parseFloat(urlParams.get('pitch'));
+    if (Number.isFinite(px) && Number.isFinite(py) && Number.isFinite(pz)) {
+      freeCam.pos.set(px, py, pz);
+    }
+    if (Number.isFinite(pYaw)) freeCam.yaw = pYaw;
+    if (Number.isFinite(pPitch)) freeCam.pitch = pPitch;
   }
 
   // 3. Setup Forza Horizon "Apple Glass" Pause Menu Controller
@@ -1873,9 +2289,15 @@ async function init() {
         grassField.updateCulling(camera, freeCam.active, freeCam.pos);
       }
     }
+    if (waterMat) {
+      waterMat.uniforms.uTime.value = now * 0.001;
+    }
 
     // 2. Tightly anchor directional sunlight frustum over the active vehicle / freecam
     const shadowCenter = freeCam.active ? freeCam.pos : chassisWorldPos;
+    if (natureField && natureField.updateCulling) {
+      natureField.updateCulling(camera, freeCam.active, freeCam.pos, shadowCenter);
+    }
     dirLight.position.set(
       shadowCenter.x + sun.x * 65,
       shadowCenter.y + sun.y * 65,
@@ -1918,6 +2340,8 @@ async function init() {
     renderer.render(scene, camera);
   }
 
+  // Pre-compile WebGL shader programs before first frame to avoid mid-drive compilation stutter
+  renderer.compile(scene, camera);
   requestAnimationFrame(animate);
 }
 

@@ -49,16 +49,27 @@ export class WorldMapController {
     this.hudGpsDistEl = document.getElementById('hud-gps-dist');
     this.hudGpsCancelBtnEl = document.getElementById('hud-gps-cancel');
 
+    // Forza Horizon 6 Style HUD Circular Radar Mini-Map Elements
+    this.hudPausePromptEl = document.getElementById('hud-pause-prompt');
+    this.hudMinimapWrapEl = document.getElementById('hud-minimap-wrap');
+    this.hudMinimapCanvasEl = document.getElementById('hud-minimap-canvas');
+    this.hudMinimapCtx = this.hudMinimapCanvasEl ? this.hudMinimapCanvasEl.getContext('2d') : null;
+    this.hudMinimapDotEl = document.getElementById('hud-minimap-dot');
+    this.hudMinimapStatusEl = document.getElementById('hud-minimap-status');
+    this.miniFwdX = 0;
+    this.miniFwdZ = -1;
+    this.miniRadarScale = 3.85;
+
     this.hoveredRoad = null;
 
-    // World to Map Pixel Calibration (from Blender 2048x1920 orthographic satellite render)
+    // World to Map Pixel Calibration (from Blender 2048x1920 orthographic satellite render, ortho_scale=1800)
     this.bounds = {
-      minX: -300.0,
-      maxX: 260.0,
-      spanX: 560.0,
-      minZ: -292.5,
-      maxZ: 232.5,
-      spanZ: 525.0,
+      minX: -900.0,
+      maxX: 900.0,
+      spanX: 1800.0,
+      minZ: -843.75,
+      maxZ: 843.75,
+      spanZ: 1687.5,
       imgW: 2048.0,
       imgH: 1920.0,
     };
@@ -71,7 +82,7 @@ export class WorldMapController {
     this.scale = 0.85;
     this.targetScale = 0.85;
     this.minScale = 0.35;
-    this.maxScale = 4.2;
+    this.maxScale = 5.6;
 
     // Drag Velocity & Inertia
     this.isDragging = false;
@@ -118,11 +129,17 @@ export class WorldMapController {
 
   getRouteDisplayName(routeId) {
     const names = {
-      hwy: 'ISLA EXPRESSWAY',
-      touge: 'LA GRAN CALDERA TOUGE',
-      overpass: 'CROSS-VALLEY OVERPASS',
-      valley: 'SOUTH COAST RUN',
-      sw_shortcut: 'FOOTHILL SHORTCUT',
+      hwy: 'HORIZON GRAND EXPRESSWAY',
+      hwy_west: 'WESTERN MESA EXPRESSWAY',
+      touge: 'ALPINE SUMMIT TOUGE',
+      overpass: 'CROSSTOWN SKYWAY OVERPASS',
+      river_run: 'EMERALD RIVER CANYON RUN',
+      coastal_loop: 'GOLDEN BAY COASTAL DRIVE',
+      east_ridge: 'EAST CLIFFSIDE SKYBRIDGE',
+      valley: 'FESTIVAL MEADOW CONNECTOR',
+      canyon_cut: 'RED-ROCK CANYON GORGE',
+      west_mesa_rim: 'WESTERN DESERT MESA RIM',
+      autumn_loop: 'AUTUMN HIGHLAND SKYBRIDGE',
     };
     return names[routeId] || 'ROAD WAYPOINT';
   }
@@ -137,7 +154,9 @@ export class WorldMapController {
     let closestPoint = null;
     let closestRoute = null;
 
-    const routes = this.routesData.routes.filter((r) => r.id !== 'overpass_bridge');
+    const routes = this.routesData.routes.filter(
+      (r) => (!r.layer || r.layer === 'ground') && !r.id.startsWith('overpass_bridge') && r.id !== 'alpine_tunnel'
+    );
     for (const route of routes) {
       const pts = route.points;
       for (let i = 0; i < pts.length - 1; i++) {
@@ -171,9 +190,43 @@ export class WorldMapController {
 
   async loadMapMetadata() {
     try {
-      const resp = await fetch('/assets/map_routes.json?v=4');
+      const resp = await fetch('/assets/map_routes.json?v=37');
       if (resp.ok) {
         this.routesData = await resp.json();
+        if (this.routesData.routes) {
+          for (const r of this.routesData.routes) {
+            if (!r.points || !r.points.length) continue;
+            let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+            for (let i = 0; i < r.points.length; i++) {
+              const p = r.points[i];
+              const x = Array.isArray(p) ? p[0] : p.x;
+              const z = Array.isArray(p) ? (p.length > 2 ? p[2] : p[1]) : p.z;
+              if (x < minX) minX = x;
+              if (x > maxX) maxX = x;
+              if (z < minZ) minZ = z;
+              if (z > maxZ) maxZ = z;
+            }
+            r._bbox = { minX, maxX, minZ, maxZ };
+          }
+          this._miniDrivableRoutes = this.routesData.routes.filter(
+            (r) => (!r.layer || r.layer === 'ground') && !r.id.startsWith('overpass_bridge') && r.id !== 'alpine_tunnel'
+          );
+          this._miniBridgeSegments = this.routesData.routes.filter(
+            (r) => r.layer === 'elevated' || r.id.startsWith('overpass_bridge')
+          );
+          this._miniTunnelSegments = this.routesData.routes.filter(
+            (r) => r.layer === 'tunnel' || r.id === 'alpine_tunnel'
+          );
+        }
+        if (this.routesData.world_bounds) {
+          const wb = this.routesData.world_bounds;
+          this.bounds.minX = wb.min_x;
+          this.bounds.maxX = wb.max_x;
+          this.bounds.spanX = wb.span_x;
+          this.bounds.minZ = wb.min_z;
+          this.bounds.maxZ = wb.max_z;
+          this.bounds.spanZ = wb.span_z;
+        }
         this.renderVectorRoads(this.routesData.routes);
         this.renderLandmarks(this.routesData.landmarks);
 
@@ -191,7 +244,10 @@ export class WorldMapController {
   }
 
   /**
-   * Renders authentic Forza Horizon-style vector road lines with seamless overpass bridge & drop shadow
+   * Renders authentic Forza Horizon-style vector road lines with multi-pass cartographic
+   * layering (all dark casings first, then all white road cores on top) so every T-junction
+   * across the entire map merges into a single seamless white road network with zero black dividers,
+   * while elevated overpass bridges cleanly cross over ground roads with drop shadows.
    */
   renderVectorRoads(routes) {
     if (!this.roadsGroupEl || !routes) return;
@@ -209,80 +265,117 @@ export class WorldMapController {
       return d;
     };
 
-    const drawRoad = (route, isHwy) => {
+    const drawCasing = (route, isHwy) => {
       if (!route.points || route.points.length < 2) return;
       const d = toPathD(route.points, isHwy);
+      const isNarrow = route.type === 'narrow';
+      const casingW = isHwy ? '11.5' : (isNarrow ? '6.4' : '8.5');
 
-      // A. Dark Outer Casing (Crisp border against satellite terrain)
       const casing = document.createElementNS('http://www.w3.org/2000/svg', 'path');
       casing.setAttribute('d', d);
       casing.setAttribute('fill', 'none');
       casing.setAttribute('stroke', '#0c1017');
-      casing.setAttribute('stroke-width', isHwy ? '11.5' : '8.5');
+      casing.setAttribute('stroke-width', casingW);
       casing.setAttribute('stroke-linecap', 'round');
       casing.setAttribute('stroke-linejoin', 'round');
       casing.setAttribute('opacity', '0.96');
       this.roadsGroupEl.appendChild(casing);
+    };
 
-      // B. Solid Crisp Road Core (Clean white asphalt line)
+    const drawCore = (route, isHwy) => {
+      if (!route.points || route.points.length < 2) return;
+      const d = toPathD(route.points, isHwy);
+      const isNarrow = route.type === 'narrow';
+      const coreW = isHwy ? '7.0' : (isNarrow ? '3.6' : '5.0');
+
       const core = document.createElementNS('http://www.w3.org/2000/svg', 'path');
       core.setAttribute('d', d);
       core.setAttribute('fill', 'none');
       core.setAttribute('stroke', '#ffffff');
-      core.setAttribute('stroke-width', isHwy ? '7.0' : '5.0');
+      core.setAttribute('stroke-width', coreW);
       core.setAttribute('stroke-linecap', 'round');
       core.setAttribute('stroke-linejoin', 'round');
-      core.setAttribute('opacity', '0.98');
+      core.setAttribute('opacity', '1.0');
       this.roadsGroupEl.appendChild(core);
-
-      // C. Highway Centerline Divider
-      if (isHwy) {
-        const divider = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        divider.setAttribute('d', d);
-        divider.setAttribute('fill', 'none');
-        divider.setAttribute('stroke', '#1e2632');
-        divider.setAttribute('stroke-width', '1.2');
-        divider.setAttribute('stroke-dasharray', '8, 12');
-        divider.setAttribute('opacity', '0.80');
-        this.roadsGroupEl.appendChild(divider);
-      }
     };
 
-    // 1. RENDER GROUND HIGHWAY FIRST (Underneath everything)
-    const hwy = routes.find((r) => r.type === 'highway' || r.id === 'hwy');
-    if (hwy) drawRoad(hwy, true);
+    const drivableRoutes = routes.filter(
+      (r) => (!r.layer || r.layer === 'ground') && !r.id.startsWith('overpass_bridge') && r.id !== 'alpine_tunnel'
+    );
+    const isRouteClosed = (r) => Boolean(r.closed || r.id === 'hwy');
+    const isElevatedCrossing = (r) => r.id === 'overpass' || r.id === 'hwy_west' || r.id === 'autumn_loop';
+    const highways = drivableRoutes.filter((r) => r.type === 'highway');
 
-    // 2. RENDER GROUND CONNECTOR ROUTES (touge, valley, sw_shortcut)
-    for (const r of routes) {
-      if (r === hwy || r.id === 'overpass' || r.layer === 'elevated' || r.id === 'overpass_bridge') continue;
-      drawRoad(r, false);
+    // PASS 1: Render ALL dark outer road casings first (underneath all white cores!)
+    for (const r of drivableRoutes) {
+      drawCasing(r, isRouteClosed(r));
     }
 
-    // 3. RENDER REALISTIC BRIDGE DROP-SHADOW ACROSS LOWER HIGHWAY
-    // Casts a clean, tight shadow underneath the overpass crossing onto the highway below
-    const bridge = routes.find((r) => r.layer === 'elevated' || r.id === 'overpass_bridge');
-    if (bridge && bridge.points && bridge.points.length >= 2) {
-      // Focus shadow on the crossing span over the highway (|X| <= 22) with rounded soft caps
-      const spanPts = bridge.points.filter((p) => Math.abs(p[0]) <= 22);
-      if (spanPts.length >= 2) {
-        const dBridge = toPathD(spanPts, false);
+    // PASS 2: Render ground road white cores on top of casings so every T-junction fuses seamlessly!
+    for (const r of highways) {
+      if (!isElevatedCrossing(r)) {
+        drawCore(r, isRouteClosed(r));
+      }
+    }
+    for (const r of drivableRoutes) {
+      if (r.type === 'highway' || isElevatedCrossing(r)) continue;
+      drawCore(r, false);
+    }
+
+    // PASS 3: Render subtle Alpine Tunnel bore overlay on Touge summit
+    const tunnels = routes.filter((r) => r.layer === 'tunnel');
+    for (const tun of tunnels) {
+      if (tun.points && tun.points.length >= 2) {
+        const dTun = toPathD(tun.points, false);
+        const tunDash = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        tunDash.setAttribute('d', dTun);
+        tunDash.setAttribute('fill', 'none');
+        tunDash.setAttribute('stroke', '#4a5568');
+        tunDash.setAttribute('stroke-width', '3.2');
+        tunDash.setAttribute('stroke-dasharray', '5, 6');
+        tunDash.setAttribute('stroke-linecap', 'round');
+        tunDash.setAttribute('opacity', '0.75');
+        this.roadsGroupEl.appendChild(tunDash);
+      }
+    }
+
+    // PASS 4: Render bridge drop-shadows & butt-capped casings across elevated bridges
+    const bridges = routes.filter((r) => r.layer === 'elevated' || r.id.startsWith('overpass_bridge'));
+    for (const bridge of bridges) {
+      if (bridge.points && bridge.points.length >= 2) {
+        const dBridge = toPathD(bridge.points, false);
+        const rType = bridge.road_type || 'secondary';
+        const bShadowW = rType === 'highway' ? '12.0' : (rType === 'narrow' ? '6.8' : '8.8');
+        const bCasingW = rType === 'highway' ? '11.5' : (rType === 'narrow' ? '6.4' : '8.5');
+
         const shadowPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         shadowPath.setAttribute('d', dBridge);
         shadowPath.setAttribute('fill', 'none');
-        shadowPath.setAttribute('stroke', 'rgba(0, 0, 0, 0.55)');
-        shadowPath.setAttribute('stroke-width', '8.5');
-        shadowPath.setAttribute('stroke-linecap', 'round');
+        shadowPath.setAttribute('stroke', 'rgba(0, 0, 0, 0.58)');
+        shadowPath.setAttribute('stroke-width', bShadowW);
+        shadowPath.setAttribute('stroke-linecap', 'butt');
         shadowPath.setAttribute('stroke-linejoin', 'round');
         shadowPath.setAttribute('filter', 'url(#bridge-drop-shadow)');
         this.roadsGroupEl.appendChild(shadowPath);
+
+        const bridgeCasing = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        bridgeCasing.setAttribute('d', dBridge);
+        bridgeCasing.setAttribute('fill', 'none');
+        bridgeCasing.setAttribute('stroke', '#0c1017');
+        bridgeCasing.setAttribute('stroke-width', bCasingW);
+        bridgeCasing.setAttribute('stroke-linecap', 'butt');
+        bridgeCasing.setAttribute('stroke-linejoin', 'round');
+        bridgeCasing.setAttribute('opacity', '0.96');
+        this.roadsGroupEl.appendChild(bridgeCasing);
       }
     }
 
-    // 4. RENDER OVERPASS AS A SMOOTH, CONTINUOUS UNIFORM ROAD ON TOP
-    // Crosses over the highway and drop shadow with seamless width (8.5 / 5.0) and NO circles/knobs
-    const overpass = routes.find((r) => r.id === 'overpass');
-    if (overpass) {
-      drawRoad(overpass, false);
+    // PASS 5: Render white road cores continuously end-to-end for all routes with bridges
+    //         so bridge spans merge seamlessly into ground approaches with zero seam notches!
+    for (const r of drivableRoutes) {
+      if (isElevatedCrossing(r) || r.id === 'hwy' || r.id === 'east_ridge') {
+        drawCore(r, isRouteClosed(r));
+      }
     }
 
     if (window.__pauseMenu && typeof window.__pauseMenu.syncRoads === 'function') {
@@ -476,6 +569,9 @@ export class WorldMapController {
     if (this.hudMapBtnEl) {
       this.hudMapBtnEl.addEventListener('click', () => this.setOpen(!this.isOpen));
     }
+    if (this.hudMinimapWrapEl) {
+      this.hudMinimapWrapEl.addEventListener('click', () => this.setOpen(true));
+    }
     if (this.closeBtnEl) {
       this.closeBtnEl.addEventListener('click', () => this.setOpen(false));
     }
@@ -547,11 +643,13 @@ export class WorldMapController {
           this.lastPointerY = e.clientY;
           this.pointerDist += Math.hypot(dx, dy);
 
-          this.targetPanX += dx;
-          this.targetPanY += dy;
-          this.velX = dx;
-          this.velY = dy;
-          if (this.roadHoverDotEl) this.roadHoverDotEl.classList.add('hidden');
+          if (this.pointerDist > 4) {
+            this.targetPanX += dx;
+            this.targetPanY += dy;
+            this.velX = dx;
+            this.velY = dy;
+            if (this.roadHoverDotEl) this.roadHoverDotEl.classList.add('hidden');
+          }
           return;
         }
 
@@ -562,8 +660,9 @@ export class WorldMapController {
         const mapPxY = (e.clientY - rect.top - this.panY) / this.scale;
         const world = this.mapPxToWorld(mapPxX, mapPxY);
 
+        const maxSnapDist = Math.max(12.5, 16.0 / Math.sqrt(Math.max(0.35, this.scale)));
         const roadMatch = this.getClosestRoadPoint(world.x, world.z);
-        if (roadMatch && roadMatch.dist <= 8.5) {
+        if (roadMatch && roadMatch.dist <= maxSnapDist) {
           this.hoveredRoad = roadMatch;
           const hp = this.worldToMapPx(roadMatch.point.x, roadMatch.point.z);
           if (this.roadHoverDotEl) {
@@ -597,16 +696,25 @@ export class WorldMapController {
           this.viewportEl.releasePointerCapture(e.pointerId);
         } catch (_) {}
 
-        // Road Click to Waypoint: ONLY set waypoint if clicking on the road!
-        if (this.pointerDist < 6 &&
+        // Road Click to Waypoint: Set waypoint when clicking on any road across the map
+        if (this.pointerDist < 9 &&
             !e.target.closest('.map-poi-pin') &&
             !e.target.closest('.poi-track-btn') &&
             !e.target.closest('.map-actions-group') &&
             !e.target.closest('.map-waypoint-marker') &&
             !e.target.closest('.map-gps-hud')) {
-          if (this.hoveredRoad && this.hoveredRoad.dist <= 8.5) {
-            const pt = this.hoveredRoad.point;
-            const routeName = this.getRouteDisplayName(this.hoveredRoad.route.id);
+          const maxSnapDist = Math.max(12.5, 16.0 / Math.sqrt(Math.max(0.35, this.scale)));
+          let match = this.hoveredRoad;
+          if (!match || match.dist > maxSnapDist) {
+            const rect = this.viewportEl.getBoundingClientRect();
+            const mapPxX = (e.clientX - rect.left - this.panX) / this.scale;
+            const mapPxY = (e.clientY - rect.top - this.panY) / this.scale;
+            const world = this.mapPxToWorld(mapPxX, mapPxY);
+            match = this.getClosestRoadPoint(world.x, world.z);
+          }
+          if (match && match.dist <= maxSnapDist) {
+            const pt = match.point;
+            const routeName = this.getRouteDisplayName(match.route.id);
             this.setGpsWaypoint(pt.x, pt.z, routeName, 'road');
           }
         }
@@ -724,6 +832,13 @@ export class WorldMapController {
     if (this.overlayEl) {
       this.overlayEl.classList.toggle('hidden', !open);
     }
+    const pauseOpen = window.__pauseMenu && window.__pauseMenu.isOpen;
+    if (this.hudMinimapWrapEl) {
+      this.hudMinimapWrapEl.classList.toggle('hidden', open || pauseOpen);
+    }
+    if (this.hudPausePromptEl) {
+      this.hudPausePromptEl.classList.toggle('hidden', open || pauseOpen);
+    }
 
     if (open) {
       // Suspend car driving controls while map is open
@@ -756,8 +871,11 @@ export class WorldMapController {
       this.panY = this.targetPanY;
       this.scale = this.targetScale;
 
-      // Immediately sync active GPS route from current car position
+      // Immediately recompute & sync active GPS route from current car position
       if (this.gpsNav && this.gpsNav.activeWaypoint) {
+        if (this.vehicle && this.vehicle.rootGroup) {
+          this.gpsNav.update(this.vehicle.rootGroup.position);
+        }
         this.onGpsRouteUpdated(this.gpsNav.activeWaypoint, this.gpsNav.activePath, this.gpsNav.remainingDistance);
       }
     } else {
@@ -803,13 +921,22 @@ export class WorldMapController {
       }
     }
 
-    // 2. Real-Time GPS Telemetry Distance Updates
+    // 2. Real-Time GPS Telemetry Distance Updates & FH6 Circular Radar Mini-Map
     if (this.gpsNav && this.gpsNav.activeWaypoint) {
       const remDist = this.gpsNav.remainingDistance;
       const distStr = remDist >= 1000 ? `${(remDist / 1000).toFixed(1)} KM` : `${Math.round(remDist)} M`;
       if (this.gpsTargetDistEl) this.gpsTargetDistEl.textContent = distStr;
       if (this.hudGpsDistEl) this.hudGpsDistEl.textContent = distStr;
       if (this.waypointTagEl) this.waypointTagEl.textContent = `${this.gpsNav.activeWaypoint.name} • ${distStr}`;
+      if (this.hudMinimapStatusEl) this.hudMinimapStatusEl.textContent = distStr;
+      if (this.hudMinimapDotEl) this.hudMinimapDotEl.classList.remove('idle');
+    } else {
+      if (this.hudMinimapStatusEl) this.hudMinimapStatusEl.textContent = 'FREE ROAM';
+      if (this.hudMinimapDotEl) this.hudMinimapDotEl.classList.add('idle');
+    }
+
+    if (!this.isOpen && !(window.__pauseMenu && window.__pauseMenu.isOpen)) {
+      this.renderHudMiniMap(carPos, carSpeedKmh, carHeadingDir);
     }
 
     if (!this.isOpen) return;
@@ -840,5 +967,357 @@ export class WorldMapController {
     if (this.zoomLabelEl) {
       this.zoomLabelEl.textContent = `${Math.round(this.scale * 100)}%`;
     }
+  }
+
+  renderHudMiniMap(carPos, carSpeedKmh = 0, carHeadingDir = null) {
+    if (!this.hudMinimapCtx || !this.hudMinimapCanvasEl || !carPos) return;
+
+    const ctx = this.hudMinimapCtx;
+    const W = this.hudMinimapCanvasEl.width;
+    const H = this.hudMinimapCanvasEl.height;
+    const R = W * 0.5;
+
+    // 1. Smoothly track the car's forward unit vector in XZ
+    if (carHeadingDir) {
+      const hLen = Math.hypot(carHeadingDir.x, carHeadingDir.z) || 1;
+      const tx = carHeadingDir.x / hLen;
+      const tz = carHeadingDir.z / hLen;
+      this.miniFwdX += (tx - this.miniFwdX) * 0.24;
+      this.miniFwdZ += (tz - this.miniFwdZ) * 0.24;
+      const mLen = Math.hypot(this.miniFwdX, this.miniFwdZ) || 1;
+      this.miniFwdX /= mLen;
+      this.miniFwdZ /= mLen;
+    }
+
+    const fwdX = this.miniFwdX;
+    const fwdZ = this.miniFwdZ;
+    // In Three.js (X right, Z South), turning 90 deg clockwise from (fwdX, fwdZ) gives Right = (-fwdZ, fwdX)
+    const rightX = -fwdZ;
+    const rightZ = fwdX;
+
+    // Dynamic speed-adaptive radar zoom (much closer/zoomed-in, zooms out smoothly at high speed)
+    const speedFactor = Math.min(1.0, Math.max(0.0, (carSpeedKmh || 0) / 210.0));
+    const targetScale = 3.85 - speedFactor * 0.95;
+    this.miniRadarScale += (targetScale - this.miniRadarScale) * 0.14;
+    const scale = this.miniRadarScale;
+
+    // Player delta sits at (50%, 70%) inside the circle so ~70% of the disc shows the road ahead
+    const cx = W * 0.50;
+    const cy = H * 0.70;
+
+    // 3D tilted forward-up radar projection (strong Forza Horizon 6 angled perspective radar)
+    const projectPt = (wx, wz) => {
+      const dx = wx - carPos.x;
+      const dz = wz - carPos.z;
+      const localRight = dx * rightX + dz * rightZ;
+      const localFwd = dx * fwdX + dz * fwdZ;
+      const clampedFwd = Math.max(-58.0, localFwd);
+      const persp = 1.0 / (1.0 + clampedFwd * 0.0072);
+      return {
+        x: cx + localRight * scale * persp,
+        y: cy - localFwd * scale * 0.56 * persp,
+        persp,
+        localFwd,
+        localRight
+      };
+    };
+
+    ctx.clearRect(0, 0, W, H);
+    ctx.save();
+
+    const drivableRoutes = this._miniDrivableRoutes || [];
+    const isRouteClosed = (r) => Boolean(r.closed || r.id === 'hwy');
+    const isElevatedCrossing = (r) => r.id === 'overpass' || r.id === 'hwy_west' || r.id === 'autumn_loop';
+    const bridgeSegments = this._miniBridgeSegments || [];
+    const tunnelSegments = this._miniTunnelSegments || [];
+
+    // Forward-shifted directional cull box: skips roads behind the car (-110m behind)
+    // while keeping the entire forward perspective horizon (+840m ahead) seamless
+    const cullCenterX = carPos.x + fwdX * 320.0;
+    const cullCenterZ = carPos.z + fwdZ * 320.0;
+    const cullMinX = cullCenterX - 580.0;
+    const cullMaxX = cullCenterX + 580.0;
+    const cullMinZ = cullCenterZ - 580.0;
+    const cullMaxZ = cullCenterZ + 580.0;
+
+    const drawPerspectivePolyline = (pts, baseWidth, strokeStyle, closeLoop = false, lineCap = 'round', stride = 3) => {
+      if (!pts || pts.length < 2) return;
+      ctx.strokeStyle = strokeStyle;
+      ctx.lineCap = lineCap;
+      ctx.lineJoin = 'round';
+
+      const len = pts.length;
+      const maxIdx = closeLoop ? len : len - 1;
+      let pathOpen = false;
+      let lastWidth = -1;
+      let prevEndX = 1e9;
+      let prevEndY = 1e9;
+
+      for (let i = 0; i < maxIdx; i += stride) {
+        const nextIdx = i + stride;
+        const j = nextIdx < len ? nextIdx : (closeLoop ? nextIdx % len : len - 1);
+        if (!closeLoop && j === i) break;
+
+        const a = pts[i];
+        const b = pts[j];
+        const ax = Array.isArray(a) ? a[0] : a.x;
+        const az = Array.isArray(a) ? (a.length > 2 ? a[2] : a[1]) : a.z;
+        const bx = Array.isArray(b) ? b[0] : b.x;
+        const bz = Array.isArray(b) ? (b.length > 2 ? b[2] : b[1]) : b.z;
+
+        const adx = ax - carPos.x;
+        const adz = az - carPos.z;
+        const alf = adx * fwdX + adz * fwdZ;
+        const bdx = bx - carPos.x;
+        const bdz = bz - carPos.z;
+        const blf = bdx * fwdX + bdz * fwdZ;
+
+        // Cull segments completely behind the car or beyond the forward horizon
+        if ((alf < -110.0 && blf < -110.0) || (alf > 840.0 && blf > 840.0)) {
+          continue;
+        }
+
+        const alr = adx * rightX + adz * rightZ;
+        const blr = bdx * rightX + bdz * rightZ;
+        if ((alr < -380.0 && blr < -380.0) || (alr > 380.0 && blr > 380.0)) {
+          continue;
+        }
+
+        const acf = alf < -58.0 ? -58.0 : alf;
+        const ap = 1.0 / (1.0 + acf * 0.0072);
+        const p0x = cx + alr * scale * ap;
+        const p0y = cy - alf * scale * 0.56 * ap;
+
+        const bcf = blf < -58.0 ? -58.0 : blf;
+        const bp = 1.0 / (1.0 + bcf * 0.0072);
+        const p1x = cx + blr * scale * bp;
+        const p1y = cy - blf * scale * 0.56 * bp;
+
+        if (
+          (p0x < -90 && p1x < -90) ||
+          (p0x > W + 90 && p1x > W + 90) ||
+          (p0y < -90 && p1y < -90) ||
+          (p0y > H + 90 && p1y > H + 90)
+        ) {
+          continue;
+        }
+
+        const segPersp = Math.max(0.30, Math.min(1.55, (ap + bp) * 0.5));
+        const w = baseWidth * segPersp;
+
+        // Flush only when width shifts by >0.35px (sub-pixel smooth tapering, zero visible steps)
+        if (!pathOpen || Math.abs(w - lastWidth) > 0.35) {
+          if (pathOpen) ctx.stroke();
+          ctx.lineWidth = w;
+          ctx.beginPath();
+          ctx.moveTo(p0x, p0y);
+          ctx.lineTo(p1x, p1y);
+          lastWidth = w;
+          pathOpen = true;
+        } else {
+          if (Math.abs(p0x - prevEndX) > 0.5 || Math.abs(p0y - prevEndY) > 0.5) {
+            ctx.moveTo(p0x, p0y);
+          }
+          ctx.lineTo(p1x, p1y);
+        }
+        prevEndX = p1x;
+        prevEndY = p1y;
+      }
+
+      if (pathOpen) {
+        ctx.stroke();
+      }
+    };
+
+    const routeNearCar = (r) => {
+      if (!r._bbox) return true;
+      return !(r._bbox.maxX < cullMinX || r._bbox.minX > cullMaxX || r._bbox.maxZ < cullMinZ || r._bbox.minZ > cullMaxZ);
+    };
+
+    const getRoadCoreWidth = (r) => {
+      if (r.type === 'highway' || r.id === 'hwy' || r.id === 'hwy_west') return 19.5;
+      if (r.type === 'narrow' || r.id === 'east_ridge' || r.id === 'canyon_cut' || r.id === 'autumn_loop') return 11.5;
+      return 15.0;
+    };
+
+    // PASS 1: All ground road dark casings first (merges all T-junctions seamlessly)
+    for (const r of drivableRoutes) {
+      if (!routeNearCar(r)) continue;
+      const isClosed = isRouteClosed(r);
+      const coreW = getRoadCoreWidth(r);
+      drawPerspectivePolyline(r.points, coreW + 6.5, 'rgba(10, 14, 20, 0.96)', isClosed, 'round', 3);
+    }
+
+    // PASS 2: All ground road cores in unified crisp silver-white (highways first, then secondary/narrow)
+    for (const r of drivableRoutes) {
+      if (r.type === 'highway' && !isElevatedCrossing(r) && routeNearCar(r)) {
+        drawPerspectivePolyline(r.points, getRoadCoreWidth(r), '#f2f5f9', isRouteClosed(r), 'round', 3);
+      }
+    }
+    for (const r of drivableRoutes) {
+      if (r.type === 'highway' || isElevatedCrossing(r) || !routeNearCar(r)) continue;
+      drawPerspectivePolyline(r.points, getRoadCoreWidth(r), '#f2f5f9', false, 'round', 3);
+    }
+
+    // PASS 2.5: Subtle dashed tunnel bore overlay on Alpine Summit
+    for (const tun of tunnelSegments) {
+      if (!routeNearCar(tun)) continue;
+      ctx.save();
+      ctx.setLineDash([10, 11]);
+      drawPerspectivePolyline(tun.points, 9.5, 'rgba(74, 85, 104, 0.85)', false, 'round', 3);
+      ctx.restore();
+    }
+
+    // PASS 3: Elevated overpass bridge deck casings & continuous white cores across ALL routes with bridges
+    for (const b of bridgeSegments) {
+      if (!routeNearCar(b)) continue;
+      const bCoreW = getRoadCoreWidth({ type: b.road_type || 'secondary', id: b.id });
+      drawPerspectivePolyline(b.points, bCoreW + 10.0, 'rgba(0, 0, 0, 0.35)', false, 'round', 3);
+      drawPerspectivePolyline(b.points, bCoreW + 6.5, '#0c1017', false, 'round', 3);
+    }
+    for (const r of drivableRoutes) {
+      if ((isElevatedCrossing(r) || r.id === 'hwy' || r.id === 'east_ridge') && routeNearCar(r)) {
+        drawPerspectivePolyline(r.points, getRoadCoreWidth(r), '#f8fafc', isRouteClosed(r), 'round', 3);
+      }
+    }
+
+    // PASS 4: Active GPS Route Ribbon in Forza Cyan (#18e4ff) with lightweight outer glow stroke
+    const gpsPath = this.gpsNav && this.gpsNav.activePath;
+    if (gpsPath && gpsPath.length >= 2) {
+      drawPerspectivePolyline(gpsPath, 22.0, 'rgba(24, 228, 255, 0.28)', false, 'round', 2);
+      drawPerspectivePolyline(gpsPath, 19.0, 'rgba(7, 30, 40, 0.94)', false, 'round', 2);
+      drawPerspectivePolyline(gpsPath, 14.0, '#18e4ff', false, 'round', 2);
+    }
+
+    // PASS 5: Soft radial edge feather mask so roads fade smoothly before touching the outer white bezel ring
+    ctx.globalCompositeOperation = 'destination-in';
+    const featherGrad = ctx.createRadialGradient(R, R, R * 0.72, R, R, R * 0.965);
+    featherGrad.addColorStop(0.0, 'rgba(0, 0, 0, 1)');
+    featherGrad.addColorStop(0.76, 'rgba(0, 0, 0, 0.90)');
+    featherGrad.addColorStop(1.0, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = featherGrad;
+    ctx.beginPath();
+    ctx.arc(R, R, R, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+
+    // PASS 6: Upright Landmark POI badges inside the radar
+    const landmarks = (this.routesData && this.routesData.landmarks) ? this.routesData.landmarks : [];
+    for (const lm of landmarks) {
+      const p = projectPt(lm.x, lm.z);
+      const distFromCenter = Math.hypot(p.x - R, p.y - R);
+      if (distFromCenter > R * 0.84) continue;
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 10.0, 0, Math.PI * 2);
+      const cat = lm.type || lm.category || '';
+      ctx.fillStyle = cat === 'festival' ? '#e11d48' : cat === 'speedway' ? '#7c3aed' : cat === 'mountain' ? '#ea580c' : '#2563eb';
+      ctx.fill();
+      ctx.lineWidth = 2.4;
+      ctx.strokeStyle = '#ffffff';
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 3.2, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Active GPS Destination bullseye (clamped to radar rim if far away)
+    if (this.gpsNav && this.gpsNav.activeWaypoint) {
+      const wp = this.gpsNav.activeWaypoint;
+      const p = projectPt(wp.x, wp.z);
+      let tx = p.x;
+      let ty = p.y;
+      const dx = tx - R;
+      const dy = ty - R;
+      const dist = Math.hypot(dx, dy);
+      const maxRim = R * 0.85;
+      if (dist > maxRim && dist > 1e-4) {
+        tx = R + (dx / dist) * maxRim;
+        ty = R + (dy / dist) * maxRim;
+      }
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(tx, ty, 11.5, 0, Math.PI * 2);
+      ctx.fillStyle = '#09222c';
+      ctx.fill();
+      ctx.lineWidth = 3.2;
+      ctx.strokeStyle = '#18e4ff';
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(tx, ty, 4.8, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // PASS 7: Perspective-Skewed Notched White Player Delta Arrow at (cx, cy) matching the tilted road plane
+    ctx.save();
+    ctx.translate(cx, cy);
+
+    const projectArrowVert = (ax, ay) => {
+      // ay is forward (+up is negative screen Y): match the 3D radar tilt (0.56) & perspective taper
+      const tiltY = ay * 0.58;
+      const persp = 1.0 / (1.0 - tiltY * 0.0085);
+      return {
+        x: ax * persp,
+        y: tiltY * persp
+      };
+    };
+
+    const tip = projectArrowVert(0, -33.0);
+    const rightWing = projectArrowVert(25.0, 21.0);
+    const notch = projectArrowVert(0, 9.0);
+    const leftWing = projectArrowVert(-25.0, 21.0);
+
+    ctx.beginPath();
+    ctx.moveTo(tip.x, tip.y);
+    ctx.lineTo(rightWing.x, rightWing.y);
+    ctx.lineTo(notch.x, notch.y);
+    ctx.lineTo(leftWing.x, leftWing.y);
+    ctx.closePath();
+
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 7.2;
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.35)';
+    ctx.stroke();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.lineWidth = 4.6;
+    ctx.strokeStyle = '#10141d';
+    ctx.stroke();
+    ctx.restore();
+
+    // PASS 8: Orbiting North ("N") Compass Indicator along the inner bezel rim
+    // World North is (0, -1): localRight_N = -rightZ = -fwdX, localFwd_N = -fwdZ => screen dir = (-fwdX, fwdZ)
+    const nx = -fwdX;
+    const ny = fwdZ;
+    const nOrbitR = R - 23;
+    const nPosX = R + nx * nOrbitR;
+    const nPosY = R + ny * nOrbitR;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(nPosX, nPosY, 13.5, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(14, 18, 26, 0.85)';
+    ctx.fill();
+    ctx.lineWidth = 1.6;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.38)';
+    ctx.stroke();
+
+    ctx.font = '800 15px "Outfit", -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('N', nPosX, nPosY + 0.5);
+    ctx.restore();
+
+    ctx.restore();
   }
 }
