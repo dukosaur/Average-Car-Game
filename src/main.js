@@ -6,6 +6,7 @@ import { RaycastVehicleController } from './vehicleController.js';
 import { WorldMapController } from './worldMap.js';
 import { GPSNavigationSystem } from './gpsNavigation.js';
 import { PauseMenuController } from './pauseMenu.js';
+import { assetUrl } from './assetUrl.js';
 
 // DOM Telemetry Elements
 const speedValueEl = document.getElementById('speed-value');
@@ -19,11 +20,11 @@ const freecamHintEl = document.getElementById('freecam-hint');
 
 // Available Rigged Vehicles in `/public/assets/`
 const CAR_ROSTER = [
-  { id: 'supra',   name: 'JDM SUPRA GT',   fullName: 'JDM Widebody Supra GT',   thumb: '/assets/thumb_supra.png',   url: '/assets/player_car.glb' },
-  { id: 'veneno',  name: 'LAMBO VENENO',   fullName: 'Lamborghini Veneno GT',   thumb: '/assets/thumb_veneno.png',  url: '/assets/car_veneno.glb' },
-  { id: 'mustang', name: 'SHELBY MUSTANG', fullName: 'Shelby Mustang Fastback', thumb: '/assets/thumb_mustang.png', url: '/assets/car_mustang.glb' },
-  { id: 'fordgt',  name: 'FORD GT',        fullName: 'Ford GT Supercar',        thumb: '/assets/thumb_fordgt.png',  url: '/assets/car_fordgt.glb' },
-  { id: 'amg',     name: 'AMG GT COUPE',   fullName: 'Mercedes-AMG GT Coupe',   thumb: '/assets/thumb_amg.png',     url: '/assets/car_amg.glb' },
+  { id: 'supra',   name: 'JDM SUPRA GT',   fullName: 'JDM Widebody Supra GT',   thumb: '/assets/thumb_supra.png',   url: assetUrl('/assets/player_car.glb') },
+  { id: 'veneno',  name: 'LAMBO VENENO',   fullName: 'Lamborghini Veneno GT',   thumb: '/assets/thumb_veneno.png',  url: assetUrl('/assets/car_veneno.glb') },
+  { id: 'mustang', name: 'SHELBY MUSTANG', fullName: 'Shelby Mustang Fastback', thumb: '/assets/thumb_mustang.png', url: assetUrl('/assets/car_mustang.glb') },
+  { id: 'fordgt',  name: 'FORD GT',        fullName: 'Ford GT Supercar',        thumb: '/assets/thumb_fordgt.png',  url: assetUrl('/assets/car_fordgt.glb') },
+  { id: 'amg',     name: 'AMG GT COUPE',   fullName: 'Mercedes-AMG GT Coupe',   thumb: '/assets/thumb_amg.png',     url: assetUrl('/assets/car_amg.glb') },
 ];
 
 // Forza Horizon-Inspired Exterior & Action Camera Presets (No Interior Cam)
@@ -1274,15 +1275,15 @@ async function buildTestGround(scene, world, maxAnisotropy = 8, sun) {
   world.createCollider(safetyCollider, safetyBody);
 
   const [obstacles, roadCorridors, natureInstances] = await Promise.all([
-    fetch('/assets/nature_obstacles.json?v=37').then((r) => r.json()).catch(() => []),
-    fetch('/assets/road_corridors.json?v=37').then((r) => r.json()).catch(() => []),
-    fetch('/assets/nature_instances.json?v=37').then((r) => r.json()).catch(() => []),
+    fetch(assetUrl('/assets/nature_obstacles.json?v=37')).then((r) => r.json()).catch(() => []),
+    fetch(assetUrl('/assets/road_corridors.json?v=37')).then((r) => r.json()).catch(() => []),
+    fetch(assetUrl('/assets/nature_instances.json?v=37')).then((r) => r.json()).catch(() => []),
   ]);
 
   return new Promise((resolve) => {
     const circuitLoader = new GLTFLoader();
     circuitLoader.load(
-      '/assets/circuit_track.glb?v=37',
+      assetUrl('/assets/circuit_track.glb?v=37'),
       (gltf) => {
         const trackRoot = gltf.scene;
         let roadMesh = null;

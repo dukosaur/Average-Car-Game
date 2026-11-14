@@ -10,6 +10,8 @@
  *  - Seamless open/close integration with HUD button and Key M / Esc hotkeys
  */
 
+import { assetUrl } from './assetUrl.js';
+
 export class WorldMapController {
   constructor(vehicle, input, gpsNav = null) {
     this.vehicle = vehicle;
@@ -189,8 +191,19 @@ export class WorldMapController {
   }
 
   async loadMapMetadata() {
+    // Route heavy satellite map images to remote CDN/GitHub Pages in production if configured
+    for (const sel of ['.map-satellite-img', '.pause-mini-map-satellite']) {
+      const img = document.querySelector(sel);
+      if (img) {
+        const attrSrc = img.getAttribute('src');
+        if (attrSrc && attrSrc.startsWith('/assets/')) {
+          img.src = assetUrl(attrSrc);
+        }
+      }
+    }
+
     try {
-      const resp = await fetch('/assets/map_routes.json?v=37');
+      const resp = await fetch(assetUrl('/assets/map_routes.json?v=37'));
       if (resp.ok) {
         this.routesData = await resp.json();
         if (this.routesData.routes) {
