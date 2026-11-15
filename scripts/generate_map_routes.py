@@ -64,6 +64,7 @@ def extract_and_save():
             "name": r["name"],
             "type": r["type"],
             "closed": bool(r["closed"]),
+            "has_bridge": bool(r.get("bridge_ranges")),
             "layer": "ground",
             "points": pts,
         })

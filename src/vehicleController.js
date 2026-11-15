@@ -138,19 +138,19 @@ export class RaycastVehicleController {
     this.rigidBody = world.createRigidBody(bodyDesc);
 
     const lowerHull = RAPIER.ColliderDesc.cuboid(
-      params.chassisDims.x * 0.46,
-      0.20,
-      params.chassisDims.z * 0.45
+      params.chassisDims.x * 0.48,
+      0.16,
+      params.chassisDims.z * 0.48
     )
-      .setTranslation(0, 0.06, 0)
+      .setTranslation(0, 0.11, 0)
       .setMass(params.mass * 0.85)
       .setFriction(0.3)
       .setRestitution(0.0);
 
     const upperCabin = RAPIER.ColliderDesc.cuboid(
-      params.chassisDims.x * 0.38,
+      params.chassisDims.x * 0.42,
       0.20,
-      params.chassisDims.z * 0.22
+      params.chassisDims.z * 0.25
     )
       .setTranslation(0, 0.44, -0.15)
       .setMass(params.mass * 0.15)
@@ -273,7 +273,7 @@ export class RaycastVehicleController {
         maxRayDist,
         true,
         undefined,
-        undefined,
+        (0xFFFF << 16) | 0x0001,
         undefined,
         rigidBody
       );
@@ -294,7 +294,8 @@ export class RaycastVehicleController {
         const rVec = hardpointWorld.clone().sub(chassisPos);
         const pointVel = velVec.clone().add(new THREE.Vector3().crossVectors(angVelVec, rVec));
 
-        const compressionVel = -pointVel.dot(w.hitNormal);
+        const rawCompVel = -pointVel.dot(w.hitNormal);
+        const compressionVel = Math.max(-3.0, Math.min(2.2, rawCompVel));
         const springForce = params.suspensionStiffness * w.compression;
         const damperCoeff = compressionVel >= 0 ? params.dampingCompression : params.dampingRelaxation;
         const damperForce = damperCoeff * compressionVel;
@@ -409,6 +410,26 @@ export class RaycastVehicleController {
         activeYawTorque;
       const yawVec = upDir.clone().multiplyScalar(baseYaw);
       rigidBody.addTorque({ x: yawVec.x, y: yawVec.y, z: yawVec.z }, true);
+    }
+
+    // Anti-roll bar & uprighting stabilizer so hitting sloped road shoulders at speed won't flip the car
+    if (groundedCount >= 1) {
+      const worldUp = new THREE.Vector3(0, 1, 0);
+      const tiltAxis = new THREE.Vector3().crossVectors(upDir, worldUp);
+      const tiltSin = Math.min(1.0, tiltAxis.length());
+      if (tiltSin > 0.01) {
+        tiltAxis.normalize();
+        // Progressive uprighting torque: gentle at small lean, strong resistance past ~20 deg
+        const uprightStrength = params.mass * (3.2 + 12.0 * tiltSin * tiltSin);
+        const rollVelDamp = angVelVec.dot(forwardDir) * params.mass * 2.4;
+        const uprightTorque = tiltAxis
+          .multiplyScalar(tiltSin * uprightStrength)
+          .addScaledVector(forwardDir, -rollVelDamp);
+        rigidBody.addTorque(
+          { x: uprightTorque.x, y: uprightTorque.y, z: uprightTorque.z },
+          true
+        );
+      }
     }
 
     // Gentle low-speed full-stop settle when idle

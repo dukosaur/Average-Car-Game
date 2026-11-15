@@ -6,6 +6,7 @@ import { RaycastVehicleController } from './vehicleController.js';
 import { WorldMapController } from './worldMap.js';
 import { GPSNavigationSystem } from './gpsNavigation.js';
 import { PauseMenuController } from './pauseMenu.js';
+import { AtmosphereSystem } from './atmosphere.js';
 import { assetUrl } from './assetUrl.js';
 
 // DOM Telemetry Elements
@@ -180,8 +181,7 @@ function createHorizonSkyDome(scene, sun) {
     varying vec3 vWorldPosition;
 
     void main() {
-      vec4 worldPosition = modelMatrix * vec4(position, 1.0);
-      vWorldPosition = worldPosition.xyz;
+      vWorldPosition = position;
       gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
     }
   `;
@@ -190,20 +190,23 @@ function createHorizonSkyDome(scene, sun) {
     varying vec3 vWorldPosition;
 
     uniform vec3 uSunPosition;
+    uniform vec3 uHorizonColor;
+    uniform vec3 uMidSkyColor;
+    uniform vec3 uZenithColor;
 
     void main() {
       vec3 viewDir = normalize(vWorldPosition);
       float y = max(0.0, viewDir.y);
 
-      // --- 1. Atmospheric Rayleigh Sky Color Gradient (Matching Reference Image 1) ---
-      vec3 zenithColor  = vec3(0.06, 0.36, 0.84); // Rich vibrant cerulean azure
-      vec3 midSkyColor  = vec3(0.18, 0.58, 0.92); // Sunny bright azure
-      vec3 lowSkyColor  = vec3(0.46, 0.76, 0.94); // Sunny pale turquoise / cyan
-      vec3 horizonColor = vec3(0.612, 0.784, 0.910); // Soft atmospheric haze matching scene fog 0x9cc8e8
+      // --- 1. Atmospheric Rayleigh Sky Color Gradient (Biome-Dynamic Horizon & Zenith) ---
+      vec3 zenithColor  = uZenithColor;
+      vec3 midSkyColor  = uMidSkyColor;
+      vec3 horizonColor = uHorizonColor;
+      vec3 lowSkyColor  = mix(horizonColor, midSkyColor, 0.52);
 
-      vec3 skyColor = mix(horizonColor, lowSkyColor, smoothstep(0.0, 0.06, y));
-      skyColor = mix(skyColor, midSkyColor, smoothstep(0.06, 0.22, y));
-      skyColor = mix(skyColor, zenithColor, smoothstep(0.22, 0.58, y));
+      vec3 skyColor = mix(horizonColor, lowSkyColor, smoothstep(0.0, 0.07, y));
+      skyColor = mix(skyColor, midSkyColor, smoothstep(0.07, 0.24, y));
+      skyColor = mix(skyColor, zenithColor, smoothstep(0.24, 0.60, y));
 
       if (viewDir.y < 0.0) {
         skyColor = horizonColor;
@@ -235,6 +238,9 @@ function createHorizonSkyDome(scene, sun) {
     fragmentShader,
     uniforms: {
       uSunPosition: { value: new THREE.Vector3().copy(sun) },
+      uHorizonColor: { value: new THREE.Color(0x9cc8e8) },
+      uMidSkyColor: { value: new THREE.Color(0x2e94eb) },
+      uZenithColor: { value: new THREE.Color(0x105cd6) },
     },
     side: THREE.BackSide,
     depthWrite: false,
@@ -629,15 +635,15 @@ function createStaticGrassField(terrainMesh, roadCorridors, obstacles, scene, su
     const midZ = (vA.z + vB.z + vC.z) / 3.0;
     const minGrassY = midZ > 495.0 ? 2.2 : -0.8;
     const ny = Math.abs(norm.y);
-    const isSnowCap = midX < 175.0 && midZ < -65.0 && avgY > 29.5;
+    const isSnowCap = midX < 320.0 && midZ < -65.0 && avgY > 29.5;
     if (ny < 0.68 || avgY < minGrassY || isSnowCap || avgY > 52.0) continue;
 
     // Prioritize lush grass along road corridors while keeping open meadows performant
     const triRoadClr = getRoadClearance(midX, midZ);
-    let density = triRoadClr < 30.0 ? 0.44 : (triRoadClr < 68.0 ? 0.18 : 0.05);
-    // Keep SW Red-Rock desert scrub sparse for authentic mesa contrast
-    if (midX < -120.0 && midZ > -200.0 && midZ < 560.0) {
-      density *= 0.28;
+    let density = triRoadClr < 30.0 ? 0.36 : (triRoadClr < 68.0 ? 0.14 : 0.035);
+    // Keep SW/West Red-Rock desert & East Volcanic Caldera scrub sparse for authentic contrast
+    if ((midX < -120.0 && midZ > -440.0 && midZ < 620.0) || (midX > 880.0 && midZ > -460.0 && midZ < 260.0)) {
+      density *= 0.25;
     }
     let numCandidates = Math.round(triArea * density);
     if (numCandidates < 1 && rand() < (triArea * density)) numCandidates = 1;
@@ -698,11 +704,28 @@ function createStaticGrassField(terrainMesh, roadCorridors, obstacles, scene, su
     new THREE.Color(0xa86b18),
   ];
   const desertGrassPalette = [
-    new THREE.Color(0x8a7d44),
-    new THREE.Color(0x9c894b),
-    new THREE.Color(0x736b3a),
-    new THREE.Color(0xa89254),
-    new THREE.Color(0x7f7540),
+    new THREE.Color(0x9e5a34),
+    new THREE.Color(0xb06c3c),
+    new THREE.Color(0x8a4f2c),
+    new THREE.Color(0xa66338),
+    new THREE.Color(0x945f36),
+  ];
+  const volcanoGrassPalette = [
+    new THREE.Color(0x3a383a),
+    new THREE.Color(0x454244),
+    new THREE.Color(0x2f2d30),
+    new THREE.Color(0x4d4745),
+  ];
+  const coldGrassPalette = [
+    new THREE.Color(0x66797d),
+    new THREE.Color(0x788c91),
+    new THREE.Color(0x8ca1a6),
+    new THREE.Color(0xb8cad0),
+  ];
+  const snowGrassPalette = [
+    new THREE.Color(0xcfdbe0),
+    new THREE.Color(0xdde7ec),
+    new THREE.Color(0xc2d0d6),
   ];
   const coastGrassPalette = [
     new THREE.Color(0x6f8d38),
@@ -887,15 +910,24 @@ function createStaticGrassField(terrainMesh, roadCorridors, obstacles, scene, su
 
       const wx = p.x;
       const wy = -p.z; // Blender Y coordinate = -Three.js Z
+      const tz = p.y;
       const wyBioW = wy + 26.0 * Math.sin(wx * 0.014 + 0.5);
       const wxBioE = wx + 28.0 * Math.cos(wy * 0.013 - 0.4);
       const wyBioN = wy + 26.0 * Math.sin(wx * 0.012 + 1.1);
 
-      const tAutumn = smoothstepJs(85.0, 310.0, wxBioE) * smoothstepJs(75.0, 285.0, wyBioN);
-      const tDesert = (1.0 - smoothstepJs(-320.0, -90.0, wxBioE))
-        * smoothstepJs(-580.0, -445.0, wyBioW)
-        * (1.0 - smoothstepJs(85.0, 215.0, wyBioW));
-      const tCoast = (1.0 - smoothstepJs(-565.0, -455.0, wy)) * (1.0 - tDesert * 0.8);
+      const tAutumn = smoothstepJs(85.0, 320.0, wxBioE) * smoothstepJs(55.0, 275.0, wyBioN);
+      const canyonNorthFar = 330.0 + 330.0 * (1.0 - smoothstepJs(-1150.0, -800.0, wxBioE));
+      const tDesert = (1.0 - smoothstepJs(-340.0, -85.0, wxBioE))
+        * smoothstepJs(-940.0, -680.0, wyBioW)
+        * (1.0 - smoothstepJs(canyonNorthFar, canyonNorthFar + 160.0, wyBioW));
+      const dVolc = Math.hypot((wxBioE - 1140.0) / 1.18, (wyBioW - 75.0) / 1.12);
+      const tVolcano = 1.0 - smoothstepJs(320.0, 560.0, dVolc);
+      const inNorthGlacier = smoothstepJs(700.0, 960.0, wyBioN) * (1.0 - smoothstepJs(140.0, 380.0, wxBioE)) * smoothstepJs(-1380.0, -1020.0, wxBioE);
+      const inTougeCorridor = smoothstepJs(110.0, 290.0, wyBioN) * (1.0 - smoothstepJs(800.0, 1060.0, wyBioN)) * smoothstepJs(-620.0, -400.0, wxBioE) * (1.0 - smoothstepJs(90.0, 280.0, wxBioE));
+      const tCold = Math.max(inNorthGlacier, inTougeCorridor) * (1.0 - tDesert) * (1.0 - tAutumn * 0.85) * (1.0 - tVolcano);
+      const glacierCore = smoothstepJs(920.0, 1140.0, wyBioN) * (1.0 - smoothstepJs(60.0, 260.0, wxBioE)) * smoothstepJs(-1220.0, -920.0, wxBioE);
+      const tSnow = tCold * smoothstepJs(21.0 - 15.0 * glacierCore, 31.0 - 14.0 * glacierCore, tz);
+      const tCoast = (1.0 - smoothstepJs(-565.0, -455.0, wy)) * (1.0 - tDesert * 0.85) * (1.0 - tVolcano);
 
       const gCol = grassPalette[Math.floor(rand() * grassPalette.length)];
       tmpBiomeCol.copy(gCol);
@@ -905,7 +937,19 @@ function createStaticGrassField(terrainMesh, roadCorridors, obstacles, scene, su
       }
       if (tDesert > 0.02) {
         const dCol = desertGrassPalette[Math.floor(rand() * desertGrassPalette.length)];
-        tmpBiomeCol.lerp(dCol, Math.min(1.0, tDesert * 0.92));
+        tmpBiomeCol.lerp(dCol, Math.min(1.0, tDesert * 0.95));
+      }
+      if (tVolcano > 0.02) {
+        const vCol = volcanoGrassPalette[Math.floor(rand() * volcanoGrassPalette.length)];
+        tmpBiomeCol.lerp(vCol, Math.min(1.0, tVolcano));
+      }
+      if (tCold > 0.02) {
+        const cCold = coldGrassPalette[Math.floor(rand() * coldGrassPalette.length)];
+        tmpBiomeCol.lerp(cCold, Math.min(1.0, tCold));
+        if (tSnow > 0.05) {
+          const sCol = snowGrassPalette[Math.floor(rand() * snowGrassPalette.length)];
+          tmpBiomeCol.lerp(sCol, Math.min(1.0, tSnow));
+        }
       }
       if (tCoast > 0.02) {
         const cCol = coastGrassPalette[Math.floor(rand() * coastGrassPalette.length)];
@@ -916,7 +960,8 @@ function createStaticGrassField(terrainMesh, roadCorridors, obstacles, scene, su
       colors[i * 3 + 1] = tmpBiomeCol.g;
       colors[i * 3 + 2] = tmpBiomeCol.b;
 
-      if (rand() < 0.08) {
+      const allowFlower = tVolcano < 0.35 && tDesert < 0.45 && tCold < 0.45;
+      if (allowFlower && rand() < 0.08) {
         flowerTypes[i] = Math.floor(rand() * 5.0);
       } else {
         flowerTypes[i] = -1.0;
@@ -1206,31 +1251,194 @@ function createInstancedNatureField(templateMap, natureInstances, obstacles, sce
     }
   }
 
-  // 2. Attach lightweight Rapier primitive colliders (rock spheres & tree trunk cylinders) onto one fixed RigidBody
-  if (world && obstacles && obstacles.length > 0) {
+  // 2. Spatially-chunked Rapier 3D colliders (100m grid, 3x3 active neighborhood around car)
+  // Keeps 100% exact per-object hitboxes while reducing active Rapier colliders from ~9,800 to ~150!
+  let updateColliders = null;
+  if (world) {
     const natBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
-    let colliderCount = 0;
-    for (let i = 0; i < obstacles.length; i++) {
-      const obs = obstacles[i];
-      if (obs.type === 'rock') {
-        const rad = Math.max(0.55, obs.r * 0.72);
-        const desc = RAPIER.ColliderDesc.ball(rad)
-          .setTranslation(obs.x, obs.z + rad * 0.6, -obs.y)
-          .setFriction(0.85)
-          .setRestitution(0.0);
-        world.createCollider(desc, natBody);
-        colliderCount++;
-      } else if (obs.type === 'tree') {
-        const rad = Math.max(0.45, obs.r * 0.45);
-        const desc = RAPIER.ColliderDesc.cylinder(3.2, rad)
-          .setTranslation(obs.x, obs.z + 2.8, -obs.y)
+    const COLLIDER_CHUNK_SIZE = 100.0;
+    const PROP_COLLISION_GROUPS = (0x0002 << 16) | 0xFFFF;
+    const colliderChunks = new Map();
+    let totalColliderDescs = 0;
+
+    const addChunkDesc = (x, z, desc) => {
+      desc.setCollisionGroups(PROP_COLLISION_GROUPS);
+      const cx = Math.floor(x / COLLIDER_CHUNK_SIZE);
+      const cz = Math.floor(z / COLLIDER_CHUNK_SIZE);
+      const key = `${cx}_${cz}`;
+      let arr = colliderChunks.get(key);
+      if (!arr) {
+        arr = [];
+        colliderChunks.set(key, arr);
+      }
+      arr.push(desc);
+      totalColliderDescs++;
+    };
+
+    const BOX_PROPS = {
+      town_house_a: [3.20, 2.80, 2.50],
+      town_house_b: [4.00, 2.40, 2.60],
+      ski_chalet: [3.40, 2.60, 2.80],
+      desert_adobe: [3.50, 2.25, 2.70],
+      lighthouse: [2.35, 8.00, 2.35],
+      jersey_barrier: [1.52, 0.49, 0.32],
+      woodlog: [0.24, 0.28, 1.28],
+    };
+
+    const ROCK_RADII = {
+      rock1: 0.24,
+      rock2: 0.28,
+      rock3: 0.36,
+      rock_moss1: 0.24,
+      rock_moss2: 0.31,
+      rock_snow1: 0.24,
+    };
+
+    const TREE_TRUNK_RADII = {
+      common1: 0.088,
+      common2: 0.075,
+      autumn1: 0.088,
+      autumn2: 0.075,
+      desert_red_tree1: 0.088,
+      desert_red_tree2: 0.115,
+      birch1: 0.088,
+      birch_autumn: 0.088,
+      willow1: 0.088,
+      willow_autumn: 0.088,
+      palm1: 0.098,
+      palm2: 0.098,
+      pine1: 0.115,
+      pine2: 0.115,
+      pine_autumn: 0.115,
+      pine_snow1: 0.115,
+      pine_snow2: 0.115,
+      volcano_pine1: 0.115,
+      volcano_pine2: 0.115,
+    };
+
+    for (let i = 0; i < natureInstances.length; i++) {
+      const [key, x, y, z, s, rotY] = natureInstances[i];
+
+      if (BOX_PROPS[key]) {
+        const [bx, by, bz] = BOX_PROPS[key];
+        const halfY = by * s;
+        const halfAng = rotY * 0.5;
+        const desc = RAPIER.ColliderDesc.cuboid(bx * s, halfY, bz * s)
+          .setTranslation(x, y + halfY, z)
+          .setRotation({ x: 0.0, y: Math.sin(halfAng), z: 0.0, w: Math.cos(halfAng) })
           .setFriction(0.8)
           .setRestitution(0.0);
-        world.createCollider(desc, natBody);
-        colliderCount++;
+        addChunkDesc(x, z, desc);
+      } else if (key === 'paddock_tent') {
+        const cosR = Math.cos(rotY);
+        const sinR = Math.sin(rotY);
+        const halfH = 1.45 * s;
+        const poleR = Math.max(0.14, 0.16 * s);
+        for (const lx of [-3.6 * s, 3.6 * s]) {
+          for (const lz of [-2.4 * s, 2.4 * s]) {
+            const px = x + lx * cosR + lz * sinR;
+            const pz = z - lx * sinR + lz * cosR;
+            const desc = RAPIER.ColliderDesc.cylinder(halfH, poleR)
+              .setTranslation(px, y + halfH, pz)
+              .setFriction(0.8)
+              .setRestitution(0.0);
+            addChunkDesc(px, pz, desc);
+          }
+        }
+      } else if (key === 'chevron_sign') {
+        const halfH = 1.15 * s;
+        const desc = RAPIER.ColliderDesc.cylinder(halfH, Math.max(0.10, 0.11 * s))
+          .setTranslation(x, y + halfH, z)
+          .setFriction(0.75)
+          .setRestitution(0.0);
+        addChunkDesc(x, z, desc);
+      } else if (key === 'cactus1') {
+        const halfH = 0.52 * s;
+        const desc = RAPIER.ColliderDesc.cylinder(halfH, Math.max(0.18, 0.19 * s))
+          .setTranslation(x, y + halfH, z)
+          .setFriction(0.8)
+          .setRestitution(0.0);
+        addChunkDesc(x, z, desc);
+      } else if (ROCK_RADII[key] !== undefined) {
+        const rad = Math.max(0.32, ROCK_RADII[key] * s);
+        const desc = RAPIER.ColliderDesc.ball(rad)
+          .setTranslation(x, y + rad * 0.68, z)
+          .setFriction(0.85)
+          .setRestitution(0.0);
+        addChunkDesc(x, z, desc);
+      } else if (TREE_TRUNK_RADII[key] !== undefined) {
+        const rad = Math.max(0.22, TREE_TRUNK_RADII[key] * s);
+        const halfH = 2.6;
+        const desc = RAPIER.ColliderDesc.cylinder(halfH, rad)
+          .setTranslation(x, y + halfH, z)
+          .setFriction(0.8)
+          .setRestitution(0.0);
+        addChunkDesc(x, z, desc);
       }
     }
-    console.log(`Instanced Nature Field: ${natureInstances.length} props in ${natureChunks.length} chunks (${totalBatches} GPU batches), ${colliderCount} Rapier colliders.`);
+
+    if (obstacles && obstacles.length > 0) {
+      for (let i = 0; i < obstacles.length; i++) {
+        const obs = obstacles[i];
+        if (obs.type === 'lantern') {
+          const desc = RAPIER.ColliderDesc.cylinder(2.4, obs.r || 0.16)
+            .setTranslation(obs.x, obs.z + 2.4, -obs.y)
+            .setFriction(0.75)
+            .setRestitution(0.0);
+          addChunkDesc(obs.x, -obs.y, desc);
+        } else if (obs.type === 'pillar') {
+          const halfAng = (obs.rot || 0.0) * 0.5;
+          const desc = RAPIER.ColliderDesc.cuboid(obs.hx || 1.2, obs.hy || 10.0, obs.hz || 1.2)
+            .setTranslation(obs.x, obs.z, -obs.y)
+            .setRotation({ x: 0.0, y: Math.sin(halfAng), z: 0.0, w: Math.cos(halfAng) })
+            .setFriction(0.85)
+            .setRestitution(0.0);
+          addChunkDesc(obs.x, -obs.y, desc);
+        }
+      }
+    }
+
+    const activeColliderChunks = new Map();
+    let lastCarCx = 999999;
+    let lastCarCz = 999999;
+
+    updateColliders = (carX, carZ) => {
+      const cx = Math.floor(carX / COLLIDER_CHUNK_SIZE);
+      const cz = Math.floor(carZ / COLLIDER_CHUNK_SIZE);
+      if (cx === lastCarCx && cz === lastCarCz) return;
+      lastCarCx = cx;
+      lastCarCz = cz;
+
+      const wanted = new Set();
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dz = -1; dz <= 1; dz++) {
+          wanted.add(`${cx + dx}_${cz + dz}`);
+        }
+      }
+
+      for (const [key, cols] of activeColliderChunks.entries()) {
+        if (!wanted.has(key)) {
+          for (let i = 0; i < cols.length; i++) {
+            world.removeCollider(cols[i], false);
+          }
+          activeColliderChunks.delete(key);
+        }
+      }
+
+      for (const key of wanted) {
+        if (activeColliderChunks.has(key)) continue;
+        const descs = colliderChunks.get(key);
+        if (!descs) continue;
+        const cols = new Array(descs.length);
+        for (let i = 0; i < descs.length; i++) {
+          cols[i] = world.createCollider(descs[i], natBody);
+        }
+        activeColliderChunks.set(key, cols);
+      }
+    };
+
+    updateColliders(0, 0);
+    console.log(`Instanced Nature Field: ${natureInstances.length} props in ${natureChunks.length} chunks (${totalBatches} GPU batches), ${totalColliderDescs} streamed Rapier colliders across ${colliderChunks.size} cells.`);
   }
 
   const projScreenMatrix = new THREE.Matrix4();
@@ -1260,30 +1468,31 @@ function createInstancedNatureField(templateMap, natureInstances, obstacles, sce
     }
   }
 
-  return { natureChunks, updateCulling };
+  return { natureChunks, updateCulling, updateColliders };
 }
 
 async function buildTestGround(scene, world, maxAnisotropy = 8, sun) {
-  const groundSize = 3600;
+  const groundSize = 5200;
   const waterMat = createStylizedWaterMaterial(sun);
 
   // Deep safety catch floor at Y = -50m (far below the -12m Suspension Bridge Canyon)
   const safetyBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, -50.0, 0));
   const safetyCollider = RAPIER.ColliderDesc.cuboid(groundSize * 0.5, 0.5, groundSize * 0.5)
+    .setCollisionGroups((0x0001 << 16) | 0xFFFF)
     .setFriction(0.95)
     .setRestitution(0.0);
   world.createCollider(safetyCollider, safetyBody);
 
   const [obstacles, roadCorridors, natureInstances] = await Promise.all([
-    fetch(assetUrl('/assets/nature_obstacles.json?v=37')).then((r) => r.json()).catch(() => []),
-    fetch(assetUrl('/assets/road_corridors.json?v=37')).then((r) => r.json()).catch(() => []),
-    fetch(assetUrl('/assets/nature_instances.json?v=37')).then((r) => r.json()).catch(() => []),
+    fetch(assetUrl('/assets/nature_obstacles.json?v=49')).then((r) => r.json()).catch(() => []),
+    fetch(assetUrl('/assets/road_corridors.json?v=49')).then((r) => r.json()).catch(() => []),
+    fetch(assetUrl('/assets/nature_instances.json?v=49')).then((r) => r.json()).catch(() => []),
   ]);
 
   return new Promise((resolve) => {
     const circuitLoader = new GLTFLoader();
     circuitLoader.load(
-      assetUrl('/assets/circuit_track.glb?v=37'),
+      assetUrl('/assets/circuit_track.glb?v=49'),
       (gltf) => {
         const trackRoot = gltf.scene;
         let roadMesh = null;
@@ -1454,6 +1663,7 @@ async function buildTestGround(scene, world, maxAnisotropy = 8, sun) {
               }
               const staticBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
               const trimeshDesc = RAPIER.ColliderDesc.trimesh(vertices, indices)
+                .setCollisionGroups((0x0001 << 16) | 0xFFFF)
                 .setFriction(isRoad ? 1.0 : 0.9)
                 .setRestitution(0.0);
               world.createCollider(trimeshDesc, staticBody);
@@ -1481,6 +1691,7 @@ async function buildTestGround(scene, world, maxAnisotropy = 8, sun) {
 
 const gltfCache = new Map();
 const loader = new GLTFLoader();
+const brakeLightUniform = { value: 0.0 };
 
 /**
  * Loads a rigged 5-part `.glb` vehicle and validates its hierarchy:
@@ -1501,6 +1712,15 @@ function loadRiggedCar(url) {
           if (child.isMesh) {
             child.castShadow = true;
             child.receiveShadow = true;
+            let isWheelMesh = false;
+            let curNode = child;
+            while (curNode) {
+              if (curNode.name && curNode.name.startsWith('Wheel_')) {
+                isWheelMesh = true;
+                break;
+              }
+              curNode = curNode.parent;
+            }
             if (child.material) {
               const mats = Array.isArray(child.material) ? child.material : [child.material];
               for (const m of mats) {
@@ -1513,6 +1733,30 @@ function loadRiggedCar(url) {
                     m[texProp].generateMipmaps = false;
                     m[texProp].needsUpdate = true;
                   }
+                }
+                const hasEmission = Boolean(
+                  m.emissiveMap || (m.emissive && (m.emissive.r + m.emissive.g + m.emissive.b) > 0.01 && m.emissiveIntensity > 0.01)
+                );
+                if (!isWheelMesh && hasEmission && !m._brakeLightPatched) {
+                  m._brakeLightPatched = true;
+                  m.customProgramCacheKey = () => 'car_brake_lights_v1';
+                  m.onBeforeCompile = (shader) => {
+                    shader.uniforms.uBrakeLight = brakeLightUniform;
+                    shader.vertexShader = shader.vertexShader
+                      .replace('#include <common>', '#include <common>\nvarying float vCarLocalZ;')
+                      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCarLocalZ = position.z;');
+                    shader.fragmentShader = shader.fragmentShader
+                      .replace('#include <common>', '#include <common>\nvarying float vCarLocalZ;\nuniform float uBrakeLight;')
+                      .replace(
+                        '#include <emissivemap_fragment>',
+                        `#include <emissivemap_fragment>
+                         if (vCarLocalZ < 0.0) {
+                           float bMix = clamp(uBrakeLight, 0.0, 1.0);
+                           diffuseColor.rgb *= mix(0.26, 1.15, bMix);
+                           totalEmissiveRadiance *= mix(0.0, 2.0, bMix);
+                         }`
+                      );
+                  };
                 }
                 m.needsUpdate = true;
               }
@@ -1599,6 +1843,9 @@ async function init() {
   const fillLight = new THREE.DirectionalLight(0x9fc0db, 0.65);
   fillLight.position.set(-sun.x * 80, 45, -sun.z * 80);
   scene.add(fillLight);
+
+  const atmosphere = new AtmosphereSystem(scene, { skyMat, dirLight, hemiLight });
+  window.__atmosphere = atmosphere;
 
   const gravity = { x: 0.0, y: -9.81, z: 0.0 };
   const world = new RAPIER.World(gravity);
@@ -2136,11 +2383,18 @@ async function init() {
     world.timestep = subDt;
     const isPaused = (pauseMenu && pauseMenu.isOpen) || (worldMap && worldMap.isOpen);
     if (!isPaused) {
+      if (natureField && natureField.updateColliders && vehicle && vehicle.rigidBody) {
+        const p = vehicle.rigidBody.translation();
+        natureField.updateColliders(p.x, p.z);
+      }
       for (let i = 0; i < subSteps; i++) {
         vehicle.updatePhysicsStep(subDt, input);
         world.step();
       }
     }
+    const isBraking = !isPaused && ((input.backward && vehicle.forwardSpeed > -0.5) || input.handbrake);
+    const targetBrake = isBraking ? 1.0 : 0.0;
+    brakeLightUniform.value += (targetBrake - brakeLightUniform.value) * (1.0 - Math.exp(-22.0 * smoothedDt));
     vehicle.syncVisuals();
 
     const carQuat = vehicle.rootGroup.quaternion;
@@ -2268,10 +2522,20 @@ async function init() {
       camera.lookAt(chassisWorldPos.x, chassisWorldPos.y + 0.4, chassisWorldPos.z);
     }
 
-    // 1. Center the infinite skydome on the camera
+    // 1. Center the infinite skydome on the camera & update dynamic biome atmosphere + speed FOV
     if (skyMesh) {
       skyMesh.position.copy(camera.position);
     }
+    if (!freeCam.active) {
+      const targetFov = camMode.type === 'orbit'
+        ? 56.0
+        : 56.0 + Math.min(8.5, Math.max(0.0, vehicle.speedKmh - 45.0) * 0.042);
+      if (Math.abs(camera.fov - targetFov) > 0.04) {
+        camera.fov += (targetFov - camera.fov) * (1.0 - Math.exp(-5.0 * smoothedDt));
+        camera.updateProjectionMatrix();
+      }
+    }
+    atmosphere.update(smoothedDt, now * 0.001, camera.position, chassisWorldPos, carForward, carRight, vehicle.speedKmh, freeCam.active, vehicle.wheels);
 
     // 2. Drift volumetric 3D cumulus clouds gently across the sky (real 3D parallax)
     if (cloudMesh) {

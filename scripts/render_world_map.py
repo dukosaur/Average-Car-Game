@@ -6,7 +6,13 @@ Renders high-resolution orthographic satellite photograph directly from circuit_
 import bpy
 import json
 import os
+import sys
 import math
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.append(SCRIPT_DIR)
+from world_layout import WORLD_BOUNDS
 
 
 def render_map():
@@ -26,6 +32,10 @@ def render_map():
         if "Water" in obj.name:
             obj.hide_render = True
             obj.hide_viewport = True
+        elif "Road" in obj.name or "Markings" in obj.name:
+            # Keep terrain/tree relief shadows, but prevent elevated road/bridge decks
+            # from casting harsh black shadows onto water and ground in map view.
+            obj.visible_shadow = False
         elif obj.name.startswith("NatTmpl_"):
             key = obj.name[len("NatTmpl_"):]
             tmpl_nodes[key] = obj
@@ -68,25 +78,23 @@ def render_map():
             placed += 1
         print(f"Linked {placed} lightweight nature instances for satellite map render.")
 
-    # Expanded World Bounds:
-    # X spans -900.0m to +900.0m (center_x = 0.0, span_x = 1800.0)
-    # Y spans -843.75m to +843.75m (center_y = 0.0, span_y = 1687.5 at 2048x1920 aspect ratio)
-    center_x = 0.0
-    center_y = 0.0
-    ortho_scale = 1800.0
+    # Expanded World Bounds imported from shared world_layout.py (3600.0m x 3375.0m at 2048x1920)
+    center_x = WORLD_BOUNDS["center_x"]
+    center_y = -WORLD_BOUNDS["center_z"]
+    ortho_scale = WORLD_BOUNDS["span_x"]
 
     # 1. Orthographic Top-Down Camera
     cam_data = bpy.data.cameras.new("SatelliteCam")
     cam_data.type = "ORTHO"
     cam_data.ortho_scale = ortho_scale
     cam_data.clip_start = 1.0
-    cam_data.clip_end = 2500.0
+    cam_data.clip_end = 3000.0
 
     cam_obj = bpy.data.objects.new("SatelliteCam", cam_data)
     scene.collection.objects.link(cam_obj)
     scene.camera = cam_obj
 
-    cam_obj.location = (center_x, center_y, 900.0)
+    cam_obj.location = (center_x, center_y, 1100.0)
     cam_obj.rotation_euler = (0.0, 0.0, 0.0)
 
     # 2. Lighting: Angled warm sunlight to create rich elevation relief shadows across mountains & canyons

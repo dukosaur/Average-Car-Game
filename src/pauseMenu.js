@@ -42,14 +42,14 @@ export class PauseMenuController {
     this.focusedTileIndex = 1; // Default focus to Hero World Map (Tile 1)
     this.focusedCarIndex = 0;
 
-    // Map bounds matching WorldMapController (2048x1920, ortho_scale=1800)
+    // Map bounds matching WorldMapController (2048x1920, ortho_scale=4240)
     this.mapBounds = {
-      minX: -900.0,
-      maxX: 900.0,
-      spanX: 1800.0,
-      minZ: -843.75,
-      maxZ: 843.75,
-      spanZ: 1687.5,
+      minX: -2120.0,
+      maxX: 2120.0,
+      spanX: 4240.0,
+      minZ: -1987.5,
+      maxZ: 1987.5,
+      spanZ: 3975.0,
       imgW: 2048.0,
       imgH: 1920.0
     };

@@ -64,14 +64,14 @@ export class WorldMapController {
 
     this.hoveredRoad = null;
 
-    // World to Map Pixel Calibration (from Blender 2048x1920 orthographic satellite render, ortho_scale=1800)
+    // World to Map Pixel Calibration (from Blender 2048x1920 orthographic satellite render, ortho_scale=4240)
     this.bounds = {
-      minX: -900.0,
-      maxX: 900.0,
-      spanX: 1800.0,
-      minZ: -843.75,
-      maxZ: 843.75,
-      spanZ: 1687.5,
+      minX: -2120.0,
+      maxX: 2120.0,
+      spanX: 4240.0,
+      minZ: -1987.5,
+      maxZ: 1987.5,
+      spanZ: 3975.0,
       imgW: 2048.0,
       imgH: 1920.0,
     };
@@ -84,7 +84,7 @@ export class WorldMapController {
     this.scale = 0.85;
     this.targetScale = 0.85;
     this.minScale = 0.35;
-    this.maxScale = 5.6;
+    this.maxScale = 7.2;
 
     // Drag Velocity & Inertia
     this.isDragging = false;
@@ -143,7 +143,12 @@ export class WorldMapController {
       west_mesa_rim: 'WESTERN DESERT MESA RIM',
       autumn_loop: 'AUTUMN HIGHLAND SKYBRIDGE',
     };
-    return names[routeId] || 'ROAD WAYPOINT';
+    if (names[routeId]) return names[routeId];
+    if (this.routesData && this.routesData.routes) {
+      const found = this.routesData.routes.find((r) => r.id === routeId);
+      if (found && found.name) return found.name.toUpperCase();
+    }
+    return 'ROAD WAYPOINT';
   }
 
   /**
@@ -203,7 +208,7 @@ export class WorldMapController {
     }
 
     try {
-      const resp = await fetch(assetUrl('/assets/map_routes.json?v=37'));
+      const resp = await fetch(assetUrl('/assets/map_routes.json?v=42'));
       if (resp.ok) {
         this.routesData = await resp.json();
         if (this.routesData.routes) {
@@ -316,7 +321,7 @@ export class WorldMapController {
       (r) => (!r.layer || r.layer === 'ground') && !r.id.startsWith('overpass_bridge') && r.id !== 'alpine_tunnel'
     );
     const isRouteClosed = (r) => Boolean(r.closed || r.id === 'hwy');
-    const isElevatedCrossing = (r) => r.id === 'overpass' || r.id === 'hwy_west' || r.id === 'autumn_loop';
+    const isElevatedCrossing = (r) => Boolean(r.has_bridge) || r.id === 'overpass' || r.id === 'hwy_west' || r.id === 'autumn_loop';
     const highways = drivableRoutes.filter((r) => r.type === 'highway');
 
     // PASS 1: Render ALL dark outer road casings first (underneath all white cores!)
@@ -332,7 +337,7 @@ export class WorldMapController {
     }
     for (const r of drivableRoutes) {
       if (r.type === 'highway' || isElevatedCrossing(r)) continue;
-      drawCore(r, false);
+      drawCore(r, isRouteClosed(r));
     }
 
     // PASS 3: Render subtle Alpine Tunnel bore overlay on Touge summit
@@ -352,24 +357,13 @@ export class WorldMapController {
       }
     }
 
-    // PASS 4: Render bridge drop-shadows & butt-capped casings across elevated bridges
+    // PASS 4: Render subtle bridge drop-shadows & butt-capped casings across elevated bridges
     const bridges = routes.filter((r) => r.layer === 'elevated' || r.id.startsWith('overpass_bridge'));
     for (const bridge of bridges) {
       if (bridge.points && bridge.points.length >= 2) {
         const dBridge = toPathD(bridge.points, false);
         const rType = bridge.road_type || 'secondary';
-        const bShadowW = rType === 'highway' ? '12.0' : (rType === 'narrow' ? '6.8' : '8.8');
         const bCasingW = rType === 'highway' ? '11.5' : (rType === 'narrow' ? '6.4' : '8.5');
-
-        const shadowPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        shadowPath.setAttribute('d', dBridge);
-        shadowPath.setAttribute('fill', 'none');
-        shadowPath.setAttribute('stroke', 'rgba(0, 0, 0, 0.58)');
-        shadowPath.setAttribute('stroke-width', bShadowW);
-        shadowPath.setAttribute('stroke-linecap', 'butt');
-        shadowPath.setAttribute('stroke-linejoin', 'round');
-        shadowPath.setAttribute('filter', 'url(#bridge-drop-shadow)');
-        this.roadsGroupEl.appendChild(shadowPath);
 
         const bridgeCasing = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         bridgeCasing.setAttribute('d', dBridge);
@@ -379,6 +373,7 @@ export class WorldMapController {
         bridgeCasing.setAttribute('stroke-linecap', 'butt');
         bridgeCasing.setAttribute('stroke-linejoin', 'round');
         bridgeCasing.setAttribute('opacity', '0.96');
+        bridgeCasing.setAttribute('filter', 'url(#bridge-drop-shadow)');
         this.roadsGroupEl.appendChild(bridgeCasing);
       }
     }
@@ -386,7 +381,13 @@ export class WorldMapController {
     // PASS 5: Render white road cores continuously end-to-end for all routes with bridges
     //         so bridge spans merge seamlessly into ground approaches with zero seam notches!
     for (const r of drivableRoutes) {
-      if (isElevatedCrossing(r) || r.id === 'hwy' || r.id === 'east_ridge') {
+      if (
+        isElevatedCrossing(r)
+        || r.id === 'hwy'
+        || r.id === 'east_ridge'
+        || r.id === 'hwy_north'
+        || r.id === 'island_causeway'
+      ) {
         drawCore(r, isRouteClosed(r));
       }
     }
@@ -1040,7 +1041,7 @@ export class WorldMapController {
 
     const drivableRoutes = this._miniDrivableRoutes || [];
     const isRouteClosed = (r) => Boolean(r.closed || r.id === 'hwy');
-    const isElevatedCrossing = (r) => r.id === 'overpass' || r.id === 'hwy_west' || r.id === 'autumn_loop';
+    const isElevatedCrossing = (r) => Boolean(r.has_bridge) || r.id === 'overpass' || r.id === 'hwy_west' || r.id === 'autumn_loop';
     const bridgeSegments = this._miniBridgeSegments || [];
     const tunnelSegments = this._miniTunnelSegments || [];
 
@@ -1169,7 +1170,7 @@ export class WorldMapController {
     }
     for (const r of drivableRoutes) {
       if (r.type === 'highway' || isElevatedCrossing(r) || !routeNearCar(r)) continue;
-      drawPerspectivePolyline(r.points, getRoadCoreWidth(r), '#f2f5f9', false, 'round', 3);
+      drawPerspectivePolyline(r.points, getRoadCoreWidth(r), '#f2f5f9', isRouteClosed(r), 'round', 3);
     }
 
     // PASS 2.5: Subtle dashed tunnel bore overlay on Alpine Summit
@@ -1189,7 +1190,14 @@ export class WorldMapController {
       drawPerspectivePolyline(b.points, bCoreW + 6.5, '#0c1017', false, 'round', 3);
     }
     for (const r of drivableRoutes) {
-      if ((isElevatedCrossing(r) || r.id === 'hwy' || r.id === 'east_ridge') && routeNearCar(r)) {
+      if (
+        (isElevatedCrossing(r)
+          || r.id === 'hwy'
+          || r.id === 'east_ridge'
+          || r.id === 'hwy_north'
+          || r.id === 'island_causeway')
+        && routeNearCar(r)
+      ) {
         drawPerspectivePolyline(r.points, getRoadCoreWidth(r), '#f8fafc', isRouteClosed(r), 'round', 3);
       }
     }
