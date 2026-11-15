@@ -1789,12 +1789,14 @@ function loadRiggedCar(url) {
  * sharing static textures/geometry while cloning only emissive light materials for
  * per-car dynamic braking lights.
  */
-async function createAICarParts(rawUrl, aiBrakeUniform) {
+async function createAICarParts(rawUrl, aiBrakeUniform, paintColorHex = null) {
   const url = assetUrl(rawUrl);
   const loaded = await loadRiggedCar(url);
   const clonedMaterials = [];
   const requiredNames = ['Chassis_Body', 'Wheel_FL', 'Wheel_FR', 'Wheel_RL', 'Wheel_RR'];
   const parts = {};
+  const paintMode = paintColorHex !== null ? (rawUrl.includes('car_golf') ? 1.0 : 2.0) : 0.0;
+  const paintColor = paintColorHex !== null ? new THREE.Color(paintColorHex) : new THREE.Color(0xffffff);
 
   for (const name of requiredNames) {
     const clone = loaded.parts[name].clone(true);
@@ -1805,30 +1807,66 @@ async function createAICarParts(rawUrl, aiBrakeUniform) {
           const hasEmission = Boolean(
             m.emissiveMap || (m.emissive && (m.emissive.r + m.emissive.g + m.emissive.b) > 0.01 && m.emissiveIntensity > 0.01)
           );
-          if (!hasEmission) return m;
-          const cm = m.clone();
-          cm._brakeLightPatched = true;
-          cm.customProgramCacheKey = () => 'car_brake_lights_v1';
-          cm.onBeforeCompile = (shader) => {
-            shader.uniforms.uBrakeLight = aiBrakeUniform;
-            shader.vertexShader = shader.vertexShader
-              .replace('#include <common>', '#include <common>\nvarying float vCarLocalZ;')
-              .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCarLocalZ = position.z;');
-            shader.fragmentShader = shader.fragmentShader
-              .replace('#include <common>', '#include <common>\nvarying float vCarLocalZ;\nuniform float uBrakeLight;')
-              .replace(
-                '#include <emissivemap_fragment>',
-                `#include <emissivemap_fragment>
-                 if (vCarLocalZ < 0.0) {
-                   float bMix = clamp(uBrakeLight, 0.0, 1.0);
-                   diffuseColor.rgb *= mix(0.26, 1.15, bMix);
-                   totalEmissiveRadiance *= mix(0.0, 2.0, bMix);
-                 }`
-              );
-          };
-          cm.needsUpdate = true;
-          clonedMaterials.push(cm);
-          return cm;
+          if (hasEmission) {
+            const cm = m.clone();
+            cm._brakeLightPatched = true;
+            cm.customProgramCacheKey = () => 'car_brake_lights_v1';
+            cm.onBeforeCompile = (shader) => {
+              shader.uniforms.uBrakeLight = aiBrakeUniform;
+              shader.vertexShader = shader.vertexShader
+                .replace('#include <common>', '#include <common>\nvarying float vCarLocalZ;')
+                .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCarLocalZ = position.z;');
+              shader.fragmentShader = shader.fragmentShader
+                .replace('#include <common>', '#include <common>\nvarying float vCarLocalZ;\nuniform float uBrakeLight;')
+                .replace(
+                  '#include <emissivemap_fragment>',
+                  `#include <emissivemap_fragment>
+                   if (vCarLocalZ < 0.0) {
+                     float bMix = clamp(uBrakeLight, 0.0, 1.0);
+                     diffuseColor.rgb *= mix(0.26, 1.15, bMix);
+                     totalEmissiveRadiance *= mix(0.0, 2.0, bMix);
+                   }`
+                );
+            };
+            cm.needsUpdate = true;
+            clonedMaterials.push(cm);
+            return cm;
+          }
+
+          if (paintMode > 0.5) {
+            const pm = m.clone();
+            pm.customProgramCacheKey = () => 'car_body_paint_v1';
+            pm.onBeforeCompile = (shader) => {
+              shader.uniforms.uPaintColor = { value: paintColor };
+              shader.uniforms.uPaintMode = { value: paintMode };
+              shader.fragmentShader = shader.fragmentShader
+                .replace('#include <common>', '#include <common>\nuniform vec3 uPaintColor;\nuniform float uPaintMode;')
+                .replace(
+                  '#include <map_fragment>',
+                  `#include <map_fragment>
+                   if (uPaintMode > 0.5 && uPaintMode < 1.5) {
+                     float minC = min(diffuseColor.r, min(diffuseColor.g, diffuseColor.b));
+                     float maxC = max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b));
+                     float bodyMask = smoothstep(0.32, 0.48, minC) * (1.0 - smoothstep(0.10, 0.22, maxC - minC));
+                     float shade = clamp(maxC, 0.65, 1.0);
+                     diffuseColor.rgb = mix(diffuseColor.rgb, uPaintColor * shade * 1.12, bodyMask);
+                   } else if (uPaintMode >= 1.5) {
+                     float maxC = max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b));
+                     float minC = min(diffuseColor.r, min(diffuseColor.g, diffuseColor.b));
+                     float sat = (maxC - minC) / max(maxC, 0.001);
+                     float bodyMask = smoothstep(0.24, 0.42, sat) * smoothstep(0.08, 0.18, maxC);
+                     float luma = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
+                     float shade = clamp(0.68 + luma * 0.55, 0.62, 1.15);
+                     diffuseColor.rgb = mix(diffuseColor.rgb, uPaintColor * shade, bodyMask);
+                   }`
+                );
+            };
+            pm.needsUpdate = true;
+            clonedMaterials.push(pm);
+            return pm;
+          }
+
+          return m;
         };
         child.material = Array.isArray(child.material)
           ? child.material.map(patchClone)

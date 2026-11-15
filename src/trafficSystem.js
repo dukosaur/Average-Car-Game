@@ -4,6 +4,35 @@ import { RaycastVehicleController } from './vehicleController.js';
 /**
  * AI Everyday Traffic Fleet Definitions (using the 3 extracted low-poly cars)
  */
+const AI_PAINT_PALETTE = [
+  0xf4f6f9, // Pearl White
+  0xc8d0db, // Frost Silver
+  0x858e9c, // Steel Grey
+  0x464d57, // Gunmetal Graphite
+  0x1d2026, // Midnight Black
+  0xd32f2f, // Crimson Red
+  0xff4b3e, // Rally Coral
+  0x8c1c2f, // Deep Burgundy
+  0x154c9b, // Ocean Blue
+  0x2b7de9, // Electric Cobalt
+  0x4fc3f7, // Sky Cyan
+  0x12264a, // Midnight Navy
+  0xe65c19, // Sunset Orange
+  0xff8f26, // Tangerine
+  0xb86b35, // Burnt Copper
+  0x1b7a4c, // Emerald Green
+  0x4ea832, // Vivid Lime
+  0x164a32, // British Racing Green
+  0x5ec7a3, // Mint Sage
+  0xeab308, // Golden Yellow
+  0xf5d547, // Sunburst Yellow
+  0x268996, // Teal Slate
+  0x6b3fa0, // Royal Plum
+  0xb388eb, // Metallic Lavender
+  0xd6c7a9, // Champagne Sand
+  0xe85d9e, // Neon Rose
+];
+
 const AI_VEHICLE_SPECS = [
   {
     id: 'ai_golf',
@@ -828,8 +857,9 @@ export class TrafficSystem {
       const spec = AI_VEHICLE_SPECS[this._specCursor % AI_VEHICLE_SPECS.length];
       this._specCursor++;
       const brakeUniform = { value: 0.0 };
+      const paintColorHex = AI_PAINT_PALETTE[Math.floor(Math.random() * AI_PAINT_PALETTE.length)];
 
-      const { parts, clonedMaterials } = await this.createAICarParts(spec.url, brakeUniform);
+      const { parts, clonedMaterials } = await this.createAICarParts(spec.url, brakeUniform, paintColorHex);
       if (!this.world || !this.scene) return;
 
       const id = this._nextId++;
