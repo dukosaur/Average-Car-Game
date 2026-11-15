@@ -46,7 +46,7 @@ export class RaycastVehicleController {
 
     // Visual root group in Three.js scene
     this.rootGroup = new THREE.Group();
-    this.rootGroup.name = 'Player_Vehicle_Root';
+    this.rootGroup.name = config.rootName || 'Player_Vehicle_Root';
 
     this.chassisLocalOffset = new THREE.Vector3(0, 0.36, 0);
     this.wheels = [];
@@ -157,6 +157,11 @@ export class RaycastVehicleController {
       .setFriction(0.3)
       .setRestitution(0.0);
 
+    if (params.collisionGroups !== undefined) {
+      lowerHull.setCollisionGroups(params.collisionGroups);
+      upperCabin.setCollisionGroups(params.collisionGroups);
+    }
+
     this.chassisCollider = world.createCollider(lowerHull, this.rigidBody);
     this.cabinCollider = world.createCollider(upperCabin, this.rigidBody);
   }
@@ -204,8 +209,10 @@ export class RaycastVehicleController {
     this.lateralSpeed = velVec.dot(leftDir);
     this.speedKmh = Math.abs(this.forwardSpeed) * 3.6;
 
-    // Speed-sensitive steering calculation
-    const rawSteerInput = (input.left ? 1 : 0) - (input.right ? 1 : 0);
+    // Speed-sensitive steering calculation (supports analog steer for AI alongside digital player keys)
+    const rawSteerInput = Number.isFinite(input.steerAnalog)
+      ? THREE.MathUtils.clamp(input.steerAnalog, -1, 1)
+      : (input.left ? 1 : 0) - (input.right ? 1 : 0);
     const speedFactor = 1 / (1 + Math.abs(this.forwardSpeed) * params.highSpeedSteerFactor);
     const targetSteer = rawSteerInput * params.maxSteerAngle * speedFactor;
     const steerLerp = 1 - Math.exp(-params.steerSpeed * dt);
@@ -238,7 +245,29 @@ export class RaycastVehicleController {
     let driveInput = 0;
     let brakeInput = 0;
 
-    if (input.forward && !input.backward) {
+    if (
+      Number.isFinite(input.throttleAnalog) ||
+      Number.isFinite(input.brakeAnalog) ||
+      Number.isFinite(input.reverseAnalog)
+    ) {
+      const bIn = Number.isFinite(input.brakeAnalog) ? THREE.MathUtils.clamp(input.brakeAnalog, 0, 1) : 0;
+      const tIn = Number.isFinite(input.throttleAnalog) ? THREE.MathUtils.clamp(input.throttleAnalog, 0, 1) : 0;
+      const rIn = Number.isFinite(input.reverseAnalog) ? THREE.MathUtils.clamp(input.reverseAnalog, 0, 1) : 0;
+      brakeInput = bIn;
+      if (tIn > 0.01 && bIn < 0.05) {
+        if (this.forwardSpeed < -1.0) {
+          brakeInput = Math.max(brakeInput, tIn);
+        } else {
+          driveInput = tIn;
+        }
+      } else if (rIn > 0.01 && bIn < 0.05) {
+        if (this.forwardSpeed > 1.0) {
+          brakeInput = Math.max(brakeInput, rIn);
+        } else {
+          driveInput = -rIn;
+        }
+      }
+    } else if (input.forward && !input.backward) {
       if (this.forwardSpeed < -1.0) {
         brakeInput = 1.0;
       } else {
@@ -432,8 +461,10 @@ export class RaycastVehicleController {
       }
     }
 
-    // Gentle low-speed full-stop settle when idle
-    if (!input.forward && !input.backward && Math.abs(this.forwardSpeed) < 0.4 && groundedCount >= 2) {
+    // Gentle low-speed full-stop settle when idle or actively holding brakes near rest
+    const isIdleOrStoppedBraking =
+      (!input.forward && !input.backward && driveInput === 0 && (brakeInput === 0 || Math.abs(this.forwardSpeed) < 0.45));
+    if (isIdleOrStoppedBraking && Math.abs(this.forwardSpeed) < 0.4 && groundedCount >= 2) {
       rigidBody.setLinvel(
         { x: linVel.x * 0.9, y: linVel.y * 0.9, z: linVel.z * 0.9 },
         true
@@ -471,6 +502,18 @@ export class RaycastVehicleController {
   update(dt, input) {
     this.updatePhysicsStep(dt, input);
     this.syncVisuals();
+  }
+
+  destroy() {
+    if (this.rigidBody && this.world) {
+      this.world.removeRigidBody(this.rigidBody);
+      this.rigidBody = null;
+      this.chassisCollider = null;
+      this.cabinCollider = null;
+    }
+    if (this.rootGroup && this.rootGroup.parent) {
+      this.rootGroup.parent.remove(this.rootGroup);
+    }
   }
 
   _updateTelemetry(driveInput) {

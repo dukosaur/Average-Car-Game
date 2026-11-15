@@ -557,7 +557,7 @@ export class WorldMapController {
       this.waypointMarkerEl.classList.remove('hidden');
     }
 
-    const distStr = remDist >= 1000 ? `${(remDist / 1000).toFixed(1)} KM` : `${Math.round(remDist)} M`;
+    const distStr = this._formatImperialDist(remDist);
 
     // 3. Update Map Top Bar GPS HUD
     if (this.mapGpsHudEl) {
@@ -872,10 +872,10 @@ export class WorldMapController {
           this.playerMarkerEl.style.top = `${p.y.toFixed(1)}px`;
         }
         if (this.coordValEl) {
-          this.coordValEl.textContent = `${pos.x.toFixed(1)}m, ${pos.z.toFixed(1)}m`;
+          this.coordValEl.textContent = `${Math.round(pos.x * 3.28084)} ft, ${Math.round(pos.z * 3.28084)} ft`;
         }
         if (this.speedValEl) {
-          this.speedValEl.textContent = '0 MPH (0 KM/H)';
+          this.speedValEl.textContent = '0 MPH';
         }
       }
       // Instantly center on player car when opening
@@ -906,6 +906,11 @@ export class WorldMapController {
     }
   }
 
+  _formatImperialDist(meters) {
+    const feet = meters * 3.28084;
+    return feet >= 528 ? `${(meters / 1609.344).toFixed(1)} MI` : `${Math.round(feet)} FT`;
+  }
+
   /**
    * Called on every game animation frame to update smooth pan/zoom physics,
    * player marker position, heading arrow rotation, and HUD telemetry values.
@@ -925,12 +930,11 @@ export class WorldMapController {
 
       if (this.isOpen) {
         if (this.coordValEl) {
-          this.coordValEl.textContent = `${carPos.x.toFixed(1)}m, ${carPos.z.toFixed(1)}m`;
+          this.coordValEl.textContent = `${Math.round(carPos.x * 3.28084)} ft, ${Math.round(carPos.z * 3.28084)} ft`;
         }
         if (this.speedValEl) {
           const mph = Math.round((carSpeedKmh || 0) * 0.621371);
-          const kmh = Math.round(carSpeedKmh || 0);
-          this.speedValEl.textContent = `${mph} MPH (${kmh} KM/H)`;
+          this.speedValEl.textContent = `${mph} MPH`;
         }
       }
     }
@@ -938,7 +942,7 @@ export class WorldMapController {
     // 2. Real-Time GPS Telemetry Distance Updates & FH6 Circular Radar Mini-Map
     if (this.gpsNav && this.gpsNav.activeWaypoint) {
       const remDist = this.gpsNav.remainingDistance;
-      const distStr = remDist >= 1000 ? `${(remDist / 1000).toFixed(1)} KM` : `${Math.round(remDist)} M`;
+      const distStr = this._formatImperialDist(remDist);
       if (this.gpsTargetDistEl) this.gpsTargetDistEl.textContent = distStr;
       if (this.hudGpsDistEl) this.hudGpsDistEl.textContent = distStr;
       if (this.waypointTagEl) this.waypointTagEl.textContent = `${this.gpsNav.activeWaypoint.name} • ${distStr}`;

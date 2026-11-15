@@ -7,6 +7,7 @@ import { WorldMapController } from './worldMap.js';
 import { GPSNavigationSystem } from './gpsNavigation.js';
 import { PauseMenuController } from './pauseMenu.js';
 import { AtmosphereSystem } from './atmosphere.js';
+import { TrafficSystem } from './trafficSystem.js';
 import { assetUrl } from './assetUrl.js';
 
 // DOM Telemetry Elements
@@ -1783,6 +1784,63 @@ function loadRiggedCar(url) {
   });
 }
 
+/**
+ * Instantiates an independent cloned 5-part vehicle hierarchy for AI traffic cars,
+ * sharing static textures/geometry while cloning only emissive light materials for
+ * per-car dynamic braking lights.
+ */
+async function createAICarParts(rawUrl, aiBrakeUniform) {
+  const url = assetUrl(rawUrl);
+  const loaded = await loadRiggedCar(url);
+  const clonedMaterials = [];
+  const requiredNames = ['Chassis_Body', 'Wheel_FL', 'Wheel_FR', 'Wheel_RL', 'Wheel_RR'];
+  const parts = {};
+
+  for (const name of requiredNames) {
+    const clone = loaded.parts[name].clone(true);
+    if (name === 'Chassis_Body') {
+      clone.traverse((child) => {
+        if (!child.isMesh || !child.material) return;
+        const patchClone = (m) => {
+          const hasEmission = Boolean(
+            m.emissiveMap || (m.emissive && (m.emissive.r + m.emissive.g + m.emissive.b) > 0.01 && m.emissiveIntensity > 0.01)
+          );
+          if (!hasEmission) return m;
+          const cm = m.clone();
+          cm._brakeLightPatched = true;
+          cm.customProgramCacheKey = () => 'car_brake_lights_v1';
+          cm.onBeforeCompile = (shader) => {
+            shader.uniforms.uBrakeLight = aiBrakeUniform;
+            shader.vertexShader = shader.vertexShader
+              .replace('#include <common>', '#include <common>\nvarying float vCarLocalZ;')
+              .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCarLocalZ = position.z;');
+            shader.fragmentShader = shader.fragmentShader
+              .replace('#include <common>', '#include <common>\nvarying float vCarLocalZ;\nuniform float uBrakeLight;')
+              .replace(
+                '#include <emissivemap_fragment>',
+                `#include <emissivemap_fragment>
+                 if (vCarLocalZ < 0.0) {
+                   float bMix = clamp(uBrakeLight, 0.0, 1.0);
+                   diffuseColor.rgb *= mix(0.26, 1.15, bMix);
+                   totalEmissiveRadiance *= mix(0.0, 2.0, bMix);
+                 }`
+              );
+          };
+          cm.needsUpdate = true;
+          clonedMaterials.push(cm);
+          return cm;
+        };
+        child.material = Array.isArray(child.material)
+          ? child.material.map(patchClone)
+          : patchClone(child.material);
+      });
+    }
+    parts[name] = clone;
+  }
+
+  return { parts, clonedMaterials };
+}
+
 async function init() {
   await RAPIER.init();
 
@@ -1872,6 +1930,15 @@ async function init() {
   // Setup Forza Horizon Interactive Full World Map Controller
   const worldMap = new WorldMapController(vehicle, input, gpsNav);
   window.__worldMap = worldMap;
+
+  const trafficSystem = new TrafficSystem(RAPIER, world, scene, createAICarParts, {
+    maxVehicles: 36,
+    localVehicleShare: 22,
+    minSpawnDist: 42,
+    maxSpawnDist: 380,
+    despawnDist: 480,
+  });
+  window.__trafficSystem = trafficSystem;
 
   // 1. Fleet Vehicle Selection & Showroom Management
   let isGarageOpen = false;
@@ -2011,8 +2078,9 @@ async function init() {
     freeCam.dragging = false;
   });
 
-  // Preload remaining 4 cars in the background for instant switching
+  // Preload remaining 4 player cars + 3 AI traffic cars in the background
   CAR_ROSTER.slice(1).forEach((c) => loadRiggedCar(c.url));
+  ['car_golf.glb', 'car_rs6.glb', 'car_coupe.glb'].forEach((f) => loadRiggedCar(assetUrl(`/assets/${f}`)));
 
   if (statusLineEl) statusLineEl.textContent = 'Nodes: Chassis_Body + 4x Wheel (FL/FR/RL/RR)';
 
@@ -2382,6 +2450,9 @@ async function init() {
     const subDt = smoothedDt / subSteps;
     world.timestep = subDt;
     const isPaused = (pauseMenu && pauseMenu.isOpen) || (worldMap && worldMap.isOpen);
+    if (!trafficSystem.isReady && worldMap && worldMap.routesData) {
+      trafficSystem.initFromRoutesData(worldMap.routesData);
+    }
     if (!isPaused) {
       if (natureField && natureField.updateColliders && vehicle && vehicle.rigidBody) {
         const p = vehicle.rigidBody.translation();
@@ -2389,6 +2460,7 @@ async function init() {
       }
       for (let i = 0; i < subSteps; i++) {
         vehicle.updatePhysicsStep(subDt, input);
+        trafficSystem.updatePhysicsStep(subDt, vehicle);
         world.step();
       }
     }
@@ -2396,6 +2468,7 @@ async function init() {
     const targetBrake = isBraking ? 1.0 : 0.0;
     brakeLightUniform.value += (targetBrake - brakeLightUniform.value) * (1.0 - Math.exp(-22.0 * smoothedDt));
     vehicle.syncVisuals();
+    trafficSystem.updateFrame(smoothedDt, vehicle, isPaused);
 
     const carQuat = vehicle.rootGroup.quaternion;
     const carForward = new THREE.Vector3(0, 0, 1).applyQuaternion(carQuat);
@@ -2578,7 +2651,7 @@ async function init() {
       window.__fps = currentFps;
     }
 
-    speedValueEl.textContent = String(Math.round(vehicle.speedKmh));
+    speedValueEl.textContent = String(Math.round(vehicle.speedKmh * 0.621371));
     gearBadgeEl.textContent = vehicle.gear;
     rpmBarEl.style.width = `${Math.round(vehicle.rpmNormalized * 100)}%`;
     if (statusLineEl) {

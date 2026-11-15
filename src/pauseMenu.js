@@ -634,7 +634,7 @@ export class PauseMenuController {
     const kmh = Math.round(this.vehicle.speedKmh || (Math.abs(this.vehicle.forwardSpeed || 0) * 3.6));
     const mph = Math.round(kmh * 0.621371);
     if (this.headerSpeedEl) {
-      this.headerSpeedEl.textContent = `${mph} MPH (${kmh} KM/H)`;
+      this.headerSpeedEl.textContent = `${mph} MPH`;
     }
   }
 
