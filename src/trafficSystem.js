@@ -136,12 +136,15 @@ export class TrafficSystem {
     this._spawnCooldown = 0.08;
     this._nextId = 1;
     this._specCursor = 0;
+    this._simTime = 0;
+    this._recentTurnTimes = new Map();
 
     // Reusable scratch vectors to minimize GC in physics loop
     this._vFwd = new THREE.Vector3();
     this._vUp = new THREE.Vector3();
     this._vLeft = new THREE.Vector3();
     this._quat = new THREE.Quaternion();
+    this._projVec = new THREE.Vector3();
   }
 
   /**
@@ -411,9 +414,20 @@ export class TrafficSystem {
 
     // Pick a diverse goal route not recently visited by this car (and less crowded across active traffic)
     const activeRouteCounts = new Map();
+    const activeDirCounts = new Map();
+    const turnEdgeUsage = new Map();
     for (const a of this.agents) {
+      if (a === agent) continue;
       const rid = a.cursor.route.id;
       activeRouteCounts.set(rid, (activeRouteCounts.get(rid) || 0) + 1);
+      const dKey = `${rid}:${a.cursor.dir}`;
+      activeDirCounts.set(dKey, (activeDirCounts.get(dKey) || 0) + 1);
+      if (a.turnQueue) {
+        for (const t of a.turnQueue) {
+          const tk = `${t.fromRoute.id}:${t.atIdx}->${t.toRoute.id}:${t.toIdx}:${t.toDir}`;
+          turnEdgeUsage.set(tk, (turnEdgeUsage.get(tk) || 0) + 1);
+        }
+      }
     }
 
     const goalPool = this.routes.filter(
@@ -489,6 +503,20 @@ export class TrafficSystem {
           if (curIn) {
             const dot = curIn.fx * edge.toFwdX + curIn.fz * edge.toFwdZ;
             if (dot < -0.25) stepCost += 650.0; // avoid abrupt acute reversals unless forced
+          }
+          // Strongly diversify exits/turns across cars unless this is the only logical way
+          const tKey = `${uNode.route.id}:${uNode.idx}->${edge.toRoute.id}:${edge.toIdx}:${edge.toDir}`;
+          const plannedTurnCount = turnEdgeUsage.get(tKey) || 0;
+          if (plannedTurnCount > 0) {
+            stepCost += plannedTurnCount * 420.0;
+          }
+          const lastTurnTime = this._recentTurnTimes.get(tKey);
+          if (lastTurnTime !== undefined && (this._simTime - lastTurnTime) < 8.0) {
+            stepCost += 320.0;
+          }
+          const sameDirCount = activeDirCounts.get(`${edge.toRoute.id}:${edge.toDir}`) || 0;
+          if (sameDirCount > 0) {
+            stepCost += sameDirCount * 90.0;
           }
           nextFx = edge.toFwdX;
           nextFz = edge.toFwdZ;
@@ -665,8 +693,10 @@ export class TrafficSystem {
       const nextTurn = agent.turnQueue[0];
       if (nextTurn.fromRoute === route && Math.abs(nextIdx - nextTurn.atIdx) <= 1) {
         agent.turnQueue.shift();
+        const tKey = `${nextTurn.fromRoute.id}:${nextTurn.atIdx}->${nextTurn.toRoute.id}:${nextTurn.toIdx}:${nextTurn.toDir}`;
+        this._recentTurnTimes.set(tKey, this._simTime);
         const nextDir = nextTurn.toRoute.isRoundabout ? 1 : nextTurn.toDir;
-        const nextLaneSlot = nextTurn.toRoute.type === 'highway' ? (Math.random() < 0.65 ? 0 : 1) : 0;
+        const nextLaneSlot = nextTurn.toRoute.type === 'highway' ? (Math.random() < 0.5 ? 0 : 1) : 0;
         this._appendJunctionBezierArc(agent, nextTurn.toRoute, nextTurn.toIdx, nextDir, nextLaneSlot);
         return;
       }
@@ -688,9 +718,15 @@ export class TrafficSystem {
             return currFwdX * (exT.x * ex.dir) + currFwdZ * (exT.z * ex.dir) > 0.12;
           });
           if (viable.length > 0) {
-            const chosen = viable[Math.floor(Math.random() * viable.length)];
+            viable.sort((a, b) => {
+              const tA = this._recentTurnTimes.get(`${route.id}:${nextIdx}->${a.route.id}:${a.idx}:${a.dir}`) ?? -999;
+              const tB = this._recentTurnTimes.get(`${route.id}:${nextIdx}->${b.route.id}:${b.idx}:${b.dir}`) ?? -999;
+              return tA - tB;
+            });
+            const chosen = viable[0];
+            this._recentTurnTimes.set(`${route.id}:${nextIdx}->${chosen.route.id}:${chosen.idx}:${chosen.dir}`, this._simTime);
             const nextDir = chosen.route.isRoundabout ? 1 : chosen.dir;
-            const nextLaneSlot = chosen.route.type === 'highway' ? (Math.random() < 0.65 ? 0 : 1) : 0;
+            const nextLaneSlot = chosen.route.type === 'highway' ? (Math.random() < 0.5 ? 0 : 1) : 0;
             this._appendJunctionBezierArc(agent, chosen.route, chosen.idx, nextDir, nextLaneSlot);
             agent.turnQueue = this._planUniqueJourney(agent, cur.route, cur.idx, cur.dir);
             return;
@@ -750,8 +786,19 @@ export class TrafficSystem {
    * `mode === 'local'` spawns within [minSpawnDist, maxSpawnDist] around player;
    * `mode === 'global'` spawns anywhere across all 65 routes in the entire open world!
    */
-  _findSpawnCandidate(playerPos, mode = 'local', relaxMinDist = false, playerVel = null) {
-    const minD = relaxMinDist ? 42 : this.minSpawnDist;
+  _isPointVisibleToCamera(pt, camera) {
+    if (!camera) return false;
+    const distCam = Math.hypot(pt.x - camera.position.x, pt.z - camera.position.z);
+    if (distCam < 58.0) return true;
+    this._projVec.set(pt.x, pt.y + 1.0, pt.z).project(camera);
+    const inFront = this._projVec.z >= -1.0 && this._projVec.z <= 1.0;
+    const inScreen = Math.abs(this._projVec.x) <= 1.15 && Math.abs(this._projVec.y) <= 1.18;
+    return inFront && inScreen && distCam < 320.0;
+  }
+
+  _findSpawnCandidate(playerPos, mode = 'local', relaxMinDist = false, playerVel = null, camera = null, isFreeCam = false) {
+    const checkVis = !isFreeCam && !!camera;
+    const minD = checkVis ? Math.max(58, this.minSpawnDist) : (relaxMinDist ? 42 : this.minSpawnDist);
     const maxD = this.maxSpawnDist;
 
     const pSpeed = playerVel ? Math.hypot(playerVel.x, playerVel.z) : 0;
@@ -779,13 +826,17 @@ export class TrafficSystem {
         const d = Math.hypot(dx, dz);
         if (mode === 'local') {
           if (d >= minD && d <= maxD) {
+            if (checkVis && this._isPointVisibleToCamera(p, camera)) continue;
             ptsInRange.push(i);
             if (hasHeading && (dx * pFwdX + dz * pFwdZ) > -40.0) {
               aheadPtsInRange.push(i);
             }
           }
         } else {
-          if (d >= minD) ptsInRange.push(i);
+          if (d >= minD) {
+            if (checkVis && this._isPointVisibleToCamera(p, camera)) continue;
+            ptsInRange.push(i);
+          }
         }
       }
       if (ptsInRange.length > 0) {
@@ -821,6 +872,7 @@ export class TrafficSystem {
 
       const dPlayer = Math.hypot(lanePt.x - playerPos.x, lanePt.z - playerPos.z);
       if (dPlayer < minD) continue;
+      if (checkVis && this._isPointVisibleToCamera(lanePt, camera)) continue;
 
       let crowded = false;
       for (const a of this.agents) {
@@ -843,13 +895,48 @@ export class TrafficSystem {
       if (!hit || hit.timeOfImpact < 0.5) continue;
 
       const surfaceY = lanePt.y + 3.0 - hit.timeOfImpact;
-      return { route: r, idx, dir, laneSlot, laneOffset, lanePt, surfaceY, mode };
+
+      // Sample front & rear road heights along forward vector so cars spawn pitched flush with inclines
+      const rayMask = (0xFFFF << 16) | 0x0001;
+      const probeDist = 1.5;
+      const hitF = this.world.castRay(
+        new this.RAPIER.Ray(
+          { x: lanePt.x + lanePt.fwdX * probeDist, y: lanePt.y + 4.5, z: lanePt.z + lanePt.fwdZ * probeDist },
+          { x: 0, y: -1, z: 0 }
+        ),
+        10.0,
+        true,
+        undefined,
+        rayMask
+      );
+      const hitR = this.world.castRay(
+        new this.RAPIER.Ray(
+          { x: lanePt.x - lanePt.fwdX * probeDist, y: lanePt.y + 4.5, z: lanePt.z - lanePt.fwdZ * probeDist },
+          { x: 0, y: -1, z: 0 }
+        ),
+        10.0,
+        true,
+        undefined,
+        rayMask
+      );
+
+      let pitch = 0;
+      let bestSurfaceY = surfaceY;
+      if (hitF && hitF.timeOfImpact >= 0.5 && hitR && hitR.timeOfImpact >= 0.5) {
+        const yF = lanePt.y + 4.5 - hitF.timeOfImpact;
+        const yR = lanePt.y + 4.5 - hitR.timeOfImpact;
+        if (Math.abs(yF - yR) > 1.8) continue;
+        pitch = clamp(-Math.atan2(yF - yR, probeDist * 2.0), -0.65, 0.65);
+        bestSurfaceY = Math.max(surfaceY, (yF + yR) * 0.5);
+      }
+
+      return { route: r, idx, dir, laneSlot, laneOffset, lanePt, surfaceY: bestSurfaceY, pitch, mode };
     }
     return null;
   }
 
-  async _spawnOne(playerPos, mode = 'local', playerVel = null) {
-    const candidate = this._findSpawnCandidate(playerPos, mode, this.agents.length < 5, playerVel);
+  async _spawnOne(playerPos, mode = 'local', playerVel = null, camera = null, isFreeCam = false) {
+    const candidate = this._findSpawnCandidate(playerPos, mode, this.agents.length < 5, playerVel, camera, isFreeCam);
     if (!candidate) return;
 
     this._pendingSpawns++;
@@ -882,12 +969,19 @@ export class TrafficSystem {
       });
 
       const yaw = Math.atan2(candidate.lanePt.fwdX, candidate.lanePt.fwdZ);
-      const spawnY = candidate.surfaceY + vehicle.chassisLocalOffset.y + 0.04;
-      vehicle.reset(new THREE.Vector3(candidate.lanePt.x, spawnY, candidate.lanePt.z), yaw);
+      const pitch = candidate.pitch || 0;
+      const spawnY = candidate.surfaceY + vehicle.chassisLocalOffset.y + 0.14;
+      vehicle.reset(new THREE.Vector3(candidate.lanePt.x, spawnY, candidate.lanePt.z), yaw, pitch);
 
       const initSpeed = getBaseSpeed(candidate.route, candidate.laneSlot) * 0.65;
+      const cosP = Math.cos(pitch);
+      const sinP = -Math.sin(pitch);
       vehicle.rigidBody.setLinvel(
-        { x: candidate.lanePt.fwdX * initSpeed, y: 0, z: candidate.lanePt.fwdZ * initSpeed },
+        {
+          x: candidate.lanePt.fwdX * cosP * initSpeed,
+          y: sinP * initSpeed,
+          z: candidate.lanePt.fwdZ * cosP * initSpeed,
+        },
         true
       );
 
@@ -1358,7 +1452,7 @@ export class TrafficSystem {
     }
   }
 
-  updateFrame(dt, playerVehicle, isPaused = false) {
+  updateFrame(dt, playerVehicle, isPaused = false, camera = null, isFreeCam = false) {
     if (!this.isReady || !playerVehicle || !playerVehicle.rigidBody) return;
 
     const playerPos = playerVehicle.rigidBody.translation();
@@ -1368,6 +1462,7 @@ export class TrafficSystem {
     const pFwdZ = playerSpeed > 8.0 ? playerVel.z / playerSpeed : 0;
 
     if (!isPaused) {
+      this._simTime += dt;
       let localCount = 0;
       for (let i = this.agents.length - 1; i >= 0; i--) {
         const a = this.agents[i];
@@ -1402,13 +1497,14 @@ export class TrafficSystem {
         this._spawnCooldown <= 0 &&
         this.agents.length + this._pendingSpawns < this.maxVehicles
       ) {
+        if (camera && !isFreeCam) camera.updateMatrixWorld();
         const deficit = this.maxVehicles - (this.agents.length + this._pendingSpawns);
         const burst = Math.min(4, deficit);
         this._spawnCooldown = deficit > 4 ? 0.02 : 0.05;
         for (let b = 0; b < burst; b++) {
           const spawnMode = localCount < this.localVehicleShare ? 'local' : 'global';
           if (spawnMode === 'local') localCount++;
-          this._spawnOne(playerPos, spawnMode, playerVel);
+          this._spawnOne(playerPos, spawnMode, playerVel, camera, isFreeCam);
         }
       }
     }

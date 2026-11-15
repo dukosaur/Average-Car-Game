@@ -166,8 +166,8 @@ export class RaycastVehicleController {
     this.cabinCollider = world.createCollider(upperCabin, this.rigidBody);
   }
 
-  reset(position = new THREE.Vector3(0, this.chassisLocalOffset.y, 0), yawRad = 0) {
-    const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yawRad);
+  reset(position = new THREE.Vector3(0, this.chassisLocalOffset.y, 0), yawRad = 0, pitchRad = 0) {
+    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(pitchRad, yawRad, 0, 'YXZ'));
     this.rigidBody.resetForces(true);
     this.rigidBody.resetTorques(true);
     this.rigidBody.setTranslation({ x: position.x, y: position.y, z: position.z }, true);

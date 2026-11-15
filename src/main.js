@@ -1972,9 +1972,9 @@ async function init() {
   const trafficSystem = new TrafficSystem(RAPIER, world, scene, createAICarParts, {
     maxVehicles: 36,
     localVehicleShare: 22,
-    minSpawnDist: 42,
-    maxSpawnDist: 380,
-    despawnDist: 480,
+    minSpawnDist: 58,
+    maxSpawnDist: 430,
+    despawnDist: 520,
   });
   window.__trafficSystem = trafficSystem;
 
@@ -2506,7 +2506,7 @@ async function init() {
     const targetBrake = isBraking ? 1.0 : 0.0;
     brakeLightUniform.value += (targetBrake - brakeLightUniform.value) * (1.0 - Math.exp(-22.0 * smoothedDt));
     vehicle.syncVisuals();
-    trafficSystem.updateFrame(smoothedDt, vehicle, isPaused);
+    trafficSystem.updateFrame(smoothedDt, vehicle, isPaused, camera, freeCam.active);
 
     const carQuat = vehicle.rootGroup.quaternion;
     const carForward = new THREE.Vector3(0, 0, 1).applyQuaternion(carQuat);
