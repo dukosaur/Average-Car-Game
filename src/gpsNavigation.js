@@ -30,6 +30,7 @@ export class GPSNavigationSystem {
     this.remainingDistance = 0; // in meters
     this.onRouteUpdated = null; // Callback for UI / Map sync
     this.lastRouteBroadcastTime = 0;
+    this.lastSolveTimeMs = 0;
     this.lastSolveCarPos = { x: Infinity, y: Infinity, z: Infinity };
     this.lastSyncCarPos = { x: Infinity, y: Infinity, z: Infinity };
 
@@ -563,7 +564,13 @@ export class GPSNavigationSystem {
     let { trimmed, roadTrimmed, minDist } = this.buildTrimmedPathFromCar(carPos);
 
     // If the car turned off-route (> 8.5m) or moved > 35m without re-checking, re-solve fast O(E log V) A*
-    if (minDist > 8.5 || (movedSinceSolve >= 35.0 && movedSinceSolve > 0.5)) {
+    // Throttle off-route re-solves to >= 450ms so driving off-road never triggers 60Hz A* searches!
+    const nowMs = performance.now();
+    if (
+      (minDist > 8.5 && nowMs - this.lastSolveTimeMs >= 450) ||
+      (movedSinceSolve >= 35.0 && movedSinceSolve > 0.5)
+    ) {
+      this.lastSolveTimeMs = nowMs;
       const freshNodes = this.calculateAStarPath(carPos, this.activeWaypoint);
       if (freshNodes.length > 0) {
         this.roadNodesPath = freshNodes;

@@ -160,6 +160,7 @@ export class WorldMapController {
     let minDist = Infinity;
     let closestPoint = null;
     let closestRoute = null;
+    let closestDir = { x: 0, z: -1 };
 
     const routes = this.routesData.routes.filter(
       (r) => (!r.layer || r.layer === 'ground') && !r.id.startsWith('overpass_bridge') && r.id !== 'alpine_tunnel'
@@ -188,11 +189,13 @@ export class WorldMapController {
           const y2 = p2.length > 2 ? p2[1] : 0;
           closestPoint = { x: projX, y: y1 + t * (y2 - y1), z: projZ };
           closestRoute = route;
+          const len = Math.sqrt(lenSq) || 1;
+          closestDir = { x: dx / len, z: dz / len };
         }
       }
     }
 
-    return { dist: minDist, point: closestPoint, route: closestRoute };
+    return { dist: minDist, point: closestPoint, route: closestRoute, dir: closestDir };
   }
 
   async loadMapMetadata() {
@@ -465,8 +468,44 @@ export class WorldMapController {
    */
   renderLandmarks(landmarks) {
     if (!this.landmarksLayerEl) return;
-    this.landmarksLayerEl.innerHTML = '';
+    if (!this._stuntRamps || this._stuntRamps.length === 0) {
+      this.landmarksLayerEl.innerHTML = '';
+    }
     return;
+  }
+
+  setStuntRamps(ramps) {
+    this._stuntRamps = Array.isArray(ramps) ? ramps : [];
+    if (!this.landmarksLayerEl) return;
+    this.landmarksLayerEl.innerHTML = '';
+
+    const rampIcon = `<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M3 19h18v-2H3v2zm1.5-3.5c5.5-1.4 9.8-4.5 13-9.5L21 15.5H4.5z"/></svg>`;
+
+    for (const r of this._stuntRamps) {
+      const p = this.worldToMapPx(r.x, r.z);
+      const pin = document.createElement('div');
+      pin.className = 'map-poi-pin';
+      pin.style.left = `${p.x.toFixed(1)}px`;
+      pin.style.top = `${p.y.toFixed(1)}px`;
+      pin.innerHTML = `
+        <div class="poi-disc" title="${r.name}" style="width:24px;height:24px;border-color:rgba(229,169,60,0.75);color:#e5a93c;">
+          <span class="poi-icon">${rampIcon}</span>
+        </div>
+        <div class="poi-tooltip">
+          <div class="poi-title">${r.name}</div>
+          <div class="poi-desc">STUNT RAMP</div>
+        </div>
+      `;
+      pin.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.setGpsWaypoint(r.x, r.z, r.name, 'ramp');
+      });
+      this.landmarksLayerEl.appendChild(pin);
+    }
+
+    if (window.__pauseMenu && typeof window.__pauseMenu.syncLandmarks === 'function') {
+      window.__pauseMenu.syncLandmarks();
+    }
   }
 
   _unusedRenderLandmarks(landmarks) {

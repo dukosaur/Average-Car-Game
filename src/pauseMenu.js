@@ -30,7 +30,8 @@ export class PauseMenuController {
     selectCameraModeFn,
     getCurrentCamIndexFn,
     setGrassDensityFn,
-    getGrassDensityFn
+    getGrassDensityFn,
+    resetVehicleFn
   }) {
     this.vehicle = vehicle;
     this.input = input;
@@ -43,6 +44,7 @@ export class PauseMenuController {
     this.getCurrentCamIndexFn = getCurrentCamIndexFn;
     this.setGrassDensityFn = setGrassDensityFn;
     this.getGrassDensityFn = getGrassDensityFn;
+    this.resetVehicleFn = resetVehicleFn;
 
     this.isOpen = false;
     this.currentView = 'main'; // 'main' | 'cars' | 'settings'
@@ -208,6 +210,10 @@ export class PauseMenuController {
     const activeIdx = this.getActiveCarIndexFn ? this.getActiveCarIndexFn() : 0;
 
     this.carRoster.forEach((car, idx) => {
+      const stats = car.stats || {};
+      const topSpeedMph = stats.topSpeedMph || 138;
+      const speedRating = Math.max(10, Math.min(100, stats.speedRating || 78));
+
       const card = document.createElement('div');
       card.className = `pause-car-card ${idx === activeIdx ? 'active' : ''}`;
       card.dataset.carIndex = idx;
@@ -218,6 +224,15 @@ export class PauseMenuController {
         <div class="pause-car-info">
           <div class="pause-car-name">${car.name}</div>
           <div class="pause-car-fullname">${car.fullName}</div>
+          <div class="pause-car-stats-panel">
+            <div class="pause-car-stat-row">
+              <span class="pause-car-stat-label">SPEED</span>
+              <span class="pause-car-stat-val">${topSpeedMph} MPH</span>
+            </div>
+            <div class="pause-car-stat-bar">
+              <div class="pause-car-stat-fill" style="width: ${speedRating}%;"></div>
+            </div>
+          </div>
           <div class="pause-car-badge ${idx === activeIdx ? 'active' : ''}">
             ${idx === activeIdx ? 'CURRENTLY DRIVING' : 'SELECT VEHICLE'}
           </div>
@@ -751,7 +766,10 @@ export class PauseMenuController {
   }
 
   resetVehicle() {
-    if (this.vehicle && typeof this.vehicle.reset === 'function') {
+    if (typeof this.resetVehicleFn === 'function') {
+      this.resetVehicleFn();
+      this.setOpen(false);
+    } else if (this.vehicle && typeof this.vehicle.reset === 'function') {
       this.vehicle.reset();
       this.setOpen(false);
     }

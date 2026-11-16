@@ -2,7 +2,46 @@ import { Peer } from 'peerjs';
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const PEER_PREFIX = 'thebestcargame-v1-';
-const JOIN_TIMEOUT_MS = 10000;
+const JOIN_TIMEOUT_MS = 15000;
+
+// STUN + Port-443 TURN relay fallback so WebRTC works across symmetric NAT & restricted Wi-Fi
+const DEFAULT_ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:stun.cloudflare.com:3478' },
+  { urls: 'stun:stun.relay.metered.ca:80' },
+  {
+    urls: 'turn:standard.relay.metered.ca:80',
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
+  {
+    urls: 'turn:standard.relay.metered.ca:80?transport=tcp',
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
+  {
+    urls: 'turn:standard.relay.metered.ca:443',
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
+  {
+    urls: 'turns:standard.relay.metered.ca:443?transport=tcp',
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
+];
+
+function getPeerRtcConfig() {
+  const custom = typeof window !== 'undefined' && Array.isArray(window.__customIceServers)
+    ? window.__customIceServers
+    : null;
+  return {
+    iceServers: custom || DEFAULT_ICE_SERVERS,
+    iceTransportPolicy: 'all',
+    iceCandidatePoolSize: 4,
+  };
+}
 
 const PKT_PLAYER_SINGLE = 1;
 const PKT_PLAYERS_BATCH = 2;
@@ -408,7 +447,9 @@ export class OnlineSessionManager {
     ];
     this._emitChange();
 
-    const peer = new Peer(`${PEER_PREFIX}${rawCode}`);
+    const peer = new Peer(`${PEER_PREFIX}${rawCode}`, {
+      config: getPeerRtcConfig(),
+    });
     this.peer = peer;
 
     peer.on('open', () => {
@@ -538,7 +579,9 @@ export class OnlineSessionManager {
     this._emitSyncStage('CONNECTING TO HOST...', 20);
     this._emitChange();
 
-    const peer = new Peer();
+    const peer = new Peer(undefined, {
+      config: getPeerRtcConfig(),
+    });
     this.peer = peer;
 
     this.joinTimeout = setTimeout(() => {

@@ -18,26 +18,28 @@ export class RaycastVehicleController {
     this.params = {
       mass: 1320,                  // kg
       chassisDims: new THREE.Vector3(1.86, 0.96, 4.36),
-      suspensionRestLength: 0.34,  // m
-      suspensionMaxTravel: 0.16,   // m
+      suspensionRestLength: 0.36,  // m
+      suspensionMaxTravel: 0.20,   // m (extra travel absorbs high-speed mountain crests & road shoulders)
       suspensionStiffness: 36000,  // N/m (Spring stiffness k)
       dampingCompression: 5400,    // N*s/m
       dampingRelaxation: 6400,     // N*s/m
       maxEngineForce: 9600,        // N total drive force (boosted for steep mountain touge & viaduct climbs)
+      maxForwardSpeed: 69,         // m/s top-speed taper ceiling (calibrated per car)
       maxReverseForce: 5200,       // N
       maxBrakeForce: 12500,        // N
       handbrakeForce: 6200,        // N
-      maxSteerAngle: 0.58,         // rad (~33.2 deg sweet spot)
-      highSpeedSteerFactor: 0.020, // Balanced speed-sensitive reduction (agile low speed, stable high speed)
-      steerSpeed: 9.5,             // rad/s smooth & responsive steering feel
-      frontLateralGrip: 2.10,      // Strong front turn-in grip
-      rearLateralGrip: 2.05,       // Planted rear grip during normal driving (no accidental spin/drift)
-      handbrakeRearGrip: 0.34,     // Loose rear tail when holding Spacebar for intentional drifts
-      yawAssistTorque: 2600,       // N*m subtle turn-in assist (sweet spot between 0 and 6800)
-      driftYawTorque: 8200,        // N*m yaw kick only when Spacebar handbrake is held
+      maxSteerAngle: 0.54,         // rad (~31 deg smooth Forza-style steering lock)
+      highSpeedSteerFactor: 0.018, // Progressive speed-sensitive steering
+      steerSpeed: 7.8,             // rad/s smooth, progressive turn-in (no snappy tap-jerks)
+      steerReturnSpeed: 15.5,      // rad/s smooth self-centering when releasing A/D
+      frontLateralGrip: 2.25,      // Smooth, progressive front bite
+      rearLateralGrip: 2.75,       // Planted rear traction (prevents random S-brake/corner slides)
+      handbrakeRearGrip: 0.48,     // Controlled rear slip when holding Spacebar (prevents snappy spinouts)
+      yawAssistTorque: 750,        // N*m gentle turn-in helper (eliminates artificial snap)
+      driftYawTorque: 4200,        // N*m smooth drift rotation without side-to-side snap
       rollingResistance: 160,      // N
-      aeroDragCoeff: 0.44,         // Aerodynamic drag
-      downforceCoeff: 1.35,        // GT wing downforce
+      aeroDragCoeff: 0.28,         // Aerodynamic drag
+      downforceCoeff: 1.65,        // Balanced GT downforce
       ...config,
     };
 
@@ -51,6 +53,7 @@ export class RaycastVehicleController {
     this.chassisLocalOffset = new THREE.Vector3(0, 0.36, 0);
     this.wheels = [];
     this.currentSteer = 0;
+    this.rearGripBlend = 1.0;
     this.forwardSpeed = 0;
     this.lateralSpeed = 0;
     this.speedKmh = 0;
@@ -60,6 +63,22 @@ export class RaycastVehicleController {
 
     this.setCarParts(carParts);
     this._initPhysicsBody();
+  }
+
+  applyVehicleStats(stats) {
+    if (!stats) return;
+    if (Number.isFinite(stats.maxForwardSpeed)) {
+      this.params.maxForwardSpeed = stats.maxForwardSpeed;
+    }
+    if (Number.isFinite(stats.maxEngineForce)) {
+      this.params.maxEngineForce = stats.maxEngineForce;
+    }
+    if (Number.isFinite(stats.mass) && stats.mass > 400) {
+      this.params.mass = stats.mass;
+      if (this.carBounds) {
+        this._rebuildColliders(this.carBounds);
+      }
+    }
   }
 
   /**
@@ -138,41 +157,55 @@ export class RaycastVehicleController {
       const s = bounds.size;
       const c = bounds.center;
       const rawBottomY = c.y - s.y * 0.5;
-      // Keep >= 0.31m ground clearance (-0.05 local) so low splitters never catch on steep road ramps
-      const clearedBottomY = Math.max(rawBottomY + 0.16, -0.05);
-      const lowerHy = Math.max(0.12, s.y * 0.20);
-      const upperHy = Math.max(0.14, s.y * 0.22);
+      // Keep generous ground clearance + rounded skid-plate bevel so splitters glide over road edges & mountain seams
+      const clearedBottomY = Math.max(rawBottomY + 0.22, 0.04);
+      const lowerHy = Math.max(0.14, s.y * 0.24);
+      const upperHy = Math.max(0.18, s.y * 0.27);
+      const bevel = 0.08;
 
-      lowerHull = RAPIER.ColliderDesc.cuboid(s.x * 0.48, lowerHy, s.z * 0.48)
+      lowerHull = RAPIER.ColliderDesc.roundCuboid(
+        Math.max(0.2, s.x * 0.49 - bevel),
+        Math.max(0.05, lowerHy - bevel),
+        Math.max(0.4, s.z * 0.49 - bevel),
+        bevel
+      )
         .setTranslation(c.x, clearedBottomY + lowerHy, c.z)
         .setMass(params.mass * 0.85)
-        .setFriction(0.12)
+        .setFriction(0.06)
         .setRestitution(0.0);
 
-      upperCabin = RAPIER.ColliderDesc.cuboid(s.x * 0.42, upperHy, s.z * 0.26)
-        .setTranslation(c.x, clearedBottomY + lowerHy * 2.0 + upperHy, c.z - s.z * 0.04)
+      upperCabin = RAPIER.ColliderDesc.roundCuboid(
+        Math.max(0.2, s.x * 0.44 - 0.05),
+        Math.max(0.08, upperHy - 0.05),
+        Math.max(0.3, s.z * 0.36 - 0.05),
+        0.05
+      )
+        .setTranslation(c.x, clearedBottomY + lowerHy * 2.0 + upperHy, c.z - s.z * 0.02)
         .setMass(params.mass * 0.15)
-        .setFriction(0.12)
+        .setFriction(0.10)
         .setRestitution(0.0);
     } else {
-      lowerHull = RAPIER.ColliderDesc.cuboid(
-        params.chassisDims.x * 0.48,
-        0.16,
-        params.chassisDims.z * 0.48
+      const bevel = 0.08;
+      lowerHull = RAPIER.ColliderDesc.roundCuboid(
+        Math.max(0.2, params.chassisDims.x * 0.49 - bevel),
+        0.10,
+        Math.max(0.4, params.chassisDims.z * 0.49 - bevel),
+        bevel
       )
-        .setTranslation(0, 0.11, 0)
+        .setTranslation(0, 0.18, 0)
         .setMass(params.mass * 0.85)
-        .setFriction(0.12)
+        .setFriction(0.06)
         .setRestitution(0.0);
 
-      upperCabin = RAPIER.ColliderDesc.cuboid(
-        params.chassisDims.x * 0.42,
-        0.20,
-        params.chassisDims.z * 0.25
+      upperCabin = RAPIER.ColliderDesc.roundCuboid(
+        Math.max(0.2, params.chassisDims.x * 0.44 - 0.05),
+        0.18,
+        Math.max(0.3, params.chassisDims.z * 0.36 - 0.05),
+        0.05
       )
-        .setTranslation(0, 0.44, -0.15)
+        .setTranslation(0, 0.52, -0.08)
         .setMass(params.mass * 0.15)
-        .setFriction(0.12)
+        .setFriction(0.10)
         .setRestitution(0.0);
     }
 
@@ -204,8 +237,9 @@ export class RaycastVehicleController {
     const spawnY = this.chassisLocalOffset.y;
     const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(0, spawnY, 0)
-      .setLinearDamping(0.12)
-      .setAngularDamping(1.15) // Sweet-spot yaw damping: turns crisply and settles cleanly when centering
+      .setLinearDamping(0.02)
+      .setAngularDamping(1.15) // Natural yaw flow & smooth corner exit
+      .setCcdEnabled(true)
       .setCanSleep(false);
 
     this.rigidBody = world.createRigidBody(bodyDesc);
@@ -263,9 +297,20 @@ export class RaycastVehicleController {
       ? THREE.MathUtils.clamp(input.steerAnalog, -1, 1)
       : (input.left ? 1 : 0) - (input.right ? 1 : 0);
     const speedFactor = 1 / (1 + Math.abs(this.forwardSpeed) * params.highSpeedSteerFactor);
-    const targetSteer = rawSteerInput * params.maxSteerAngle * speedFactor;
-    const steerLerp = 1 - Math.exp(-params.steerSpeed * dt);
+    // Allow extra steering lock ONLY when actively drifting so normal A/D weaving at high speed stays smooth
+    const isInDriftState = input.handbrake || this.rearGripBlend < 0.85;
+    const slideLockBoost = isInDriftState && Math.abs(this.lateralSpeed) > 2.5 && Math.abs(this.forwardSpeed) > 4.0
+      ? Math.min(0.28, Math.abs(Math.atan2(this.lateralSpeed, Math.abs(this.forwardSpeed))) * 0.55)
+      : 0.0;
+    const effectiveMaxSteer = Math.min(0.70, params.maxSteerAngle * speedFactor + slideLockBoost);
+    const targetSteer = rawSteerInput * effectiveMaxSteer;
+    const isReturning = Math.abs(targetSteer) < Math.abs(this.currentSteer) || Math.sign(targetSteer) !== Math.sign(this.currentSteer);
+    const activeSteerRate = isReturning ? (params.steerReturnSpeed || 28.0) : params.steerSpeed;
+    const steerLerp = 1 - Math.exp(-activeSteerRate * dt);
     this.currentSteer += (targetSteer - this.currentSteer) * steerLerp;
+    if (Math.abs(rawSteerInput) < 0.01 && Math.abs(this.currentSteer) < 0.004) {
+      this.currentSteer = 0;
+    }
 
     // Ackermann steering geometry for inner vs outer front wheel
     for (const w of this.wheels) {
@@ -334,6 +379,24 @@ export class RaycastVehicleController {
     const maxSuspLen = params.suspensionRestLength + params.suspensionMaxTravel;
     const rayDir = upDir.clone().negate();
 
+    // Smooth rear-grip blend: Spacebar initiates slide; holding throttle while sliding sustains ("holds") the drift!
+    const isCounterSteering =
+      (input.handbrake || this.rearGripBlend < 0.85) &&
+      Math.abs(rawSteerInput) > 0.05 &&
+      Math.abs(this.lateralSpeed) > 2.5 &&
+      rawSteerInput * this.lateralSpeed > 0;
+    const isHoldingPowerSlide =
+      !input.handbrake &&
+      driveInput > 0.1 &&
+      Math.abs(this.forwardSpeed) > 6.0 &&
+      Math.abs(this.lateralSpeed) > 2.8 &&
+      this.rearGripBlend < 0.78;
+    const targetRearBlend = input.handbrake
+      ? 0.0
+      : (isHoldingPowerSlide ? (isCounterSteering ? 0.54 : 0.40) : 1.0);
+    const rearBlendRate = input.handbrake ? 14.0 : (isHoldingPowerSlide ? 4.0 : 4.5);
+    this.rearGripBlend += (targetRearBlend - this.rearGripBlend) * (1 - Math.exp(-rearBlendRate * dt));
+
     let groundedCount = 0;
     let frontGrounded = 0;
     this.isDrifting = false;
@@ -378,7 +441,7 @@ export class RaycastVehicleController {
         const damperCoeff = compressionVel >= 0 ? params.dampingCompression : params.dampingRelaxation;
         const damperForce = damperCoeff * compressionVel;
 
-        const maxCornerLoad = params.mass * 9.81 * 1.6;
+        const maxCornerLoad = params.mass * 9.81 * 2.2;
         const normalLoad = Math.max(0, Math.min(maxCornerLoad, springForce + damperForce));
         const suspForceVec = w.hitNormal.clone().multiplyScalar(normalLoad);
 
@@ -404,7 +467,11 @@ export class RaycastVehicleController {
         let longForce = -Math.sign(wheelForwardVel) * params.rollingResistance * 0.25;
 
         if (driveInput > 0) {
-          const topSpeedTaper = Math.max(0, 1 - Math.abs(this.forwardSpeed) / 62);
+          const speedCeiling = (params.maxForwardSpeed || 61.7) * 1.10;
+          const speedRatio = Math.abs(this.forwardSpeed) / speedCeiling;
+          const topSpeedTaper = speedRatio < 0.72
+            ? 1.0
+            : Math.max(0, 1.0 - (speedRatio - 0.72) / 0.28);
           const torqueShare = w.isFront ? 0.18 : 0.32;
           longForce += driveInput * params.maxEngineForce * torqueShare * topSpeedTaper;
         } else if (driveInput < 0) {
@@ -421,19 +488,21 @@ export class RaycastVehicleController {
 
         if (input.handbrake && !w.isFront) {
           const hbSign = Math.abs(wheelForwardVel) > 0.1 ? -Math.sign(wheelForwardVel) : 0;
-          longForce += hbSign * params.handbrakeForce * 0.5;
+          const hbScale = driveInput > 0 ? 0.32 : 0.50;
+          longForce += hbSign * params.handbrakeForce * hbScale;
         }
 
-        // Balanced front & rear lateral grip so car tracks cleanly without accidental sliding
-        let gripMultiplier = w.isFront ? params.frontLateralGrip : params.rearLateralGrip;
-        if (input.handbrake && !w.isFront) {
-          gripMultiplier = params.handbrakeRearGrip;
-        }
+        // Balanced front & rear lateral grip with smooth handbrake blend (no sudden snap on drift transitions)
+        const blendedRearGrip =
+          params.handbrakeRearGrip +
+          (params.rearLateralGrip - params.handbrakeRearGrip) * this.rearGripBlend;
+        const gripMultiplier = w.isFront ? params.frontLateralGrip : blendedRearGrip;
 
-        const maxLatForce = Math.max(1600, normalLoad * gripMultiplier);
-        const corneringStiffness = (params.mass * 0.25) * (w.isFront ? 25.0 : 24.0);
+        const maxLatForce = Math.max(1800, normalLoad * gripMultiplier);
+        const corneringStiffness = (params.mass * 0.25) * (w.isFront ? 27.0 : 28.0);
+        // Soft-saturation curve (Forza-style progressive slip rather than harsh binary rail/ice)
         const rawLatForce = -wheelLateralVel * corneringStiffness;
-        const latForce = Math.max(-maxLatForce, Math.min(maxLatForce, rawLatForce));
+        const latForce = maxLatForce * Math.tanh(rawLatForce / maxLatForce);
 
         const tireForceVec = wheelForward
           .clone()
@@ -458,8 +527,8 @@ export class RaycastVehicleController {
         if (input.handbrake && !w.isFront && Math.abs(this.forwardSpeed) > 2.0) {
           w.skidIntensity = 1.0;
           this.isDrifting = true;
-        } else if (!w.isFront && Math.abs(wheelLateralVel) > 3.2 && slipRatio > 0.30) {
-          w.skidIntensity = Math.min(1, (slipRatio - 0.25) * 2.2);
+        } else if (!w.isFront && Math.abs(wheelLateralVel) > 4.6 && slipRatio > 0.42) {
+          w.skidIntensity = Math.min(1, (slipRatio - 0.36) * 2.0);
           this.isDrifting = true;
         } else {
           w.skidIntensity = 0;
@@ -477,18 +546,30 @@ export class RaycastVehicleController {
       }
     }
 
-    // Sweet-spot steering yaw assist (moderate during normal steering, strong kick on Spacebar drift)
+    // Subtle steering yaw assist (boosted during counter-steering so holding the opposite key catches/flips drifts reliably)
     if (frontGrounded > 0 && Math.abs(this.currentSteer) > 0.001 && Math.abs(this.forwardSpeed) > 0.5) {
       const dirSign = this.forwardSpeed >= 0 ? 1 : -1;
       const speedRatio = Math.min(1.0, Math.abs(this.forwardSpeed) / 8.0);
-      const activeYawTorque = input.handbrake ? params.driftYawTorque : params.yawAssistTorque;
-      const baseYaw =
-        (this.currentSteer / params.maxSteerAngle) *
-        dirSign *
-        speedRatio *
-        activeYawTorque;
+      const steerNorm = Math.tanh((this.currentSteer / params.maxSteerAngle) * 1.35) / Math.tanh(1.35);
+      let activeYawTorque =
+        params.driftYawTorque +
+        (params.yawAssistTorque - params.driftYawTorque) * this.rearGripBlend;
+      if (isCounterSteering) {
+        const csStrength = Math.min(1.0, Math.max(0.0, (Math.abs(this.lateralSpeed) - 2.5) / 6.0));
+        activeYawTorque = Math.max(activeYawTorque, 1800 + csStrength * 2000);
+      }
+      const baseYaw = steerNorm * dirSign * speedRatio * activeYawTorque;
       const yawVec = upDir.clone().multiplyScalar(baseYaw);
       rigidBody.addTorque({ x: yawVec.x, y: yawVec.y, z: yawVec.z }, true);
+    }
+
+    // Drift-hold yaw damper: stabilizes spinouts when not actively counter-steering
+    if (!input.handbrake && !isCounterSteering && this.rearGripBlend < 0.75 && Math.abs(this.lateralSpeed) > 2.5 && groundedCount >= 2) {
+      const yawRate = angVelVec.dot(upDir);
+      if (Math.abs(yawRate) > 0.05) {
+        const driftDamp = upDir.clone().multiplyScalar(-yawRate * params.mass * 0.85);
+        rigidBody.addTorque({ x: driftDamp.x, y: driftDamp.y, z: driftDamp.z }, true);
+      }
     }
 
     // Left-Right Anti-Roll Bars (front & rear sway bars resist body roll without stiffening bumps)

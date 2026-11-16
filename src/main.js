@@ -9,6 +9,7 @@ import { PauseMenuController } from './pauseMenu.js';
 import { AtmosphereSystem } from './atmosphere.js';
 import { TrafficSystem } from './trafficSystem.js';
 import { MultiplayerWorldSync } from './multiplayerSync.js';
+import { createStuntRamps } from './stuntRamps.js';
 import { assetUrl } from './assetUrl.js';
 
 // DOM Telemetry Elements
@@ -21,13 +22,48 @@ const freecamToggleBtnEl = document.getElementById('freecam-toggle-btn');
 const freecamHintEl = document.getElementById('freecam-hint');
 
 
-// Available Rigged Vehicles in `/public/assets/`
+// Available Rigged Vehicles in `/public/assets/` (with real-life inspired, game-balanced speed stats)
 const CAR_ROSTER = [
-  { id: 'supra',   name: 'JDM SUPRA GT',   fullName: 'JDM Widebody Supra GT',   thumb: '/assets/thumb_supra.png',   url: assetUrl('/assets/player_car.glb') },
-  { id: 'veneno',  name: 'LAMBO VENENO',   fullName: 'Lamborghini Veneno GT',   thumb: '/assets/thumb_veneno.png',  url: assetUrl('/assets/car_veneno.glb') },
-  { id: 'mustang', name: 'SHELBY MUSTANG', fullName: 'Shelby Mustang Fastback', thumb: '/assets/thumb_mustang.png', url: assetUrl('/assets/car_mustang.glb') },
-  { id: 'fordgt',  name: 'FORD GT',        fullName: 'Ford GT Supercar',        thumb: '/assets/thumb_fordgt.png',  url: assetUrl('/assets/car_fordgt.glb') },
-  { id: 'amg',     name: 'AMG GT COUPE',   fullName: 'Mercedes-AMG GT Coupe',   thumb: '/assets/thumb_amg.png',     url: assetUrl('/assets/car_amg.glb') },
+  {
+    id: 'supra',
+    name: 'JDM SUPRA GT',
+    fullName: 'JDM Widebody Supra GT',
+    thumb: '/assets/thumb_supra.png',
+    url: assetUrl('/assets/player_car.glb'),
+    stats: { topSpeedMph: 112, maxForwardSpeed: 50.1, maxEngineForce: 9600, mass: 1320, speedRating: 80 },
+  },
+  {
+    id: 'veneno',
+    name: 'LAMBO VENENO',
+    fullName: 'Lamborghini Veneno GT',
+    thumb: '/assets/thumb_veneno.png',
+    url: assetUrl('/assets/car_veneno.glb'),
+    stats: { topSpeedMph: 138, maxForwardSpeed: 61.7, maxEngineForce: 11800, mass: 1450, speedRating: 98 },
+  },
+  {
+    id: 'mustang',
+    name: 'SHELBY MUSTANG',
+    fullName: 'Shelby Mustang Fastback',
+    thumb: '/assets/thumb_mustang.png',
+    url: assetUrl('/assets/car_mustang.glb'),
+    stats: { topSpeedMph: 98, maxForwardSpeed: 43.8, maxEngineForce: 8900, mass: 1520, speedRating: 70 },
+  },
+  {
+    id: 'fordgt',
+    name: 'FORD GT',
+    fullName: 'Ford GT Supercar',
+    thumb: '/assets/thumb_fordgt.png',
+    url: assetUrl('/assets/car_fordgt.glb'),
+    stats: { topSpeedMph: 130, maxForwardSpeed: 58.1, maxEngineForce: 11000, mass: 1385, speedRating: 92 },
+  },
+  {
+    id: 'amg',
+    name: 'AMG GT COUPE',
+    fullName: 'Mercedes-AMG GT Coupe',
+    thumb: '/assets/thumb_amg.png',
+    url: assetUrl('/assets/car_amg.glb'),
+    stats: { topSpeedMph: 122, maxForwardSpeed: 54.5, maxEngineForce: 10300, mass: 1540, speedRating: 86 },
+  },
 ];
 
 // Forza Horizon-Inspired Exterior & Action Camera Presets (No Interior Cam)
@@ -1449,8 +1485,8 @@ function createInstancedNatureField(templateMap, natureInstances, obstacles, sce
   const projScreenMatrix = new THREE.Matrix4();
   const frustum = new THREE.Frustum();
   const MAX_DIST_SQ = 560.0 * 560.0;
-  // Center-to-center distance <= 170m guarantees all overlapping 160m chunk props within <90m cast crisp shadows
-  const SHADOW_DIST_SQ = 175.0 * 175.0;
+  // Center-to-center distance <= 120m covers all overlapping 160m chunks inside the 68m shadow box
+  const SHADOW_DIST_SQ = 120.0 * 120.0;
 
   function updateCulling(cam, isFreeCam, freeCamPos, shadowCenter) {
     cam.updateMatrixWorld();
@@ -2022,6 +2058,7 @@ async function init() {
 
   const vehicle = new RaycastVehicleController(RAPIER, world, parts, { carBounds: bounds });
   vehicle.setCarParts(parts, bounds);
+  vehicle.applyVehicleStats(CAR_ROSTER[0].stats);
   scene.add(vehicle.rootGroup);
 
   window.__vehicle = vehicle;
@@ -2040,11 +2077,11 @@ async function init() {
   window.__worldMap = worldMap;
 
   const trafficSystem = new TrafficSystem(RAPIER, world, scene, createAICarParts, {
-    maxVehicles: 36,
-    localVehicleShare: 22,
+    maxVehicles: 14,
+    localVehicleShare: 12,
     minSpawnDist: 58,
-    maxSpawnDist: 430,
-    despawnDist: 520,
+    maxSpawnDist: 360,
+    despawnDist: 460,
   });
   window.__trafficSystem = trafficSystem;
 
@@ -2061,6 +2098,7 @@ async function init() {
 
     const loaded = await loadRiggedCar(item.url);
     vehicle.setCarParts(loaded.parts, loaded.bounds);
+    vehicle.applyVehicleStats(item.stats);
 
     // Smooth focal shift / subtle camera turntable glide
     if (camera && vehicle && vehicle.rootGroup) {
@@ -2144,6 +2182,39 @@ async function init() {
     return window.__grassDensity || 'high';
   }
 
+  function resetVehicleToClosestRoad() {
+    if (!vehicle || !vehicle.rigidBody) return;
+    const pos = vehicle.rigidBody.translation();
+    const match = worldMap && typeof worldMap.getClosestRoadPoint === 'function'
+      ? worldMap.getClosestRoadPoint(pos.x, pos.z)
+      : null;
+
+    if (match && match.point) {
+      const rx = match.point.x;
+      const rz = match.point.z;
+      let surfaceY = match.point.y || 0;
+      const ray = new RAPIER.Ray({ x: rx, y: surfaceY + 18.0, z: rz }, { x: 0, y: -1, z: 0 });
+      const hit = world.castRay(ray, 45.0, true, undefined, (0xFFFF << 16) | 0x0001);
+      if (hit && Number.isFinite(hit.timeOfImpact)) {
+        surfaceY = surfaceY + 18.0 - hit.timeOfImpact;
+      }
+
+      let dirX = match.dir ? match.dir.x : 0;
+      let dirZ = match.dir ? match.dir.z : -1;
+      const curFwd = new THREE.Vector3(0, 0, 1).applyQuaternion(vehicle.rootGroup.quaternion);
+      if (curFwd.x * dirX + curFwd.z * dirZ < 0) {
+        dirX = -dirX;
+        dirZ = -dirZ;
+      }
+      const yaw = Math.atan2(dirX, dirZ);
+      const spawnY = surfaceY + vehicle.chassisLocalOffset.y + 0.35;
+      vehicle.reset(new THREE.Vector3(rx, spawnY, rz), yaw, 0);
+    } else {
+      vehicle.reset();
+    }
+    lastWheelSkidPos.clear();
+  }
+
   const pauseMenu = new PauseMenuController({
     vehicle,
     input,
@@ -2155,7 +2226,8 @@ async function init() {
     selectCameraModeFn: selectCameraMode,
     getCurrentCamIndexFn: () => currentCamIndex,
     setGrassDensityFn: setGrassDensity,
-    getGrassDensityFn: getGrassDensity
+    getGrassDensityFn: getGrassDensity,
+    resetVehicleFn: resetVehicleToClosestRoad
   });
   window.__pauseMenu = pauseMenu;
 
@@ -2496,21 +2568,6 @@ async function init() {
         case 'KeyG':
           setGarageOpen(!isGarageOpen);
           break;
-        case 'Digit1':
-          selectCar(0);
-          break;
-        case 'Digit2':
-          selectCar(1);
-          break;
-        case 'Digit3':
-          selectCar(2);
-          break;
-        case 'Digit4':
-          selectCar(3);
-          break;
-        case 'Digit5':
-          selectCar(4);
-          break;
       }
       return;
     }
@@ -2569,8 +2626,7 @@ async function init() {
         e.preventDefault();
         break;
       case 'KeyR':
-        vehicle.reset();
-        lastWheelSkidPos.clear();
+        resetVehicleToClosestRoad();
         break;
       case 'KeyC':
         selectCameraMode(currentCamIndex + 1);
@@ -2587,21 +2643,6 @@ async function init() {
         break;
       case 'KeyX':
         worldMap.clearGpsWaypoint();
-        break;
-      case 'Digit1':
-        selectCar(0);
-        break;
-      case 'Digit2':
-        selectCar(1);
-        break;
-      case 'Digit3':
-        selectCar(2);
-        break;
-      case 'Digit4':
-        selectCar(3);
-        break;
-      case 'Digit5':
-        selectCar(4);
         break;
     }
   });
@@ -2743,26 +2784,21 @@ async function init() {
   const onlinePausedInput = { forward: false, backward: false, left: false, right: false, handbrake: true };
   let lastTrafficSyncSendMs = 0;
   let lastMinimapUpdateMs = 0;
-  let perfTier = 0; // 0 = full quality, 1 = balanced (1x DPR, medium grass), 2 = fast (0.8x DPR, shorter grass, no shadows)
+  let perfTier = 0; // 0 = full quality, 1 = balanced (1x DPR, medium grass), 2 = fast (0.85x DPR, shorter grass, no shadows)
   let perfSampleFrames = 0;
   let perfSampleStartMs = performance.now();
-  let perfGoodStreak = 0;
 
   function applyPerfTier(tier) {
+    if (tier <= perfTier) return; // Step down only, never resize WebGL backbuffer back up mid-drive
     perfTier = tier;
     const nativeDpr = Math.min(window.devicePixelRatio || 1, 1.5);
-    if (tier === 0) {
-      renderer.setPixelRatio(nativeDpr);
-      window.__grassDensity = 'high';
-      window.__grassMaxDist = 152.0;
-      dirLight.castShadow = true;
-    } else if (tier === 1) {
-      renderer.setPixelRatio(Math.min(nativeDpr, 1.0));
+    if (tier === 1) {
+      if (nativeDpr > 1.0) renderer.setPixelRatio(1.0);
       window.__grassDensity = 'medium';
-      window.__grassMaxDist = 132.0;
+      window.__grassMaxDist = 128.0;
       dirLight.castShadow = true;
     } else {
-      renderer.setPixelRatio(0.8);
+      renderer.setPixelRatio(0.85);
       window.__grassDensity = 'medium';
       window.__grassMaxDist = 104.0;
       dirLight.castShadow = false;
@@ -2782,8 +2818,10 @@ async function init() {
     }
   });
 
+  let stuntRampsInitialized = false;
   function animate(now) {
     requestAnimationFrame(animate);
+    const frameStartMs = performance.now();
 
     const rawDt = Math.min(Math.max((now - lastTime) / 1000, 0.002), 0.04);
     lastTime = now;
@@ -2798,7 +2836,16 @@ async function init() {
     if (!trafficSystem.isReady && worldMap && worldMap.routesData) {
       trafficSystem.initFromRoutesData(worldMap.routesData);
     }
+    if (!stuntRampsInitialized && worldMap && worldMap.routesData) {
+      stuntRampsInitialized = true;
+      const ramps = createStuntRamps(RAPIER, world, scene, worldMap.routesData);
+      if (typeof worldMap.setStuntRamps === 'function') {
+        worldMap.setStuntRamps(ramps);
+      }
+    }
     if (!isPaused || isOnlineActive) {
+      const tPhys0 = performance.now();
+      let worldStepAcc = 0;
       if (natureField && natureField.updateColliders && vehicle && vehicle.rigidBody) {
         const p = vehicle.rigidBody.translation();
         natureField.updateColliders(p.x, p.z);
@@ -2811,7 +2858,9 @@ async function init() {
         if (isOnlineActive) {
           multiplayerSync.updatePhysicsStep(vehicle);
         }
+        const tW0 = performance.now();
         world.step();
+        worldStepAcc += performance.now() - tW0;
         if (!isTitleScreenOpen) {
           trafficSystem.postPhysicsStep(vehicle);
         }
@@ -2821,6 +2870,8 @@ async function init() {
           });
         }
       }
+      window.__perfWorldStepMs = worldStepAcc;
+      window.__perfPhysicsMs = performance.now() - tPhys0;
     }
     const isBraking = !isPaused && !isTitleScreenOpen && ((input.backward && vehicle.forwardSpeed > -0.5) || input.handbrake);
     const targetBrake = isBraking ? 1.0 : 0.0;
@@ -3120,19 +3171,9 @@ async function init() {
         perfSampleFrames = 0;
         perfSampleStartMs = now;
         if (avgFps < 26 && perfTier < 2) {
-          perfGoodStreak = 0;
           applyPerfTier(2);
         } else if (avgFps < 38 && perfTier < 1) {
-          perfGoodStreak = 0;
           applyPerfTier(1);
-        } else if (avgFps >= 54 && perfTier > 0) {
-          perfGoodStreak++;
-          if (perfGoodStreak >= 3) {
-            perfGoodStreak = 0;
-            applyPerfTier(perfTier - 1);
-          }
-        } else {
-          perfGoodStreak = 0;
         }
       }
     } else {
@@ -3144,12 +3185,15 @@ async function init() {
     gearBadgeEl.textContent = vehicle.gear;
     rpmBarEl.style.width = `${Math.round(vehicle.rpmNormalized * 100)}%`;
     if (statusLineEl) {
+      const pMs = window.__perfStats ? window.__perfStats.physicsMs.toFixed(1) : '0.0';
+      const wMs = (window.__perfWorldStepMs || 0).toFixed(1);
+      const rMs = window.__perfStats ? window.__perfStats.renderMs.toFixed(1) : '0.0';
       if (freeCam.active) {
-        statusLineEl.textContent = `FREE CAM: (${freeCam.pos.x.toFixed(0)}, ${freeCam.pos.y.toFixed(0)}, ${freeCam.pos.z.toFixed(0)}) | ${currentFps} FPS`;
+        statusLineEl.textContent = `FREE CAM: (${freeCam.pos.x.toFixed(0)}, ${freeCam.pos.y.toFixed(0)}, ${freeCam.pos.z.toFixed(0)}) | ${currentFps} FPS | P:${pMs}(W:${wMs}) R:${rMs}`;
       } else {
         statusLineEl.textContent = vehicle.isDrifting
-          ? `STATUS: DRIFTING | ${currentFps} FPS | FOV: ${currentFov.toFixed(0)}°`
-          : `STEER: ${(vehicle.currentSteer * (180 / Math.PI)).toFixed(1)}° | ${currentFps} FPS | FOV: ${currentFov.toFixed(0)}°`;
+          ? `STATUS: DRIFTING | ${currentFps} FPS | P:${pMs}(W:${wMs}) R:${rMs}`
+          : `STEER: ${(vehicle.currentSteer * (180 / Math.PI)).toFixed(1)}° | ${currentFps} FPS | P:${pMs}(W:${wMs}) R:${rMs}`;
       }
     }
 
@@ -3167,7 +3211,20 @@ async function init() {
       }
     }
 
+    const tRend0 = performance.now();
     renderer.render(scene, camera);
+    const renderMs = performance.now() - tRend0;
+    const totalMs = performance.now() - frameStartMs;
+    window.__perfStats = {
+      physicsMs: +(window.__perfPhysicsMs || 0).toFixed(2),
+      renderMs: +renderMs.toFixed(2),
+      totalMs: +totalMs.toFixed(2),
+      agents: trafficSystem ? trafficSystem.agents.length : 0,
+      perfTier,
+    };
+    if (totalMs > 33 && (!window.__perfWorstFrame || totalMs > window.__perfWorstFrame.totalMs)) {
+      window.__perfWorstFrame = { ...window.__perfStats, atMs: Math.round(now) };
+    }
   }
 
   // Pre-compile WebGL shader programs before first frame to avoid mid-drive compilation stutter

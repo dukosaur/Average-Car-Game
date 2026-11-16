@@ -1952,16 +1952,16 @@ export class TrafficSystem {
         continue;
       }
 
-      const inContact = nowMs - proxy.lastContactMs < 180;
-      const kHoriz = inContact ? 3.5 : 28.0;
-      const velBlend = inContact ? 0.35 : 1.0;
+      const inContact = nowMs - proxy.lastContactMs < 200;
+      const kHoriz = inContact ? 0.8 : 28.0;
+      const velBlend = inContact ? 0.25 : 1.0;
 
       const curVel = body.linvel();
       const targetVx = (p.vx || 0) * velBlend + dx * kHoriz;
       const targetVz = (p.vz || 0) * velBlend + dz * kHoriz;
       const targetVy = clamp((p.vy || 0) + dy * 16.0, -5.0, 5.0);
 
-      const alpha = inContact ? 0.20 : 0.90;
+      const alpha = inContact ? 0.14 : 0.90;
       body.setLinvel(
         {
           x: curVel.x + (targetVx - curVel.x) * alpha,
@@ -1970,8 +1970,8 @@ export class TrafficSystem {
         },
         true
       );
-      body.setRotation({ x: p.qx, y: p.qy, z: p.qz, w: p.qw }, true);
       if (!inContact) {
+        body.setRotation({ x: p.qx, y: p.qy, z: p.qz, w: p.qw }, true);
         body.setAngvel({ x: 0, y: 0, z: 0 }, true);
       }
     }
@@ -1994,7 +1994,48 @@ export class TrafficSystem {
         touching = true;
       });
     }
+    if (!touching && localVehicle.cabinCollider && otherCabin) {
+      this.world.contactPair(localVehicle.cabinCollider, otherCabin, () => {
+        touching = true;
+      });
+    }
     return touching;
+  }
+
+  _resolveMergedTrafficOverlap(localBody, otherBody) {
+    const lp = localBody.translation();
+    const op = otherBody.translation();
+    let dx = lp.x - op.x;
+    let dz = lp.z - op.z;
+    const dist = Math.hypot(dx, dz);
+    // Cars are ~1.9m wide and ~4.3m long; if centers are closer than 1.75m in XZ they are overlapping/merged
+    if (dist < 1.75) {
+      let nx = 1;
+      let nz = 0;
+      if (dist > 0.02) {
+        nx = dx / dist;
+        nz = dz / dist;
+      } else {
+        const lq = localBody.rotation();
+        const rightX = 1 - 2 * (lq.y * lq.y + lq.z * lq.z);
+        const rightZ = 2 * (lq.x * lq.z - lq.w * lq.y);
+        const rLen = Math.hypot(rightX, rightZ) || 1;
+        nx = rightX / rLen;
+        nz = rightZ / rLen;
+      }
+      const push = Math.min(0.22, (1.82 - dist) * 0.35);
+      localBody.setTranslation({ x: lp.x + nx * push, y: lp.y, z: lp.z + nz * push }, true);
+      otherBody.setTranslation({ x: op.x - nx * push, y: op.y, z: op.z - nz * push }, true);
+
+      const lv = localBody.linvel();
+      const ov = otherBody.linvel();
+      const relOut = (lv.x - ov.x) * nx + (lv.z - ov.z) * nz;
+      if (relOut < 3.0) {
+        const boost = (3.0 - relOut) * 0.5;
+        localBody.setLinvel({ x: lv.x + nx * boost, y: Math.min(lv.y, 1.2), z: lv.z + nz * boost }, true);
+        otherBody.setLinvel({ x: ov.x - nx * boost, y: Math.min(ov.y, 1.2), z: ov.z - nz * boost }, true);
+      }
+    }
   }
 
   postPhysicsStep(playerVehicle) {
@@ -2010,6 +2051,7 @@ export class TrafficSystem {
         if (this._hasVehicleContact(playerVehicle, proxy.chassisCollider, proxy.cabinCollider)) {
           anyContact = true;
           proxy.lastContactMs = nowMs;
+          this._resolveMergedTrafficOverlap(localBody, proxy.rigidBody);
         }
       }
     } else {
@@ -2018,6 +2060,7 @@ export class TrafficSystem {
         if (!av || !av.rigidBody || !av.chassisCollider) continue;
         if (this._hasVehicleContact(playerVehicle, av.chassisCollider, av.cabinCollider)) {
           anyContact = true;
+          this._resolveMergedTrafficOverlap(localBody, av.rigidBody);
           const aVel = av.rigidBody.linvel();
           if (aVel.y > 1.6) {
             av.rigidBody.setLinvel({ x: aVel.x, y: 1.6, z: aVel.z }, true);
