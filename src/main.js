@@ -8,6 +8,7 @@ import { GPSNavigationSystem } from './gpsNavigation.js';
 import { PauseMenuController } from './pauseMenu.js';
 import { AtmosphereSystem } from './atmosphere.js';
 import { TrafficSystem } from './trafficSystem.js';
+import { MultiplayerWorldSync } from './multiplayerSync.js';
 import { assetUrl } from './assetUrl.js';
 
 // DOM Telemetry Elements
@@ -1774,7 +1775,14 @@ function loadRiggedCar(url) {
           parts[name] = obj;
         }
 
-        const entry = { gltf, parts };
+        const chassisBox = new THREE.Box3().setFromObject(parts.Chassis_Body);
+        const size = new THREE.Vector3();
+        const center = new THREE.Vector3();
+        chassisBox.getSize(size);
+        chassisBox.getCenter(center);
+        center.sub(parts.Chassis_Body.position);
+
+        const entry = { gltf, parts, bounds: { size, center } };
         gltfCache.set(url, entry);
         resolve(entry);
       },
@@ -1876,10 +1884,66 @@ async function createAICarParts(rawUrl, aiBrakeUniform, paintColorHex = null) {
     parts[name] = clone;
   }
 
-  return { parts, clonedMaterials };
+  return { parts, clonedMaterials, bounds: loaded.bounds };
 }
 
 async function init() {
+  const titleOverlayEl = document.getElementById('title-screen-overlay');
+  const titleShotFadeEl = document.getElementById('title-shot-fade');
+  const titleLoadingBoxEl = document.getElementById('title-loading-box');
+  const titleProgressFillEl = document.getElementById('title-progress-fill');
+  const titleLoadingLabelEl = document.getElementById('title-loading-label');
+  const titleActionsEl = document.getElementById('title-actions');
+  const titleStartBtnEl = document.getElementById('title-start-btn');
+  const titleStartBtnLabelEl = document.getElementById('title-start-btn-label');
+  const titleNameInputEl = document.getElementById('title-player-name-input');
+  const titleWelcomeTextEl = document.getElementById('title-welcome-text');
+  const titleNameCountEl = document.getElementById('title-name-count');
+  const syncTitleNameUI = () => {
+    if (!titleNameInputEl) return;
+    const val = titleNameInputEl.value.trim().slice(0, 16);
+    const display = (val || 'DRIVER').toUpperCase();
+    if (titleWelcomeTextEl) titleWelcomeTextEl.textContent = `WELCOME, ${display}`;
+    if (titleNameCountEl) titleNameCountEl.textContent = `${titleNameInputEl.value.length}/16`;
+  };
+  if (titleNameInputEl) {
+    try {
+      const savedName = localStorage.getItem('carGame_playerName');
+      if (savedName) titleNameInputEl.value = savedName;
+    } catch (_) {}
+    syncTitleNameUI();
+    titleNameInputEl.addEventListener('input', syncTitleNameUI);
+  }
+  const hudElsForTitle = [
+    document.getElementById('hud-pause-prompt'),
+    document.getElementById('hud-minimap-wrap'),
+    document.getElementById('telemetry'),
+  ].filter(Boolean);
+
+  let isTitleScreenOpen = Boolean(titleOverlayEl);
+  let isTitleReady = false;
+  let titleIntroActive = false;
+  let titleIntroT = 0;
+  const TITLE_INTRO_DURATION = 1.85;
+  const titleIntroState = { startYaw: 0, startRadius: 9.0, startHeight: 4.5, startLookOffset: new THREE.Vector3() };
+  const titleIntroHudShown = { done: false };
+
+  const setTitleHudHidden = (hide, smooth = false) => {
+    for (const el of hudElsForTitle) {
+      el.style.transition = smooth ? 'opacity 0.70s cubic-bezier(0.16, 1, 0.3, 1)' : '';
+      el.style.opacity = hide ? '0' : '';
+      el.style.pointerEvents = hide ? 'none' : '';
+    }
+  };
+  const setTitleLoadingProgress = (pct, label) => {
+    if (titleProgressFillEl) titleProgressFillEl.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+    if (titleLoadingLabelEl && label) titleLoadingLabelEl.textContent = label;
+  };
+  if (isTitleScreenOpen) {
+    setTitleHudHidden(true);
+    setTitleLoadingProgress(15, 'INITIALIZING PHYSICS...');
+  }
+
   await RAPIER.init();
 
   const container = document.getElementById('app');
@@ -1946,12 +2010,15 @@ async function init() {
   const gravity = { x: 0.0, y: -9.81, z: 0.0 };
   const world = new RAPIER.World(gravity);
 
+  if (isTitleScreenOpen) setTitleLoadingProgress(40, 'LOADING WORLD & BIOMES...');
   const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
   const { grassField, natureField, waterMat } = await buildTestGround(scene, world, maxAnisotropy, sun);
 
-  const { parts } = await loadRiggedCar(CAR_ROSTER[0].url);
+  if (isTitleScreenOpen) setTitleLoadingProgress(75, 'PREPARING VEHICLES...');
+  const { parts, bounds } = await loadRiggedCar(CAR_ROSTER[0].url);
 
-  const vehicle = new RaycastVehicleController(RAPIER, world, parts);
+  const vehicle = new RaycastVehicleController(RAPIER, world, parts, { carBounds: bounds });
+  vehicle.setCarParts(parts, bounds);
   scene.add(vehicle.rootGroup);
 
   window.__vehicle = vehicle;
@@ -1990,7 +2057,7 @@ async function init() {
     const item = CAR_ROSTER[index];
 
     const loaded = await loadRiggedCar(item.url);
-    vehicle.setCarParts(loaded.parts);
+    vehicle.setCarParts(loaded.parts, loaded.bounds);
 
     // Smooth focal shift / subtle camera turntable glide
     if (camera && vehicle && vehicle.rootGroup) {
@@ -2089,6 +2156,76 @@ async function init() {
   });
   window.__pauseMenu = pauseMenu;
 
+  const multiplayerSync = new MultiplayerWorldSync(RAPIER, world, scene, createAICarParts, CAR_ROSTER);
+  multiplayerSync.setNameplatesContainer(document.getElementById('remote-nameplates-layer'));
+  window.__multiplayerSync = multiplayerSync;
+
+  function captureLocalKinematicState() {
+    const body = vehicle.rigidBody;
+    const pos = body.translation();
+    const rot = body.rotation();
+    const vel = body.linvel();
+    const spin = vehicle.wheels && vehicle.wheels[0] ? vehicle.wheels[0].spinAngle : 0;
+    return {
+      px: pos.x,
+      py: pos.y,
+      pz: pos.z,
+      qx: rot.x,
+      qy: rot.y,
+      qz: rot.z,
+      qw: rot.w,
+      vx: vel.x,
+      vy: vel.y,
+      vz: vel.z,
+      steer: vehicle.currentSteer || 0,
+      spin,
+      brake: brakeLightUniform.value || 0,
+    };
+  }
+
+  const onlineSession = pauseMenu.onlineSession;
+  if (titleNameInputEl) {
+    onlineSession.setLocalName(titleNameInputEl.value);
+  }
+  pauseMenu.onOnlinePlayersChangedFn = (players) => {
+    multiplayerSync.syncRoster(players, onlineSession.localNetId);
+  };
+  onlineSession.getInitialWorldStateFn = () => ({
+    hostState: captureLocalKinematicState(),
+    trafficSnapshot: trafficSystem.exportSyncSnapshot(),
+  });
+  onlineSession.onWorldInitFn = async (msg) => {
+    pauseMenu.showSyncOverlay('SYNCING PLAYERS & CARS...', 65);
+    trafficSystem.setRemoteSyncMode(true);
+    await multiplayerSync.syncRoster(msg.players || [], onlineSession.localNetId, msg.hostState);
+    pauseMenu.showSyncOverlay('SYNCING WORLD TRAFFIC...', 85);
+    if (msg.trafficSnapshot) {
+      await trafficSystem.syncInitialSnapshot(msg.trafficSnapshot);
+    }
+    if (msg.hostState) {
+      multiplayerSync.placeLocalVehicleNearHost(vehicle, msg.hostState);
+    }
+    pauseMenu.showSyncOverlay('READY TO DRIVE', 100);
+    await new Promise((resolve) => setTimeout(resolve, 260));
+    pauseMenu.hideSyncOverlay();
+    pauseMenu.setOpen(false);
+  };
+  onlineSession.onPlayerStatesFn = (ts, states) => {
+    multiplayerSync.pushPlayerStates(ts, states, onlineSession.localNetId);
+  };
+  onlineSession.onTrafficSnapshotFn = (snapshot) => {
+    trafficSystem.applySyncSnapshot(snapshot);
+  };
+  onlineSession.onBumpImpulseFn = (bump) => {
+    if (document.hidden) return;
+    multiplayerSync.applyLocalBumpImpulse(vehicle, bump);
+  };
+  onlineSession.onSessionEndedFn = () => {
+    pauseMenu.hideSyncOverlay();
+    multiplayerSync.clearAll();
+    trafficSystem.setRemoteSyncMode(false);
+  };
+
   if (freecamToggleBtnEl) {
     freecamToggleBtnEl.addEventListener('click', () => {
       setFreeCamActive(!freeCam.active);
@@ -2117,8 +2254,82 @@ async function init() {
   });
 
   // Preload remaining 4 player cars + 3 AI traffic cars in the background
+  if (isTitleScreenOpen) setTitleLoadingProgress(95, 'SPAWNING TRAFFIC...');
   CAR_ROSTER.slice(1).forEach((c) => loadRiggedCar(c.url));
   ['car_golf.glb', 'car_rs6.glb', 'car_coupe.glb'].forEach((f) => loadRiggedCar(assetUrl(`/assets/${f}`)));
+
+  function startGameFromTitle() {
+    if (!isTitleScreenOpen || !isTitleReady) return;
+    if (titleNameInputEl) {
+      const rawName = titleNameInputEl.value.trim().slice(0, 16);
+      const finalName = rawName || 'Driver';
+      onlineSession.setLocalName(finalName);
+      try {
+        localStorage.setItem('carGame_playerName', rawName);
+      } catch (_) {}
+      titleNameInputEl.blur();
+    }
+    isTitleScreenOpen = false;
+    if (titleOverlayEl) titleOverlayEl.classList.add('hidden');
+    if (titleShotFadeEl) titleShotFadeEl.classList.remove('active');
+
+    // Compute exact player car chase target & launch a smooth 1.35s cinematic swoop-in
+    const p = vehicle.rigidBody.translation();
+    const q = vehicle.rigidBody.rotation();
+    const fq = new THREE.Quaternion(q.x, q.y, q.z, q.w);
+    const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(fq);
+    const right = new THREE.Vector3(-1, 0, 0).applyQuaternion(fq);
+    smoothedCamYaw = Math.atan2(fwd.x, fwd.z);
+    smoothedCamY = Math.max(1.0, p.y + CAMERA_MODES[0].heightOffset);
+    smoothedLookY = p.y + CAMERA_MODES[0].lookHeightOffset;
+    smoothedPullback = CAMERA_MODES[0].dist;
+
+    // If we were on a distant biome shot (> 30m from player car), swoop from an elevated front-3/4 hero angle
+    const distFromCar = Math.hypot(camera.position.x - p.x, camera.position.z - p.z);
+    if (distFromCar > 30.0) {
+      const heroPos = new THREE.Vector3(
+        p.x + fwd.x * 7.8 + right.x * 5.8,
+        p.y + 4.4,
+        p.z + fwd.z * 7.8 + right.z * 5.8
+      );
+      titleIntroState.startYaw = Math.atan2(heroPos.x - p.x, heroPos.z - p.z);
+      titleIntroState.startRadius = Math.hypot(heroPos.x - p.x, heroPos.z - p.z);
+      titleIntroState.startHeight = heroPos.y - p.y;
+      titleIntroState.startLookOffset.set(0, 0.55, 0);
+    } else {
+      titleIntroState.startYaw = Math.atan2(camera.position.x - p.x, camera.position.z - p.z);
+      titleIntroState.startRadius = Math.max(3.5, distFromCar);
+      titleIntroState.startHeight = camera.position.y - p.y;
+      titleIntroState.startLookOffset.set(0, 0.5, 0);
+    }
+    titleIntroActive = true;
+    titleIntroT = 0;
+    titleIntroHudShown.done = false;
+  }
+
+  if (titleStartBtnEl) {
+    titleStartBtnEl.addEventListener('click', startGameFromTitle);
+  }
+  if (titleNameInputEl) {
+    titleNameInputEl.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') {
+        startGameFromTitle();
+      }
+    });
+  }
+
+  if (isTitleScreenOpen) {
+    setTitleLoadingProgress(100, 'READY');
+    isTitleReady = true;
+    setTimeout(() => {
+      if (titleOverlayEl) titleOverlayEl.classList.add('is-ready');
+      if (titleLoadingBoxEl) titleLoadingBoxEl.classList.add('hidden');
+      if (titleStartBtnEl) titleStartBtnEl.disabled = false;
+      if (titleStartBtnLabelEl) titleStartBtnLabelEl.textContent = 'START GAME';
+      if (titleActionsEl) titleActionsEl.classList.remove('hidden');
+    }, 260);
+  }
 
   if (statusLineEl) statusLineEl.textContent = 'Nodes: Chassis_Body + 4x Wheel (FL/FR/RL/RR)';
 
@@ -2214,6 +2425,14 @@ async function init() {
 
   // Keyboard Controls Setup
   window.addEventListener('keydown', (e) => {
+    if (isTitleScreenOpen) {
+      if (isTitleReady && (e.code === 'Enter' || e.code === 'Space')) {
+        e.preventDefault();
+        startGameFromTitle();
+      }
+      return;
+    }
+
     // 1. Pause Menu Active: Route all inputs to PauseMenuController
     if (pauseMenu && pauseMenu.isOpen) {
       if (pauseMenu.handleKeyDown(e)) {
@@ -2469,12 +2688,70 @@ async function init() {
   let lastFpsTime = performance.now();
   let currentFps = 60;
 
+  // Live 3D Scenic Showcase Director for the FH6-style Title Screen
+  let titleShots = null;
+  let titleShotIndex = 0;
+  let titleShotTimer = 0;
+  let titleFadePending = false;
+  const TITLE_SHOT_DURATION = 6.2;
+  const titleFocusPos = new THREE.Vector3();
+  const titleNeutralInput = { forward: false, backward: false, left: false, right: false, handbrake: false };
+  const titleTrafficAnchor = {
+    rigidBody: {
+      translation: () => titleFocusPos,
+      linvel: () => ({ x: 0, y: 0, z: 0 }),
+    },
+  };
+
+  function buildTitleShots(routesData) {
+    const shots = [{ kind: 'hero', radius: 5.2, height: 1.35, speed: 0.16, baseAngle: 0.65 }];
+    const routes = (routesData && routesData.routes) ? routesData.routes : [];
+    const pickRoutePoint = (predicate) => {
+      for (const r of routes) {
+        if (!r.points || r.points.length < 12 || !predicate(r)) continue;
+        const p = r.points[Math.floor(r.points.length * 0.45)];
+        return new THREE.Vector3(p[0], p[1], p[2]);
+      }
+      return null;
+    };
+
+    const presets = [
+      { pt: pickRoutePoint((r) => r.points.some((p) => p[0] < -350)), radius: 34, height: 15, speed: 0.09, baseAngle: 0.4 },
+      { pt: pickRoutePoint((r) => r.points.some((p) => p[2] < -420)), radius: 30, height: 13, speed: -0.09, baseAngle: 2.1 },
+      { pt: pickRoutePoint((r) => r.id.includes('roundabout')), radius: 28, height: 14, speed: 0.10, baseAngle: 1.1 },
+      { pt: pickRoutePoint((r) => r.type === 'highway'), radius: 24, height: 8.5, speed: -0.11, baseAngle: 0.8 },
+      { pt: pickRoutePoint((r) => r.points.some((p) => p[0] > 320)), radius: 36, height: 16, speed: 0.08, baseAngle: 3.6 },
+    ];
+    for (const pr of presets) {
+      if (pr.pt) {
+        shots.push({ kind: 'scenic', focus: pr.pt, radius: pr.radius, height: pr.height, speed: pr.speed, baseAngle: pr.baseAngle });
+      }
+    }
+    return shots;
+  }
+
   function lerpAngle(current, target, alpha) {
     let diff = ((target - current + Math.PI) % (Math.PI * 2));
     if (diff < 0) diff += Math.PI * 2;
     diff -= Math.PI;
     return current + diff * alpha;
   }
+
+  const onlinePausedInput = { forward: false, backward: false, left: false, right: false, handbrake: true };
+  let lastTrafficSyncSendMs = 0;
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      lastTime = performance.now();
+      smoothedDt = 1 / 60;
+    } else if (onlineSession && onlineSession.status === 'active' && vehicle && vehicle.rigidBody) {
+      const lv = vehicle.rigidBody.linvel();
+      vehicle.rigidBody.setLinvel({ x: 0, y: Math.min(lv.y, 0), z: 0 }, true);
+    }
+    if (onlineSession && onlineSession.status === 'active' && (!onlineSession.isHost || onlineSession.hasConnectedGuests())) {
+      onlineSession.sendLocalPlayerState(captureLocalKinematicState(), activeCarIndex, document.hidden);
+    }
+  });
 
   function animate(now) {
     requestAnimationFrame(animate);
@@ -2488,25 +2765,55 @@ async function init() {
     const subDt = smoothedDt / subSteps;
     world.timestep = subDt;
     const isPaused = (pauseMenu && pauseMenu.isOpen) || (worldMap && worldMap.isOpen);
+    const isOnlineActive = onlineSession && onlineSession.status === 'active';
     if (!trafficSystem.isReady && worldMap && worldMap.routesData) {
       trafficSystem.initFromRoutesData(worldMap.routesData);
     }
-    if (!isPaused) {
+    if (!isPaused || isOnlineActive) {
       if (natureField && natureField.updateColliders && vehicle && vehicle.rigidBody) {
         const p = vehicle.rigidBody.translation();
         natureField.updateColliders(p.x, p.z);
       }
+      const activeInput = isTitleScreenOpen ? titleNeutralInput : (isPaused ? onlinePausedInput : input);
+      const activeTrafficAnchor = isTitleScreenOpen ? titleTrafficAnchor : vehicle;
       for (let i = 0; i < subSteps; i++) {
-        vehicle.updatePhysicsStep(subDt, input);
-        trafficSystem.updatePhysicsStep(subDt, vehicle);
+        vehicle.updatePhysicsStep(subDt, activeInput);
+        trafficSystem.updatePhysicsStep(subDt, activeTrafficAnchor);
+        if (isOnlineActive) {
+          multiplayerSync.updatePhysicsStep(vehicle);
+        }
         world.step();
+        if (!isTitleScreenOpen) {
+          trafficSystem.postPhysicsStep(vehicle);
+        }
+        if (isOnlineActive) {
+          multiplayerSync.postPhysicsStep(vehicle, (targetNetId, dvx, dvz, torqueY) => {
+            onlineSession.sendBumpImpulse(targetNetId, dvx, dvz, torqueY);
+          });
+        }
       }
     }
-    const isBraking = !isPaused && ((input.backward && vehicle.forwardSpeed > -0.5) || input.handbrake);
+    const isBraking = !isPaused && !isTitleScreenOpen && ((input.backward && vehicle.forwardSpeed > -0.5) || input.handbrake);
     const targetBrake = isBraking ? 1.0 : 0.0;
     brakeLightUniform.value += (targetBrake - brakeLightUniform.value) * (1.0 - Math.exp(-22.0 * smoothedDt));
     vehicle.syncVisuals();
-    trafficSystem.updateFrame(smoothedDt, vehicle, isPaused, camera, freeCam.active);
+    trafficSystem.updateFrame(
+      smoothedDt,
+      isTitleScreenOpen ? titleTrafficAnchor : vehicle,
+      isPaused && !isOnlineActive,
+      camera,
+      freeCam.active || isTitleScreenOpen
+    );
+    if (isOnlineActive) {
+      multiplayerSync.updateFrame(smoothedDt, vehicle, camera);
+      if (!onlineSession.isHost || onlineSession.hasConnectedGuests()) {
+        onlineSession.sendLocalPlayerState(captureLocalKinematicState(), activeCarIndex, document.hidden);
+      }
+      if (onlineSession.hasConnectedGuests() && now - lastTrafficSyncSendMs >= 50) {
+        lastTrafficSyncSendMs = now;
+        onlineSession.sendTrafficSnapshot(trafficSystem.exportSyncSnapshot());
+      }
+    }
 
     const carQuat = vehicle.rootGroup.quaternion;
     const carForward = new THREE.Vector3(0, 0, 1).applyQuaternion(carQuat);
@@ -2554,7 +2861,91 @@ async function init() {
       camera.updateProjectionMatrix();
     }
 
-    if (freeCam.active) {
+    if (isTitleScreenOpen) {
+      if (!titleShots && worldMap && worldMap.routesData) {
+        titleShots = buildTitleShots(worldMap.routesData);
+      }
+      const shots = titleShots || [{ kind: 'hero', radius: 5.2, height: 1.35, speed: 0.16, baseAngle: 0.65 }];
+      titleShotTimer += smoothedDt;
+      if (!titleFadePending && shots.length > 1 && titleShotTimer >= TITLE_SHOT_DURATION - 0.42) {
+        titleFadePending = true;
+        if (titleShotFadeEl) titleShotFadeEl.classList.add('active');
+      }
+      if (titleShotTimer >= TITLE_SHOT_DURATION) {
+        titleShotTimer = 0;
+        titleFadePending = false;
+        titleShotIndex = (titleShotIndex + 1) % shots.length;
+        if (titleShotFadeEl) titleShotFadeEl.classList.remove('active');
+      }
+
+      const shot = shots[titleShotIndex];
+      const angle = shot.baseAngle + titleShotTimer * shot.speed;
+      if (shot.kind === 'hero') {
+        titleFocusPos.copy(chassisWorldPos);
+        titleFocusPos.y += 0.45;
+      } else {
+        titleFocusPos.copy(shot.focus);
+      }
+      camera.up.set(0, 1, 0);
+      camera.position.set(
+        titleFocusPos.x + Math.sin(angle) * shot.radius,
+        titleFocusPos.y + shot.height,
+        titleFocusPos.z + Math.cos(angle) * shot.radius
+      );
+      camera.lookAt(titleFocusPos.x, titleFocusPos.y + 0.5, titleFocusPos.z);
+      if (Math.abs(camera.fov - 50.0) > 0.1) {
+        camera.fov = 50.0;
+        camera.updateProjectionMatrix();
+      }
+    } else if (titleIntroActive) {
+      titleIntroT = Math.min(1.0, titleIntroT + smoothedDt / TITLE_INTRO_DURATION);
+      // C2-continuous smootherstep for zero-jerk orbital swoop into the chase camera
+      const u = titleIntroT;
+      const t = u * u * u * (u * (u * 6 - 15) + 10);
+
+      const endCamAngle = carYaw + Math.PI;
+      const curAngle = lerpAngle(titleIntroState.startYaw, endCamAngle, t);
+      const curRadius = THREE.MathUtils.lerp(titleIntroState.startRadius, CAMERA_MODES[0].dist, t) + Math.sin(u * Math.PI) * 1.1;
+      const endHeight = Math.max(1.0 - chassisWorldPos.y, CAMERA_MODES[0].heightOffset);
+      const curHeight = THREE.MathUtils.lerp(titleIntroState.startHeight, endHeight, t) + Math.sin(u * Math.PI) * 0.9;
+
+      camera.up.set(0, 1, 0);
+      camera.position.set(
+        chassisWorldPos.x + Math.sin(curAngle) * curRadius,
+        chassisWorldPos.y + curHeight,
+        chassisWorldPos.z + Math.cos(curAngle) * curRadius
+      );
+
+      const endLook = new THREE.Vector3(
+        chassisWorldPos.x + carForward.x * CAMERA_MODES[0].lookAhead,
+        chassisWorldPos.y + CAMERA_MODES[0].lookHeightOffset,
+        chassisWorldPos.z + carForward.z * CAMERA_MODES[0].lookAhead
+      );
+      const startLook = new THREE.Vector3(
+        chassisWorldPos.x + titleIntroState.startLookOffset.x,
+        chassisWorldPos.y + titleIntroState.startLookOffset.y,
+        chassisWorldPos.z + titleIntroState.startLookOffset.z
+      );
+      camera.lookAt(startLook.lerp(endLook, t));
+
+      const targetFov = THREE.MathUtils.lerp(49.0, CAMERA_MODES[0].baseFov, t);
+      if (Math.abs(camera.fov - targetFov) > 0.04) {
+        camera.fov = targetFov;
+        camera.updateProjectionMatrix();
+      }
+
+      if (!titleIntroHudShown.done && titleIntroT >= 0.80) {
+        titleIntroHudShown.done = true;
+        setTitleHudHidden(false, true);
+      }
+      if (titleIntroT >= 1.0) {
+        titleIntroActive = false;
+        smoothedCamYaw = carYaw;
+        smoothedCamY = camera.position.y;
+        smoothedLookY = endLook.y;
+        smoothedPullback = CAMERA_MODES[0].dist;
+      }
+    } else if (freeCam.active) {
       // Free Cam 6-DOF Drone Movement & Look
       const lookSpeed = 1.85;
       if (freeCam.keys.lookLeft) freeCam.yaw += lookSpeed * smoothedDt;
@@ -2637,7 +3028,7 @@ async function init() {
     if (skyMesh) {
       skyMesh.position.copy(camera.position);
     }
-    if (!freeCam.active) {
+    if (!freeCam.active && !isTitleScreenOpen && !titleIntroActive) {
       const targetFov = camMode.type === 'orbit'
         ? 56.0
         : 56.0 + Math.min(8.5, Math.max(0.0, vehicle.speedKmh - 45.0) * 0.042);
@@ -2657,22 +3048,24 @@ async function init() {
     }
 
     // 3. Update wind animation and perform dynamic camera frustum + distance culling on grass chunks
+    const useShowcaseCulling = freeCam.active || isTitleScreenOpen;
+    const showcaseFocus = isTitleScreenOpen ? titleFocusPos : freeCam.pos;
     if (grassField) {
       if (grassField.grassMat) {
         grassField.grassMat.uniforms.uTime.value = now * 0.001;
       }
       if (grassField.updateCulling) {
-        grassField.updateCulling(camera, freeCam.active, freeCam.pos);
+        grassField.updateCulling(camera, useShowcaseCulling, showcaseFocus);
       }
     }
     if (waterMat) {
       waterMat.uniforms.uTime.value = now * 0.001;
     }
 
-    // 2. Tightly anchor directional sunlight frustum over the active vehicle / freecam
-    const shadowCenter = freeCam.active ? freeCam.pos : chassisWorldPos;
+    // 2. Tightly anchor directional sunlight frustum over the active vehicle / freecam / title showcase
+    const shadowCenter = useShowcaseCulling ? showcaseFocus : chassisWorldPos;
     if (natureField && natureField.updateCulling) {
-      natureField.updateCulling(camera, freeCam.active, freeCam.pos, shadowCenter);
+      natureField.updateCulling(camera, useShowcaseCulling, showcaseFocus, shadowCenter);
     }
     dirLight.position.set(
       shadowCenter.x + sun.x * 65,

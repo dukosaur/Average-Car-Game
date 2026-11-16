@@ -229,8 +229,12 @@ export class WorldMapController {
           this._miniDrivableRoutes = this.routesData.routes.filter(
             (r) => (!r.layer || r.layer === 'ground') && !r.id.startsWith('overpass_bridge') && r.id !== 'alpine_tunnel'
           );
-          this._miniBridgeSegments = this.routesData.routes.filter(
+          const allBridgeSegments = this.routesData.routes.filter(
             (r) => r.layer === 'elevated' || r.id.startsWith('overpass_bridge')
+          );
+          this._analyzeOverpassCrossings(this._miniDrivableRoutes, allBridgeSegments);
+          this._miniBridgeSegments = allBridgeSegments.filter(
+            (b) => this._roadCrossingBridgeIds.has(b.id)
           );
           this._miniTunnelSegments = this.routesData.routes.filter(
             (r) => r.layer === 'tunnel' || r.id === 'alpine_tunnel'
@@ -261,6 +265,69 @@ export class WorldMapController {
     }
   }
 
+  _analyzeOverpassCrossings(drivableRoutes, bridgeSegments) {
+    this._upperCrossingRouteIds = new Set();
+    this._roadCrossingBridgeIds = new Set();
+    const crossingPts = [];
+
+    for (let i = 0; i < drivableRoutes.length; i++) {
+      const rA = drivableRoutes[i];
+      const pA = rA.points;
+      if (!pA || pA.length < 2) continue;
+      for (let j = i + 1; j < drivableRoutes.length; j++) {
+        const rB = drivableRoutes[j];
+        const pB = rB.points;
+        if (!pB || pB.length < 2) continue;
+        if (rA._bbox && rB._bbox) {
+          if (rA._bbox.maxX < rB._bbox.minX || rA._bbox.minX > rB._bbox.maxX
+            || rA._bbox.maxZ < rB._bbox.minZ || rA._bbox.minZ > rB._bbox.maxZ) {
+            continue;
+          }
+        }
+        for (let ia = 0; ia < pA.length - 1; ia++) {
+          const a = pA[ia];
+          const b = pA[ia + 1];
+          const ax = a[0], az = a[2], bx = b[0], bz = b[2];
+          for (let ib = 0; ib < pB.length - 1; ib++) {
+            const c = pB[ib];
+            const d = pB[ib + 1];
+            const cx = c[0], cz = c[2], dx = d[0], dz = d[2];
+            const den = (bx - ax) * (dz - cz) - (bz - az) * (dx - cx);
+            if (Math.abs(den) < 1e-6) continue;
+            const t = ((cx - ax) * (dz - cz) - (cz - az) * (dx - cx)) / den;
+            const u = ((cx - ax) * (bz - az) - (cz - az) * (bx - ax)) / den;
+            if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
+              const y1 = a[1] + (b[1] - a[1]) * t;
+              const y2 = c[1] + (d[1] - c[1]) * u;
+              if (Math.abs(y1 - y2) > 2.0) {
+                const upper = y1 > y2 ? rA : rB;
+                this._upperCrossingRouteIds.add(upper.id);
+                crossingPts.push({ x: ax + (bx - ax) * t, z: az + (bz - az) * t });
+              }
+            }
+          }
+        }
+      }
+    }
+
+    for (const br of bridgeSegments) {
+      if (!br.points || br.points.length < 2) continue;
+      let isRoadCrossing = false;
+      for (const cp of crossingPts) {
+        for (const bp of br.points) {
+          if (Math.hypot(bp[0] - cp.x, bp[2] - cp.z) < 16.0) {
+            isRoadCrossing = true;
+            break;
+          }
+        }
+        if (isRoadCrossing) break;
+      }
+      if (isRoadCrossing) {
+        this._roadCrossingBridgeIds.add(br.id);
+      }
+    }
+  }
+
   /**
    * Renders authentic Forza Horizon-style vector road lines with multi-pass cartographic
    * layering (all dark casings first, then all white road cores on top) so every T-junction
@@ -283,9 +350,10 @@ export class WorldMapController {
       return d;
     };
 
-    const drawCasing = (route, isHwy) => {
+    const drawCasing = (route, closed) => {
       if (!route.points || route.points.length < 2) return;
-      const d = toPathD(route.points, isHwy);
+      const d = toPathD(route.points, closed);
+      const isHwy = route.type === 'highway';
       const isNarrow = route.type === 'narrow';
       const casingW = isHwy ? '11.5' : (isNarrow ? '6.4' : '8.5');
 
@@ -294,15 +362,16 @@ export class WorldMapController {
       casing.setAttribute('fill', 'none');
       casing.setAttribute('stroke', '#0c1017');
       casing.setAttribute('stroke-width', casingW);
-      casing.setAttribute('stroke-linecap', 'round');
+      casing.setAttribute('stroke-linecap', 'butt');
       casing.setAttribute('stroke-linejoin', 'round');
       casing.setAttribute('opacity', '0.96');
       this.roadsGroupEl.appendChild(casing);
     };
 
-    const drawCore = (route, isHwy) => {
+    const drawCore = (route, closed) => {
       if (!route.points || route.points.length < 2) return;
-      const d = toPathD(route.points, isHwy);
+      const d = toPathD(route.points, closed);
+      const isHwy = route.type === 'highway';
       const isNarrow = route.type === 'narrow';
       const coreW = isHwy ? '7.0' : (isNarrow ? '3.6' : '5.0');
 
@@ -311,7 +380,7 @@ export class WorldMapController {
       core.setAttribute('fill', 'none');
       core.setAttribute('stroke', '#ffffff');
       core.setAttribute('stroke-width', coreW);
-      core.setAttribute('stroke-linecap', 'round');
+      core.setAttribute('stroke-linecap', 'butt');
       core.setAttribute('stroke-linejoin', 'round');
       core.setAttribute('opacity', '1.0');
       this.roadsGroupEl.appendChild(core);
@@ -321,7 +390,8 @@ export class WorldMapController {
       (r) => (!r.layer || r.layer === 'ground') && !r.id.startsWith('overpass_bridge') && r.id !== 'alpine_tunnel'
     );
     const isRouteClosed = (r) => Boolean(r.closed || r.id === 'hwy');
-    const isElevatedCrossing = (r) => Boolean(r.has_bridge) || r.id === 'overpass' || r.id === 'hwy_west' || r.id === 'autumn_loop';
+    const upperIds = this._upperCrossingRouteIds || new Set();
+    const crossingBridgeIds = this._roadCrossingBridgeIds || new Set();
     const highways = drivableRoutes.filter((r) => r.type === 'highway');
 
     // PASS 1: Render ALL dark outer road casings first (underneath all white cores!)
@@ -329,14 +399,14 @@ export class WorldMapController {
       drawCasing(r, isRouteClosed(r));
     }
 
-    // PASS 2: Render ground road white cores on top of casings so every T-junction fuses seamlessly!
+    // PASS 2: Render ground & underpass road white cores first so junctions fuse seamlessly
     for (const r of highways) {
-      if (!isElevatedCrossing(r)) {
+      if (!upperIds.has(r.id)) {
         drawCore(r, isRouteClosed(r));
       }
     }
     for (const r of drivableRoutes) {
-      if (r.type === 'highway' || isElevatedCrossing(r)) continue;
+      if (r.type === 'highway' || upperIds.has(r.id)) continue;
       drawCore(r, isRouteClosed(r));
     }
 
@@ -357,8 +427,8 @@ export class WorldMapController {
       }
     }
 
-    // PASS 4: Render subtle bridge drop-shadows & butt-capped casings across elevated bridges
-    const bridges = routes.filter((r) => r.layer === 'elevated' || r.id.startsWith('overpass_bridge'));
+    // PASS 4: Render butt-capped dark casings & smooth drop shadows ONLY where a bridge crosses over another road
+    const bridges = routes.filter((r) => (r.layer === 'elevated' || r.id.startsWith('overpass_bridge')) && crossingBridgeIds.has(r.id));
     for (const bridge of bridges) {
       if (bridge.points && bridge.points.length >= 2) {
         const dBridge = toPathD(bridge.points, false);
@@ -378,16 +448,9 @@ export class WorldMapController {
       }
     }
 
-    // PASS 5: Render white road cores continuously end-to-end for all routes with bridges
-    //         so bridge spans merge seamlessly into ground approaches with zero seam notches!
+    // PASS 5: Render continuous white cores for upper overpass routes so bridge spans have zero seam lines
     for (const r of drivableRoutes) {
-      if (
-        isElevatedCrossing(r)
-        || r.id === 'hwy'
-        || r.id === 'east_ridge'
-        || r.id === 'hwy_north'
-        || r.id === 'island_causeway'
-      ) {
+      if (upperIds.has(r.id)) {
         drawCore(r, isRouteClosed(r));
       }
     }
@@ -401,6 +464,12 @@ export class WorldMapController {
    * Renders compact, non-intrusive landmark pins with sleek SVG icons & Track Route buttons
    */
   renderLandmarks(landmarks) {
+    if (!this.landmarksLayerEl) return;
+    this.landmarksLayerEl.innerHTML = '';
+    return;
+  }
+
+  _unusedRenderLandmarks(landmarks) {
     if (!this.landmarksLayerEl || !landmarks) return;
     this.landmarksLayerEl.innerHTML = '';
 
@@ -1163,18 +1232,20 @@ export class WorldMapController {
       if (!routeNearCar(r)) continue;
       const isClosed = isRouteClosed(r);
       const coreW = getRoadCoreWidth(r);
-      drawPerspectivePolyline(r.points, coreW + 6.5, 'rgba(10, 14, 20, 0.96)', isClosed, 'round', 3);
+      drawPerspectivePolyline(r.points, coreW + 6.5, 'rgba(10, 14, 20, 0.96)', isClosed, 'butt', 3);
     }
 
-    // PASS 2: All ground road cores in unified crisp silver-white (highways first, then secondary/narrow)
+    const upperIds = this._upperCrossingRouteIds || new Set();
+
+    // PASS 2: Ground & underpass road cores first
     for (const r of drivableRoutes) {
-      if (r.type === 'highway' && !isElevatedCrossing(r) && routeNearCar(r)) {
-        drawPerspectivePolyline(r.points, getRoadCoreWidth(r), '#f2f5f9', isRouteClosed(r), 'round', 3);
+      if (r.type === 'highway' && !upperIds.has(r.id) && routeNearCar(r)) {
+        drawPerspectivePolyline(r.points, getRoadCoreWidth(r), '#f2f5f9', isRouteClosed(r), 'butt', 3);
       }
     }
     for (const r of drivableRoutes) {
-      if (r.type === 'highway' || isElevatedCrossing(r) || !routeNearCar(r)) continue;
-      drawPerspectivePolyline(r.points, getRoadCoreWidth(r), '#f2f5f9', isRouteClosed(r), 'round', 3);
+      if (r.type === 'highway' || upperIds.has(r.id) || !routeNearCar(r)) continue;
+      drawPerspectivePolyline(r.points, getRoadCoreWidth(r), '#f2f5f9', isRouteClosed(r), 'butt', 3);
     }
 
     // PASS 2.5: Subtle dashed tunnel bore overlay on Alpine Summit
@@ -1186,23 +1257,20 @@ export class WorldMapController {
       ctx.restore();
     }
 
-    // PASS 3: Elevated overpass bridge deck casings & continuous white cores across ALL routes with bridges
+    // PASS 3: Elevated road-crossing overpass casings (butt-capped + smooth shadow) + continuous upper road cores
     for (const b of bridgeSegments) {
       if (!routeNearCar(b)) continue;
       const bCoreW = getRoadCoreWidth({ type: b.road_type || 'secondary', id: b.id });
-      drawPerspectivePolyline(b.points, bCoreW + 10.0, 'rgba(0, 0, 0, 0.35)', false, 'round', 3);
-      drawPerspectivePolyline(b.points, bCoreW + 6.5, '#0c1017', false, 'round', 3);
+      ctx.save();
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.50)';
+      ctx.shadowBlur = 9;
+      ctx.shadowOffsetY = 2;
+      drawPerspectivePolyline(b.points, bCoreW + 6.5, '#0c1017', false, 'butt', 3);
+      ctx.restore();
     }
     for (const r of drivableRoutes) {
-      if (
-        (isElevatedCrossing(r)
-          || r.id === 'hwy'
-          || r.id === 'east_ridge'
-          || r.id === 'hwy_north'
-          || r.id === 'island_causeway')
-        && routeNearCar(r)
-      ) {
-        drawPerspectivePolyline(r.points, getRoadCoreWidth(r), '#f8fafc', isRouteClosed(r), 'round', 3);
+      if (upperIds.has(r.id) && routeNearCar(r)) {
+        drawPerspectivePolyline(r.points, getRoadCoreWidth(r), '#f8fafc', isRouteClosed(r), 'butt', 3);
       }
     }
 
@@ -1225,30 +1293,6 @@ export class WorldMapController {
     ctx.arc(R, R, R, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalCompositeOperation = 'source-over';
-
-    // PASS 6: Upright Landmark POI badges inside the radar
-    const landmarks = (this.routesData && this.routesData.landmarks) ? this.routesData.landmarks : [];
-    for (const lm of landmarks) {
-      const p = projectPt(lm.x, lm.z);
-      const distFromCenter = Math.hypot(p.x - R, p.y - R);
-      if (distFromCenter > R * 0.84) continue;
-
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 10.0, 0, Math.PI * 2);
-      const cat = lm.type || lm.category || '';
-      ctx.fillStyle = cat === 'festival' ? '#e11d48' : cat === 'speedway' ? '#7c3aed' : cat === 'mountain' ? '#ea580c' : '#2563eb';
-      ctx.fill();
-      ctx.lineWidth = 2.4;
-      ctx.strokeStyle = '#ffffff';
-      ctx.stroke();
-
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 3.2, 0, Math.PI * 2);
-      ctx.fillStyle = '#ffffff';
-      ctx.fill();
-      ctx.restore();
-    }
 
     // Active GPS Destination bullseye (clamped to radar rim if far away)
     if (this.gpsNav && this.gpsNav.activeWaypoint) {

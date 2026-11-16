@@ -3,7 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Low-Poly Racer — Three.js + Rapier 3D Vehicle Physics</title>
+    <title>Average Car Game</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="alternate icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/favicon.png" />
     <style>
       * {
         box-sizing: border-box;
@@ -1041,6 +1044,7 @@
 
       /* Top Header Bar */
       .pause-header {
+        position: relative;
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -1080,7 +1084,577 @@
       }
 
       .pause-header-center {
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        align-items: center;
+      }
+
+      .pause-tabs {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 10px;
+        padding: 4px;
+      }
+
+      .pause-tab-btn {
+        appearance: none;
+        border: none;
+        background: transparent;
+        color: rgba(255, 255, 255, 0.68);
+        font-family: inherit;
+        font-size: 13px;
+        font-weight: 800;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        padding: 7px 20px;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: background-color 0.16s ease, color 0.16s ease;
+      }
+
+      .pause-tab-btn:hover {
+        color: #ffffff;
+        background: rgba(255, 255, 255, 0.08);
+      }
+
+      .pause-tab-btn.active {
+        background: rgba(255, 255, 255, 0.94);
+        color: #0d1117;
+      }
+
+      .pause-menu-shell.tab-online .pause-main-view,
+      .pause-menu-shell.tab-online .pause-subview {
+        visibility: hidden;
+        pointer-events: none;
+      }
+
+      .pause-stage {
+        position: relative;
+      }
+
+      .pause-online-view {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        grid-template-columns: 310px 1fr 310px;
+        gap: 16px;
+        align-items: stretch;
+        visibility: hidden;
+        pointer-events: none;
+        z-index: 2;
+      }
+
+      .pause-menu-shell.tab-online .pause-online-view {
+        visibility: visible;
+        pointer-events: auto;
+      }
+
+      .pause-online-tile {
+        box-sizing: border-box;
+        width: 100%;
+        cursor: default;
+        user-select: text;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        padding: 46px 20px 20px;
+        gap: 14px;
+      }
+
+      .pause-glass-tile.pause-online-tile:active {
+        transform: translateY(-3px) scale(1.015);
+      }
+
+      .pause-online-tile:hover .pause-online-icon-wrap {
+        transform: scale(1.06);
+        border-color: rgba(229, 169, 60, 0.5);
+        background: rgba(229, 169, 60, 0.10);
+      }
+
+      .pause-online-panel-join,
+      .pause-online-panel-create {
+        height: 308px;
+      }
+
+      .pause-online-panel-hero {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        gap: 10px;
+      }
+
+      .pause-online-icon-wrap {
+        width: 56px;
+        height: 56px;
+        border-radius: 15px;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #e5a93c;
+        transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+                    border-color 0.2s ease,
+                    background-color 0.2s ease;
+      }
+
+      .pause-online-hero-text {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+
+      .pause-online-controls {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding-top: 14px;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      .pause-online-panel-players {
+        height: 100%;
+        min-height: 420px;
+        justify-content: flex-start;
+      }
+
+      .pause-online-players-list {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        overflow-y: auto;
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+      }
+      .pause-online-players-list::-webkit-scrollbar {
         display: none;
+      }
+      .pause-online-players-list.fade-bottom {
+        -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 calc(100% - 28px), transparent 100%);
+        mask-image: linear-gradient(to bottom, #000 0%, #000 calc(100% - 28px), transparent 100%);
+      }
+      .pause-online-players-list.fade-top {
+        -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 28px, #000 100%);
+        mask-image: linear-gradient(to bottom, transparent 0%, #000 28px, #000 100%);
+      }
+      .pause-online-players-list.fade-top.fade-bottom {
+        -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 28px, #000 calc(100% - 28px), transparent 100%);
+        mask-image: linear-gradient(to bottom, transparent 0%, #000 28px, #000 calc(100% - 28px), transparent 100%);
+      }
+
+      .pause-online-empty {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        font-size: 14px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        color: rgba(255, 255, 255, 0.5);
+      }
+
+      .pause-online-input-box {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        background: rgba(8, 11, 17, 0.52);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 10px;
+        padding: 10px 14px 11px;
+        box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.42);
+        transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      .pause-online-input-box:hover {
+        border-color: rgba(255, 255, 255, 0.22);
+      }
+
+      .pause-online-input-box:focus-within {
+        border-color: rgba(229, 169, 60, 0.85);
+        background: rgba(12, 16, 24, 0.72);
+        box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.45),
+                    0 0 0 3px rgba(229, 169, 60, 0.14);
+      }
+
+      .pause-online-input-label {
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: #8e8e93;
+        pointer-events: none;
+        transition: color 0.2s ease;
+      }
+
+      .pause-online-input-box:focus-within .pause-online-input-label {
+        color: #e5a93c;
+      }
+
+      .pause-online-input {
+        width: 100%;
+        box-sizing: border-box;
+        background: transparent;
+        border: none;
+        padding: 0;
+        font-family: inherit;
+        font-size: 16px;
+        font-weight: 800;
+        letter-spacing: 0.18em;
+        text-align: center;
+        text-transform: uppercase;
+        font-feature-settings: 'tnum';
+        color: #ffffff;
+        caret-color: #e5a93c;
+        outline: none;
+      }
+
+      .pause-online-input::placeholder {
+        color: rgba(255, 255, 255, 0.34);
+        letter-spacing: 0.18em;
+      }
+
+      .pause-online-btn {
+        appearance: none;
+        width: 100%;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        background: rgba(255, 255, 255, 0.08);
+        color: #ffffff;
+        font-family: inherit;
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.14em;
+        position: relative;
+        overflow: hidden;
+        text-transform: uppercase;
+        padding: 12px 16px;
+        border-radius: 10px;
+        cursor: pointer;
+        transition: background-color 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+                    border-color 0.2s ease,
+                    box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+                    transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      .pause-online-btn::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 70%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.18), transparent);
+        transform: skewX(-20deg);
+        transition: left 0.5s ease;
+        pointer-events: none;
+      }
+
+      .pause-online-btn:hover::before {
+        left: 140%;
+      }
+
+      .pause-online-btn:hover {
+        background: rgba(229, 169, 60, 0.16);
+        border-color: rgba(229, 169, 60, 0.9);
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+      }
+
+      .pause-online-btn:active {
+        transform: translateY(0) scale(0.98);
+        transition-duration: 0.08s;
+      }
+
+      .pause-online-btn:disabled {
+        opacity: 0.6;
+        cursor: default;
+        transform: none;
+        box-shadow: none;
+      }
+
+      .pause-online-toast {
+        position: fixed;
+        top: 28px;
+        left: 50%;
+        transform: translateX(-50%) translateY(0);
+        z-index: 1200;
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 11px 20px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, rgba(22, 26, 35, 0.92) 0%, rgba(14, 18, 26, 0.88) 100%);
+        backdrop-filter: blur(22px) saturate(140%);
+        -webkit-backdrop-filter: blur(22px) saturate(140%);
+        border: 1px solid rgba(229, 169, 60, 0.45);
+        box-shadow: 0 16px 36px rgba(0, 0, 0, 0.55),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+        font-family: inherit;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: #ffffff;
+        pointer-events: none;
+        opacity: 1;
+        transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      .pause-online-toast.hidden {
+        opacity: 0;
+        transform: translateX(-50%) translateY(-10px);
+      }
+
+      .online-sync-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 1500;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: radial-gradient(circle at center, rgba(10, 13, 19, 0.86) 0%, rgba(5, 7, 11, 0.96) 100%);
+        backdrop-filter: blur(28px) saturate(140%);
+        -webkit-backdrop-filter: blur(28px) saturate(140%);
+        opacity: 1;
+        pointer-events: auto;
+        transition: opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      .online-sync-overlay.hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .online-sync-card {
+        width: 380px;
+        max-width: 88vw;
+        padding: 28px 28px 24px;
+        border-radius: 18px;
+        background: linear-gradient(135deg, rgba(22, 26, 35, 0.90) 0%, rgba(14, 18, 26, 0.86) 100%);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-top-color: rgba(255, 255, 255, 0.22);
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.72),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.10);
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      .online-sync-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: rgba(255, 255, 255, 0.65);
+      }
+
+      .online-sync-title {
+        font-size: 20px;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #ffffff;
+      }
+
+      .online-sync-stage {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: #e5a93c;
+      }
+
+      .online-sync-track {
+        width: 100%;
+        height: 4px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.10);
+        overflow: hidden;
+      }
+
+      .online-sync-bar {
+        width: 15%;
+        height: 100%;
+        border-radius: 999px;
+        background: #e5a93c;
+        transition: width 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      .pause-online-btn-primary {
+        background: rgba(255, 255, 255, 0.94);
+        color: #0d1117;
+        border-color: transparent;
+      }
+
+      .pause-online-btn-primary:hover {
+        background: #e5a93c;
+        color: #0d1117;
+        border-color: transparent;
+        transform: translateY(-2px);
+        box-shadow: 0 8px 22px rgba(229, 169, 60, 0.32);
+      }
+
+      .pause-online-code-box {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px dashed rgba(255, 255, 255, 0.16);
+        border-radius: 10px;
+        padding: 12px 14px;
+      }
+
+      .pause-online-code-box.active {
+        border-style: solid;
+        border-color: rgba(229, 169, 60, 0.55);
+        background: rgba(229, 169, 60, 0.08);
+      }
+
+      .pause-online-code-label {
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: #8e8e93;
+      }
+
+      .pause-online-code-value {
+        font-size: 16px;
+        font-weight: 800;
+        letter-spacing: 0.18em;
+        color: rgba(255, 255, 255, 0.45);
+        font-feature-settings: 'tnum';
+      }
+
+      .pause-online-code-value.active {
+        color: #e5a93c;
+      }
+
+      .pause-online-player-row {
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        min-height: 126px;
+        padding: 18px 22px;
+        border-radius: 16px;
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.065) 0%, rgba(255, 255, 255, 0.025) 100%);
+        border: 1px solid rgba(255, 255, 255, 0.11);
+        border-top-color: rgba(255, 255, 255, 0.18);
+        box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+      }
+
+      .pause-online-player-info {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 6px;
+        min-width: 0;
+        flex: 1;
+      }
+
+      .pause-online-player-name-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .pause-online-player-name {
+        font-size: 20px;
+        font-weight: 900;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #ffffff;
+      }
+
+      .pause-online-host-badge {
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: #0d1117;
+        background: #e5a93c;
+        padding: 3px 8px;
+        border-radius: 5px;
+      }
+
+      .pause-online-you-badge {
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: rgba(255, 255, 255, 0.85);
+        background: rgba(255, 255, 255, 0.12);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        padding: 2px 7px;
+        border-radius: 5px;
+      }
+
+      .pause-online-player-car {
+        font-size: 13px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #e5a93c;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .pause-online-player-status {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 2px;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: rgba(255, 255, 255, 0.48);
+      }
+
+      .pause-online-status-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #34d399;
+      }
+
+      .pause-online-player-thumb-wrap {
+        width: 210px;
+        height: 108px;
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        flex-shrink: 0;
+      }
+
+      .pause-online-player-thumb {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+        transform: scale(1.25);
+        transform-origin: center center;
+        filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.65));
       }
 
       .pause-header-right {
@@ -1793,10 +2367,465 @@
         font-weight: 800;
         color: #ffffff;
       }
+
+      /* ==========================================================================
+         FH6-Style Minimalist Title & Loading Screen (Bottom-Left, Zero Neon)
+         ========================================================================== */
+      .title-screen-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 300;
+        background: #0b0f15;
+        transition: background-color 0.9s ease, opacity 0.85s cubic-bezier(0.16, 1, 0.3, 1);
+        overflow: hidden;
+      }
+      .title-screen-overlay.is-ready {
+        background: transparent;
+      }
+      .title-screen-overlay.hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+      .title-shot-fade {
+        position: absolute;
+        inset: 0;
+        background: #090c11;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.42s ease-in-out;
+      }
+      .title-shot-fade.active {
+        opacity: 0.92;
+      }
+      .title-vignette {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background:
+          radial-gradient(ellipse at 55% 48%, rgba(8, 11, 16, 0.0) 52%, rgba(6, 9, 14, 0.48) 100%),
+          linear-gradient(to top, rgba(8, 11, 16, 0.82) 0%, rgba(8, 11, 16, 0.32) 38%, rgba(8, 11, 16, 0.0) 70%),
+          linear-gradient(to right, rgba(8, 11, 16, 0.72) 0%, rgba(8, 11, 16, 0.24) 40%, rgba(8, 11, 16, 0.0) 68%);
+      }
+      .title-letterbox {
+        position: absolute;
+        left: 0;
+        right: 0;
+        height: 26px;
+        background: rgba(7, 9, 13, 0.92);
+        pointer-events: none;
+        z-index: 1;
+        transition: transform 0.65s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      .title-letterbox.top {
+        top: 0;
+      }
+      .title-letterbox.bottom {
+        bottom: 0;
+      }
+      .title-screen-overlay.hidden .title-letterbox.top {
+        transform: translateY(-100%);
+      }
+      .title-screen-overlay.hidden .title-letterbox.bottom {
+        transform: translateY(100%);
+      }
+      @keyframes titleFadeUp {
+        from {
+          opacity: 0;
+          transform: translateY(16px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      .title-lockup {
+        position: absolute;
+        left: 60px;
+        bottom: 58px;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 24px;
+        max-width: 860px;
+        z-index: 2;
+        animation: titleFadeUp 0.75s cubic-bezier(0.16, 1, 0.3, 1) both;
+        transition: transform 0.65s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.48s ease;
+      }
+      .title-screen-overlay.hidden .title-lockup {
+        opacity: 0;
+        transform: translate3d(-28px, 16px, 0);
+      }
+      .title-brand {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        text-shadow: 0 6px 28px rgba(0, 0, 0, 0.65);
+      }
+      .title-accent-rule {
+        width: 52px;
+        height: 3px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.88);
+        margin-bottom: 10px;
+      }
+      .title-word-top {
+        font-size: clamp(26px, 2.8vw, 44px);
+        font-weight: 700;
+        letter-spacing: 0.34em;
+        line-height: 1.02;
+        text-transform: uppercase;
+        color: rgba(255, 255, 255, 0.92);
+      }
+      .title-word-main {
+        font-size: clamp(54px, 6.4vw, 94px);
+        font-weight: 900;
+        font-style: italic;
+        letter-spacing: -0.02em;
+        line-height: 0.90;
+        text-transform: uppercase;
+        color: #ffffff;
+      }
+      .title-loading-box {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        width: 340px;
+      }
+      .title-loading-box.hidden {
+        display: none;
+      }
+      .title-progress-track {
+        width: 100%;
+        height: 4px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.18);
+        overflow: hidden;
+      }
+      .title-progress-fill {
+        width: 8%;
+        height: 100%;
+        border-radius: 999px;
+        background: #ffffff;
+        transition: width 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      .title-loading-label {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: rgba(255, 255, 255, 0.72);
+      }
+      .title-actions {
+        display: flex;
+        align-items: center;
+        animation: titleFadeUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+      }
+      .title-actions.hidden {
+        display: none;
+      }
+      .title-start-btn {
+        position: relative;
+        overflow: hidden;
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        appearance: none;
+        border: 1px solid rgba(255, 255, 255, 0.35);
+        background: rgba(255, 255, 255, 0.96);
+        color: #0d1117;
+        font-family: inherit;
+        font-size: 16px;
+        font-weight: 800;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        padding: 16px 36px;
+        border-radius: 10px;
+        cursor: pointer;
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.42);
+        transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+                    background-color 0.2s ease,
+                    box-shadow 0.2s ease;
+      }
+      .title-start-btn::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -120%;
+        width: 70%;
+        height: 100%;
+        background: linear-gradient(105deg, transparent 20%, rgba(255, 255, 255, 0.65) 50%, transparent 80%);
+        transition: left 0.55s cubic-bezier(0.16, 1, 0.3, 1);
+        pointer-events: none;
+      }
+      .title-start-btn:hover {
+        background: #ffffff;
+        transform: translateY(-2px);
+        box-shadow: 0 14px 34px rgba(0, 0, 0, 0.52);
+      }
+      .title-start-btn:hover::after {
+        left: 140%;
+      }
+      .title-start-btn:active {
+        transform: translateY(0) scale(0.98);
+      }
+      .title-start-icon {
+        width: 14px;
+        height: 14px;
+        fill: currentColor;
+        flex-shrink: 0;
+      }
+
+      /* Right-Side Angled Glass Driver Panel on Title Screen */
+      .title-side-panel {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        right: 0;
+        width: min(440px, 42vw);
+        min-width: 330px;
+        z-index: 3;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding: 48px 42px 48px 72px;
+        background: linear-gradient(155deg, rgba(16, 22, 32, 0.72) 0%, rgba(9, 13, 20, 0.84) 100%);
+        backdrop-filter: blur(28px) saturate(155%);
+        -webkit-backdrop-filter: blur(28px) saturate(155%);
+        clip-path: polygon(48px 0, 100% 0, 100% 100%, 0 100%);
+        box-shadow: -28px 0 70px rgba(0, 0, 0, 0.55);
+        transition: transform 0.65s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.45s ease;
+      }
+      .title-side-panel::before {
+        content: '';
+        position: absolute;
+        top: -2%;
+        bottom: -2%;
+        left: 23px;
+        width: 2px;
+        background: linear-gradient(
+          to bottom,
+          rgba(255, 255, 255, 0.05) 0%,
+          rgba(255, 255, 255, 0.34) 35%,
+          rgba(255, 255, 255, 0.34) 65%,
+          rgba(255, 255, 255, 0.05) 100%
+        );
+        transform: rotate(2.7deg);
+        pointer-events: none;
+      }
+      .title-screen-overlay.hidden .title-side-panel {
+        transform: translateX(100%);
+        opacity: 0;
+      }
+      .title-side-card {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        padding: 26px 24px;
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.045);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+      }
+      .title-welcome-banner {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 14px;
+        border-radius: 11px;
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.05) 100%);
+        border: 1px solid rgba(255, 255, 255, 0.16);
+      }
+      .title-welcome-icon {
+        width: 18px;
+        height: 18px;
+        color: #ffffff;
+        opacity: 0.92;
+        flex-shrink: 0;
+      }
+      .title-welcome-text {
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: #ffffff;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .title-side-heading {
+        font-size: 20px;
+        font-weight: 800;
+        letter-spacing: -0.01em;
+        color: #ffffff;
+        margin: 2px 0 0;
+      }
+      .title-side-sub {
+        font-size: 12.5px;
+        line-height: 1.45;
+        color: rgba(255, 255, 255, 0.58);
+        margin: -10px 0 0;
+      }
+      .title-name-field {
+        position: relative;
+        display: flex;
+        align-items: center;
+      }
+      .title-name-input {
+        width: 100%;
+        padding: 14px 48px 14px 16px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        background: rgba(6, 9, 14, 0.62);
+        color: #ffffff;
+        font-family: inherit;
+        font-size: 15px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        outline: none;
+        transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+      }
+      .title-name-input::placeholder {
+        color: rgba(255, 255, 255, 0.34);
+        font-weight: 600;
+      }
+      .title-name-input:focus {
+        border-color: rgba(255, 255, 255, 0.48);
+        background: rgba(6, 9, 14, 0.8);
+        box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.09);
+      }
+      .title-name-count {
+        position: absolute;
+        right: 13px;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        color: rgba(255, 255, 255, 0.38);
+        pointer-events: none;
+      }
+      .title-side-panel .title-start-btn {
+        width: 100%;
+        justify-content: center;
+        margin-top: 2px;
+      }
+      .title-side-panel .title-start-btn:disabled {
+        opacity: 0.45;
+        cursor: default;
+        pointer-events: none;
+      }
+      .title-side-hint {
+        text-align: center;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: rgba(255, 255, 255, 0.38);
+        margin-top: -4px;
+      }
+
+      /* Forza-Style Remote Player Nameplates */
+      .remote-nameplates-layer {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 40;
+        overflow: hidden;
+      }
+      .remote-nameplate {
+        position: absolute;
+        top: 0;
+        left: 0;
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        will-change: transform, opacity;
+      }
+      .remote-nameplate-pill {
+        padding: 4px 11px;
+        border-radius: 7px;
+        background: rgba(14, 20, 29, 0.74);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        color: #f4f7fb;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+      .remote-nameplate-arrow {
+        width: 0;
+        height: 0;
+        margin-top: 3px;
+        border-left: 5px solid transparent;
+        border-right: 5px solid transparent;
+        border-top: 6px solid rgba(255, 255, 255, 0.92);
+        filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.45));
+      }
     </style>
   </head>
   <body>
     <div id="app">
+      <!-- FH6-Style Loading & Start Screen Overlay (Bottom-Left, Clean Matte UI) -->
+      <div id="title-screen-overlay" class="title-screen-overlay">
+        <div id="title-shot-fade" class="title-shot-fade"></div>
+        <div class="title-vignette"></div>
+        <div class="title-letterbox top"></div>
+        <div class="title-letterbox bottom"></div>
+        <div class="title-lockup">
+          <div class="title-brand">
+            <span class="title-accent-rule"></span>
+            <span class="title-word-top">AVERAGE</span>
+            <span class="title-word-main">CAR GAME</span>
+          </div>
+          <div id="title-loading-box" class="title-loading-box">
+            <div class="title-progress-track">
+              <div id="title-progress-fill" class="title-progress-fill"></div>
+            </div>
+            <div id="title-loading-label" class="title-loading-label">LOADING WORLD...</div>
+          </div>
+        </div>
+        <aside class="title-side-panel">
+          <div class="title-side-card">
+            <div class="title-welcome-banner">
+              <svg class="title-welcome-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" />
+                <circle cx="12" cy="12" r="2.2" />
+                <path d="M12 3v6.8M4.2 15.5l5.8-2.6M19.8 15.5l-5.8-2.6" />
+              </svg>
+              <span id="title-welcome-text" class="title-welcome-text">WELCOME, DRIVER</span>
+            </div>
+            <h2 class="title-side-heading">Driver Name</h2>
+            <p class="title-side-sub">Choose the tag shown above your car in online sessions.</p>
+            <div class="title-name-field">
+              <input
+                id="title-player-name-input"
+                class="title-name-input"
+                type="text"
+                maxlength="16"
+                placeholder="ENTER NAME"
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <span id="title-name-count" class="title-name-count">0/16</span>
+            </div>
+            <div id="title-actions" class="title-actions">
+              <button id="title-start-btn" class="title-start-btn" type="button" disabled>
+                <svg class="title-start-icon" viewBox="0 0 16 16" aria-hidden="true">
+                  <polygon points="3,1.5 14,8 3,14.5" />
+                </svg>
+                <span id="title-start-btn-label">LOADING...</span>
+              </button>
+            </div>
+            <div class="title-side-hint">PRESS ENTER TO DRIVE</div>
+          </div>
+        </aside>
+      </div>
+
+      <div id="remote-nameplates-layer" class="remote-nameplates-layer"></div>
+
       <!-- Minimalist In-Game HUD Pause Prompt (Top-Left) -->
       <div id="hud-pause-prompt" class="hud-pause-prompt" tabindex="0" role="button" title="Open Pause Menu (Esc)">
         <span class="hud-pause-key">ESC</span>
@@ -1829,6 +2858,12 @@
                 <span class="pause-brand-title">PAUSE</span>
               </div>
             </div>
+            <div class="pause-header-center">
+              <nav class="pause-tabs" aria-label="Pause Menu Tabs">
+                <button id="pause-tab-home" class="pause-tab-btn active" type="button">HOME</button>
+                <button id="pause-tab-online" class="pause-tab-btn" type="button">ONLINE</button>
+              </nav>
+            </div>
             <div class="pause-header-right">
               <div class="pause-telemetry-chip">
                 <span class="pause-chip-label">LOCATION</span>
@@ -1841,6 +2876,7 @@
             </div>
           </header>
 
+          <div class="pause-stage">
           <!-- Main View (5 Glass Tiles) -->
           <div class="pause-main-view" id="pause-main-view">
             <!-- Left Column: Cars & Reset -->
@@ -1890,7 +2926,7 @@
                     <svg class="pause-mini-map-roads" id="pause-mini-map-roads-svg" viewBox="0 0 2048 1920" xmlns="http://www.w3.org/2000/svg">
                       <defs>
                         <filter id="mini-bridge-drop-shadow" x="-40%" y="-40%" width="180%" height="220%">
-                          <feDropShadow dx="0" dy="2" stdDeviation="2.2" flood-color="rgba(0,0,0,0.28)" />
+                          <feDropShadow dx="0" dy="1.8" stdDeviation="3.0" flood-color="rgba(0,0,0,0.42)" />
                         </filter>
                         <filter id="mini-road-casing-shadow" x="-20%" y="-20%" width="140%" height="140%">
                           <feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="rgba(0,0,0,0.45)" />
@@ -2025,6 +3061,83 @@
             </div>
           </div>
 
+          <!-- Online Tab Panels -->
+          <div class="pause-online-view" id="pause-online-view">
+            <!-- Left Column: Create Session -->
+            <div class="pause-col pause-col-left">
+              <div class="pause-glass-tile pause-online-tile pause-online-panel-create">
+                <div class="pause-tile-tag">
+                  <span class="pause-tag-dot"></span>
+                  <span>CREATE SESSION</span>
+                </div>
+                <div class="pause-online-panel-hero">
+                  <div class="pause-online-icon-wrap">
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg>
+                  </div>
+                  <div class="pause-online-hero-text">
+                    <div class="pause-tile-title">HOST CONVOY</div>
+                    <div class="pause-tile-sub">GENERATE CODE TO INVITE</div>
+                  </div>
+                </div>
+                <div class="pause-online-controls">
+                  <div id="online-host-code-box" class="pause-online-code-box">
+                    <span class="pause-online-code-label">SESSION CODE</span>
+                    <span id="online-host-code-value" class="pause-online-code-value">---- ----</span>
+                  </div>
+                  <button id="online-create-btn" class="pause-online-btn pause-online-btn-primary" type="button">CREATE SESSION</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Center Column: Session Players -->
+            <div class="pause-col pause-col-center">
+              <div class="pause-glass-tile pause-online-tile pause-online-panel-players">
+                <div class="pause-tile-tag">
+                  <span class="pause-tag-dot"></span>
+                  <span>SESSION PLAYERS</span>
+                </div>
+                <div class="pause-online-players-list" id="online-players-list">
+                  <div class="pause-online-empty">No session active.</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right Column: Join Session -->
+            <div class="pause-col pause-col-right">
+              <div class="pause-glass-tile pause-online-tile pause-online-panel-join">
+                <div class="pause-tile-tag">
+                  <span class="pause-tag-dot"></span>
+                  <span>JOIN SESSION</span>
+                </div>
+                <div class="pause-online-panel-hero">
+                  <div class="pause-online-icon-wrap">
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+                  </div>
+                  <div class="pause-online-hero-text">
+                    <div class="pause-tile-title">JOIN CONVOY</div>
+                    <div class="pause-tile-sub">ENTER CODE TO CONNECT</div>
+                  </div>
+                </div>
+                <div class="pause-online-controls">
+                  <label class="pause-online-input-box" for="online-join-code-input">
+                    <span class="pause-online-input-label">ENTER SESSION CODE</span>
+                    <input
+                      id="online-join-code-input"
+                      class="pause-online-input"
+                      type="text"
+                      maxlength="9"
+                      placeholder="---- ----"
+                      autocomplete="off"
+                      spellcheck="false"
+                    />
+                  </label>
+                  <button id="online-join-btn" class="pause-online-btn" type="button">JOIN SESSION</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          </div>
+
           <!-- Bottom Footer Ribbon -->
           <footer class="pause-footer">
             <div class="pause-footer-prompts" id="pause-footer-prompts">
@@ -2037,6 +3150,28 @@
           </footer>
         </div>
       </div>
+
+      <!-- Floating Online Session Notification Toast -->
+      <div id="online-toast" class="pause-online-toast hidden" role="status" aria-live="polite">
+        <span class="pause-tag-dot"></span>
+        <span id="online-toast-text"></span>
+      </div>
+
+      <!-- Online Session World Sync Loading Screen -->
+      <div id="online-sync-overlay" class="online-sync-overlay hidden" aria-live="polite">
+        <div class="online-sync-card">
+          <div class="online-sync-header">
+            <span class="pause-tag-dot"></span>
+            <span>MULTIPLAYER CONVOY</span>
+          </div>
+          <div class="online-sync-title">JOINING SESSION</div>
+          <div class="online-sync-stage" id="online-sync-stage">CONNECTING TO HOST...</div>
+          <div class="online-sync-track">
+            <div class="online-sync-bar" id="online-sync-bar"></div>
+          </div>
+        </div>
+      </div>
+
       <!-- Forza Horizon Fullscreen Interactive World Map Overlay -->
       <div id="world-map-overlay" class="world-map-overlay hidden">
         <!-- Floating Top HUD Bar (Apple-Glass Motorsport Header) -->
@@ -2078,7 +3213,7 @@
               <defs>
                 <!-- Elevated Bridge Subtle Drop-Shadow -->
                 <filter id="bridge-drop-shadow" x="-30%" y="-30%" width="160%" height="180%">
-                  <feDropShadow dx="0" dy="1.5" stdDeviation="1.8" flood-color="rgba(0,0,0,0.28)" />
+                  <feDropShadow dx="0" dy="1.8" stdDeviation="3.0" flood-color="rgba(0,0,0,0.42)" />
                 </filter>
                 <!-- Subtle Ground Road Casing Shadow -->
                 <filter id="road-casing-shadow" x="-20%" y="-20%" width="140%" height="140%">

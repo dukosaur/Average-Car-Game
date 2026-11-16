@@ -66,8 +66,9 @@ export class RaycastVehicleController {
    * Attaches or hot-swaps the 5 rigged vehicle meshes:
    * Chassis_Body, Wheel_FL, Wheel_FR, Wheel_RL, Wheel_RR
    */
-  setCarParts(carParts) {
+  setCarParts(carParts, bounds = null) {
     this.carParts = carParts;
+    this.carBounds = bounds;
 
     while (this.rootGroup.children.length > 0) {
       this.rootGroup.remove(this.rootGroup.children[0]);
@@ -121,12 +122,84 @@ export class RaycastVehicleController {
     });
 
     if (this.rigidBody) {
+      if (bounds) {
+        this._rebuildColliders(bounds);
+      }
       this.syncVisuals();
     }
   }
 
+  _buildColliderDescs(bounds = null) {
+    const { RAPIER, params } = this;
+    let lowerHull;
+    let upperCabin;
+
+    if (bounds && bounds.size && bounds.center) {
+      const s = bounds.size;
+      const c = bounds.center;
+      const rawBottomY = c.y - s.y * 0.5;
+      // Keep >= 0.31m ground clearance (-0.05 local) so low splitters never catch on steep road ramps
+      const clearedBottomY = Math.max(rawBottomY + 0.16, -0.05);
+      const lowerHy = Math.max(0.12, s.y * 0.20);
+      const upperHy = Math.max(0.14, s.y * 0.22);
+
+      lowerHull = RAPIER.ColliderDesc.cuboid(s.x * 0.48, lowerHy, s.z * 0.48)
+        .setTranslation(c.x, clearedBottomY + lowerHy, c.z)
+        .setMass(params.mass * 0.85)
+        .setFriction(0.12)
+        .setRestitution(0.0);
+
+      upperCabin = RAPIER.ColliderDesc.cuboid(s.x * 0.42, upperHy, s.z * 0.26)
+        .setTranslation(c.x, clearedBottomY + lowerHy * 2.0 + upperHy, c.z - s.z * 0.04)
+        .setMass(params.mass * 0.15)
+        .setFriction(0.12)
+        .setRestitution(0.0);
+    } else {
+      lowerHull = RAPIER.ColliderDesc.cuboid(
+        params.chassisDims.x * 0.48,
+        0.16,
+        params.chassisDims.z * 0.48
+      )
+        .setTranslation(0, 0.11, 0)
+        .setMass(params.mass * 0.85)
+        .setFriction(0.12)
+        .setRestitution(0.0);
+
+      upperCabin = RAPIER.ColliderDesc.cuboid(
+        params.chassisDims.x * 0.42,
+        0.20,
+        params.chassisDims.z * 0.25
+      )
+        .setTranslation(0, 0.44, -0.15)
+        .setMass(params.mass * 0.15)
+        .setFriction(0.12)
+        .setRestitution(0.0);
+    }
+
+    if (params.collisionGroups !== undefined) {
+      lowerHull.setCollisionGroups(params.collisionGroups);
+      upperCabin.setCollisionGroups(params.collisionGroups);
+    }
+    return { lowerHull, upperCabin };
+  }
+
+  _rebuildColliders(bounds) {
+    if (!this.world || !this.rigidBody) return;
+    if (this.chassisCollider) {
+      this.world.removeCollider(this.chassisCollider, false);
+      this.chassisCollider = null;
+    }
+    if (this.cabinCollider) {
+      this.world.removeCollider(this.cabinCollider, false);
+      this.cabinCollider = null;
+    }
+    const { lowerHull, upperCabin } = this._buildColliderDescs(bounds);
+    this.chassisCollider = this.world.createCollider(lowerHull, this.rigidBody);
+    this.cabinCollider = this.world.createCollider(upperCabin, this.rigidBody);
+  }
+
   _initPhysicsBody() {
-    const { RAPIER, world, params } = this;
+    const { RAPIER, world } = this;
 
     const spawnY = this.chassisLocalOffset.y;
     const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
@@ -137,31 +210,7 @@ export class RaycastVehicleController {
 
     this.rigidBody = world.createRigidBody(bodyDesc);
 
-    const lowerHull = RAPIER.ColliderDesc.cuboid(
-      params.chassisDims.x * 0.48,
-      0.16,
-      params.chassisDims.z * 0.48
-    )
-      .setTranslation(0, 0.11, 0)
-      .setMass(params.mass * 0.85)
-      .setFriction(0.3)
-      .setRestitution(0.0);
-
-    const upperCabin = RAPIER.ColliderDesc.cuboid(
-      params.chassisDims.x * 0.42,
-      0.20,
-      params.chassisDims.z * 0.25
-    )
-      .setTranslation(0, 0.44, -0.15)
-      .setMass(params.mass * 0.15)
-      .setFriction(0.3)
-      .setRestitution(0.0);
-
-    if (params.collisionGroups !== undefined) {
-      lowerHull.setCollisionGroups(params.collisionGroups);
-      upperCabin.setCollisionGroups(params.collisionGroups);
-    }
-
+    const { lowerHull, upperCabin } = this._buildColliderDescs(this.carBounds);
     this.chassisCollider = world.createCollider(lowerHull, this.rigidBody);
     this.cabinCollider = world.createCollider(upperCabin, this.rigidBody);
   }
@@ -395,6 +444,7 @@ export class RaycastVehicleController {
         const tireForcePoint = chassisPos
           .clone()
           .addScaledVector(leftDir, w.hardpointLocal.x * 0.65)
+          .addScaledVector(upDir, 0.14)
           .addScaledVector(forwardDir, zLever);
 
         rigidBody.addForceAtPoint(
@@ -441,16 +491,34 @@ export class RaycastVehicleController {
       rigidBody.addTorque({ x: yawVec.x, y: yawVec.y, z: yawVec.z }, true);
     }
 
-    // Anti-roll bar & uprighting stabilizer so hitting sloped road shoulders at speed won't flip the car
-    if (groundedCount >= 1) {
+    // Left-Right Anti-Roll Bars (front & rear sway bars resist body roll without stiffening bumps)
+    if (this.wheels.length >= 4) {
+      const swayStiffness = params.suspensionStiffness * 0.65;
+      const frontDiff = (this.wheels[0].grounded || this.wheels[1].grounded)
+        ? (this.wheels[0].compression - this.wheels[1].compression)
+        : 0;
+      const rearDiff = (this.wheels[2].grounded || this.wheels[3].grounded)
+        ? (this.wheels[2].compression - this.wheels[3].compression)
+        : 0;
+      const swayTorqueMag = (frontDiff + rearDiff) * swayStiffness * 0.85;
+      if (Math.abs(swayTorqueMag) > 1.0) {
+        const swayVec = forwardDir.clone().multiplyScalar(swayTorqueMag);
+        rigidBody.addTorque({ x: swayVec.x, y: swayVec.y, z: swayVec.z }, true);
+      }
+    }
+
+    // Anti-roll bar & uprighting stabilizer so hitting sloped road shoulders or hard corners won't flip the car
+    {
       const worldUp = new THREE.Vector3(0, 1, 0);
       const tiltAxis = new THREE.Vector3().crossVectors(upDir, worldUp);
       const tiltSin = Math.min(1.0, tiltAxis.length());
       if (tiltSin > 0.01) {
         tiltAxis.normalize();
-        // Progressive uprighting torque: gentle at small lean, strong resistance past ~20 deg
-        const uprightStrength = params.mass * (3.2 + 12.0 * tiltSin * tiltSin);
-        const rollVelDamp = angVelVec.dot(forwardDir) * params.mass * 2.4;
+        // Progressive uprighting torque: planted in corners, strong resistance past ~15 deg
+        const uprightStrength = groundedCount >= 1
+          ? params.mass * (6.5 + 24.0 * tiltSin * tiltSin)
+          : params.mass * 2.5;
+        const rollVelDamp = angVelVec.dot(forwardDir) * params.mass * (groundedCount >= 1 ? 3.8 : 1.6);
         const uprightTorque = tiltAxis
           .multiplyScalar(tiltSin * uprightStrength)
           .addScaledVector(forwardDir, -rollVelDamp);

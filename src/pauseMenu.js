@@ -11,6 +11,8 @@
  *  - Completely soundless, zero emojis, clean high-contrast motorsport typography
  */
 
+import { OnlineSessionManager, formatSessionCode } from './onlineSession.js';
+
 export class PauseMenuController {
   constructor({
     vehicle,
@@ -56,6 +58,39 @@ export class PauseMenuController {
 
     // DOM Elements
     this.overlayEl = document.getElementById('pause-menu-overlay');
+    this.shellEl = this.overlayEl ? this.overlayEl.querySelector('.pause-menu-shell') : null;
+    this.tabHomeEl = document.getElementById('pause-tab-home');
+    this.tabOnlineEl = document.getElementById('pause-tab-online');
+    this.activeTab = 'home';
+    this.onlineSession = new OnlineSessionManager(() => {
+      this.updateOnlineView();
+      if (typeof this.onOnlinePlayersChangedFn === 'function' && this.onlineSession.isActive()) {
+        this.onOnlinePlayersChangedFn(this.onlineSession.players);
+      }
+    });
+    this.onlineSession.onSyncStageFn = (text, pct) => this.showSyncOverlay(text, pct);
+    this.onlineCreateBtnEl = document.getElementById('online-create-btn');
+    this.onlineHostCodeBoxEl = document.getElementById('online-host-code-box');
+    this.onlineHostCodeValueEl = document.getElementById('online-host-code-value');
+    this.onlineJoinCodeInputEl = document.getElementById('online-join-code-input');
+    this.onlineJoinBtnEl = document.getElementById('online-join-btn');
+    this.onlineToastEl = document.getElementById('online-toast');
+    this.onlineToastTextEl = document.getElementById('online-toast-text');
+    this.onlineToastTimer = null;
+    this.onlineSyncOverlayEl = document.getElementById('online-sync-overlay');
+    this.onlineSyncStageEl = document.getElementById('online-sync-stage');
+    this.onlineSyncBarEl = document.getElementById('online-sync-bar');
+    this.onlinePlayersListEl = document.getElementById('online-players-list');
+    if (this.onlinePlayersListEl) {
+      this.onlinePlayersListEl.addEventListener('scroll', () => this._updatePlayersScrollFade());
+    }
+    this.onOnlinePlayersChangedFn = null;
+    if (this.tabHomeEl) {
+      this.tabHomeEl.addEventListener('click', () => this.setTab('home'));
+    }
+    if (this.tabOnlineEl) {
+      this.tabOnlineEl.addEventListener('click', () => this.setTab('online'));
+    }
     this.mainViewEl = document.getElementById('pause-main-view');
     this.carsViewEl = document.getElementById('pause-cars-view');
     this.settingsViewEl = document.getElementById('pause-settings-view');
@@ -217,28 +252,32 @@ export class PauseMenuController {
     // Tile Click Actions
     if (this.tileGarageEl) {
       this.tileGarageEl.addEventListener('click', () => this.showView('cars'));
-      this.tileGarageEl.addEventListener('mouseenter', () => this.updateFocusedTile(0));
     }
 
     if (this.tileMapEl) {
       this.tileMapEl.addEventListener('click', () => this.openWorldMap());
-      this.tileMapEl.addEventListener('mouseenter', () => this.updateFocusedTile(1));
     }
 
     if (this.tileCamEl) {
       this.tileCamEl.addEventListener('click', () => this.cycleCamera());
-      this.tileCamEl.addEventListener('mouseenter', () => this.updateFocusedTile(2));
     }
 
     if (this.tileResetEl) {
       this.tileResetEl.addEventListener('click', () => this.resetVehicle());
-      this.tileResetEl.addEventListener('mouseenter', () => this.updateFocusedTile(3));
     }
 
     if (this.tileSettingsEl) {
       this.tileSettingsEl.addEventListener('click', () => this.showView('settings'));
-      this.tileSettingsEl.addEventListener('mouseenter', () => this.updateFocusedTile(4));
     }
+
+    this.tiles.forEach((tile, idx) => {
+      if (!tile) return;
+      tile.addEventListener('mouseenter', () => {
+        this.focusedTileIndex = idx;
+        this.clearFocusedTile();
+      });
+      tile.addEventListener('mouseleave', () => this.clearFocusedTile());
+    });
 
     // Subview Back Buttons
     if (this.carsBackBtnEl) {
@@ -246,6 +285,44 @@ export class PauseMenuController {
     }
     if (this.settingsBackBtnEl) {
       this.settingsBackBtnEl.addEventListener('click', () => this.showView('main'));
+    }
+
+    // Online Session Create / End
+    if (this.onlineCreateBtnEl) {
+      this.onlineCreateBtnEl.addEventListener('click', () => {
+        if (this.onlineSession.isActive() && this.onlineSession.isHost) {
+          this.onlineSession.leaveSession();
+        } else {
+          const carIdx = this.getActiveCarIndexFn ? this.getActiveCarIndexFn() : 0;
+          this.onlineSession.createSession(this.getActiveCar(), carIdx);
+        }
+      });
+    }
+
+    // Format Join Code Input as XXXX XXXX & Join on Enter
+    if (this.onlineJoinCodeInputEl) {
+      this.onlineJoinCodeInputEl.addEventListener('input', () => {
+        this.onlineJoinCodeInputEl.value = formatSessionCode(this.onlineJoinCodeInputEl.value);
+      });
+      this.onlineJoinCodeInputEl.addEventListener('keydown', (e) => {
+        if (e.code === 'Enter' && this.onlineJoinBtnEl && !this.onlineJoinBtnEl.disabled) {
+          e.preventDefault();
+          this.onlineJoinBtnEl.click();
+        }
+      });
+    }
+
+    // Online Session Join / Leave
+    if (this.onlineJoinBtnEl) {
+      this.onlineJoinBtnEl.addEventListener('click', () => {
+        if (this.onlineSession.isJoinedAsGuest()) {
+          this.onlineSession.leaveSession();
+        } else {
+          const code = this.onlineJoinCodeInputEl ? this.onlineJoinCodeInputEl.value : '';
+          const carIdx = this.getActiveCarIndexFn ? this.getActiveCarIndexFn() : 0;
+          this.onlineSession.joinSession(code, this.getActiveCar(), carIdx);
+        }
+      });
     }
 
     // Grass Density Options
@@ -327,6 +404,14 @@ export class PauseMenuController {
     });
   }
 
+  clearFocusedTile() {
+    this.tiles.forEach((tile) => {
+      if (tile) {
+        tile.classList.remove('keyboard-focused');
+      }
+    });
+  }
+
   updateCarFocus(index) {
     if (!this.carRoster) return;
     this.focusedCarIndex = Math.max(0, Math.min(this.carRoster.length - 1, index));
@@ -339,6 +424,15 @@ export class PauseMenuController {
 
   handleKeyDown(e) {
     if (!this.isOpen) return false;
+
+    if (this.activeTab === 'online') {
+      if (e.code === 'Escape') {
+        this.setOpen(false);
+        e.preventDefault();
+        return true;
+      }
+      return true;
+    }
 
     // Cars Sub-View Navigation
     if (this.currentView === 'cars') {
@@ -490,17 +584,23 @@ export class PauseMenuController {
     this.setOpen(false); // Seamlessly return to driving the chosen car
   }
 
-  updateTilePreviews() {
+  getActiveCar() {
     const activeIdx = this.getActiveCarIndexFn ? this.getActiveCarIndexFn() : 0;
-    const currentCar = this.carRoster[activeIdx];
+    return this.carRoster[activeIdx] || null;
+  }
+
+  updateTilePreviews() {
+    const currentCar = this.getActiveCar();
 
     if (currentCar) {
+      const carIdx = this.getActiveCarIndexFn ? this.getActiveCarIndexFn() : 0;
       if (this.headerCarNameEl) this.headerCarNameEl.textContent = currentCar.fullName;
       if (this.tileGarageNameEl) this.tileGarageNameEl.textContent = currentCar.name;
       if (this.tileGarageImgEl) {
         this.tileGarageImgEl.src = currentCar.thumb;
         this.tileGarageImgEl.alt = currentCar.name;
       }
+      this.onlineSession.updateLocalCar(currentCar, carIdx);
     }
 
     this.updateCameraPreview();
@@ -662,12 +762,190 @@ export class PauseMenuController {
         this.input.right = false;
         this.input.handbrake = true;
       }
+      this.setTab('home');
       this.showView('main');
       this.updateTilePreviews();
     } else {
       if (this.input) {
         this.input.handbrake = false;
       }
+    }
+  }
+
+  setTab(tab) {
+    this.activeTab = tab === 'online' ? 'online' : 'home';
+    if (this.shellEl) {
+      this.shellEl.classList.toggle('tab-online', this.activeTab === 'online');
+    }
+    if (this.tabHomeEl) {
+      this.tabHomeEl.classList.toggle('active', this.activeTab === 'home');
+    }
+    if (this.tabOnlineEl) {
+      this.tabOnlineEl.classList.toggle('active', this.activeTab === 'online');
+    }
+    if (this.currentView !== 'main') {
+      this.showView('main');
+    }
+    if (this.activeTab === 'online') {
+      this.updateOnlineView();
+    }
+  }
+
+  updateOnlineView() {
+    const active = this.onlineSession.isActive();
+    const isHostActive = active && this.onlineSession.isHost;
+    const isJoining = this.onlineSession.status === 'joining';
+    const isJoinedGuest = this.onlineSession.isJoinedAsGuest();
+
+    if (this.onlineCreateBtnEl) {
+      this.onlineCreateBtnEl.textContent = isHostActive ? 'END SESSION' : 'CREATE SESSION';
+      this.onlineCreateBtnEl.disabled = isJoining;
+    }
+    if (this.onlineHostCodeBoxEl) {
+      this.onlineHostCodeBoxEl.classList.toggle('active', isHostActive);
+    }
+    if (this.onlineHostCodeValueEl) {
+      this.onlineHostCodeValueEl.textContent = isHostActive ? this.onlineSession.sessionCode : '---- ----';
+      this.onlineHostCodeValueEl.classList.toggle('active', isHostActive);
+    }
+
+    if (this.onlineJoinBtnEl) {
+      if (isJoining) {
+        this.onlineJoinBtnEl.textContent = 'CONNECTING...';
+        this.onlineJoinBtnEl.disabled = true;
+      } else if (isJoinedGuest) {
+        this.onlineJoinBtnEl.textContent = 'LEAVE SESSION';
+        this.onlineJoinBtnEl.disabled = false;
+      } else {
+        this.onlineJoinBtnEl.textContent = 'JOIN SESSION';
+        this.onlineJoinBtnEl.disabled = false;
+      }
+    }
+    if (this.onlineJoinCodeInputEl) {
+      if (isJoinedGuest) {
+        this.onlineJoinCodeInputEl.value = '';
+      }
+      this.onlineJoinCodeInputEl.disabled = isJoining || isJoinedGuest;
+    }
+    if (this.onlineSession.errorMessage) {
+      this.showOnlineToast(this.onlineSession.errorMessage);
+      this.onlineSession.errorMessage = '';
+    }
+
+    if (!this.onlinePlayersListEl) return;
+    this.onlinePlayersListEl.innerHTML = '';
+
+    if (!active || this.onlineSession.players.length === 0) {
+      const emptyEl = document.createElement('div');
+      emptyEl.className = 'pause-online-empty';
+      emptyEl.textContent = isJoining ? 'Connecting to session...' : 'No session active.';
+      this.onlinePlayersListEl.appendChild(emptyEl);
+      return;
+    }
+
+    this.onlineSession.players.forEach((player) => {
+      const row = document.createElement('div');
+      row.className = 'pause-online-player-row';
+
+      const info = document.createElement('div');
+      info.className = 'pause-online-player-info';
+
+      const nameRow = document.createElement('div');
+      nameRow.className = 'pause-online-player-name-row';
+
+      const nameEl = document.createElement('span');
+      nameEl.className = 'pause-online-player-name';
+      nameEl.textContent = player.name;
+      nameRow.appendChild(nameEl);
+
+      if (player.isHost) {
+        const badge = document.createElement('span');
+        badge.className = 'pause-online-host-badge';
+        badge.textContent = 'HOST';
+        nameRow.appendChild(badge);
+      }
+
+      if (player.id === this.onlineSession.localId) {
+        const youBadge = document.createElement('span');
+        youBadge.className = 'pause-online-you-badge';
+        youBadge.textContent = 'YOU';
+        nameRow.appendChild(youBadge);
+      }
+
+      const carEl = document.createElement('div');
+      carEl.className = 'pause-online-player-car';
+      carEl.textContent = player.carName;
+
+      const statusEl = document.createElement('div');
+      statusEl.className = 'pause-online-player-status';
+      const statusDot = document.createElement('span');
+      statusDot.className = 'pause-online-status-dot';
+      const statusText = document.createElement('span');
+      statusText.textContent = 'IN SESSION';
+      statusEl.appendChild(statusDot);
+      statusEl.appendChild(statusText);
+
+      info.appendChild(nameRow);
+      info.appendChild(carEl);
+      info.appendChild(statusEl);
+      row.appendChild(info);
+
+      if (player.carThumb) {
+        const thumbWrap = document.createElement('div');
+        thumbWrap.className = 'pause-online-player-thumb-wrap';
+        const img = document.createElement('img');
+        img.className = 'pause-online-player-thumb';
+        img.src = player.carThumb;
+        img.alt = player.carName;
+        thumbWrap.appendChild(img);
+        row.appendChild(thumbWrap);
+      }
+
+      this.onlinePlayersListEl.appendChild(row);
+    });
+    requestAnimationFrame(() => this._updatePlayersScrollFade());
+  }
+
+  _updatePlayersScrollFade() {
+    const el = this.onlinePlayersListEl;
+    if (!el) return;
+    const canScroll = el.scrollHeight > el.clientHeight + 2;
+    const fadeTop = canScroll && el.scrollTop > 4;
+    const fadeBottom = canScroll && el.scrollTop + el.clientHeight < el.scrollHeight - 4;
+    el.classList.toggle('fade-top', fadeTop);
+    el.classList.toggle('fade-bottom', fadeBottom);
+  }
+
+  showOnlineToast(message, durationMs = 3800) {
+    if (!this.onlineToastEl || !this.onlineToastTextEl) return;
+    this.onlineToastTextEl.textContent = message;
+    this.onlineToastEl.classList.remove('hidden');
+    if (this.onlineToastTimer) {
+      clearTimeout(this.onlineToastTimer);
+    }
+    this.onlineToastTimer = setTimeout(() => {
+      if (this.onlineToastEl) {
+        this.onlineToastEl.classList.add('hidden');
+      }
+      this.onlineToastTimer = null;
+    }, durationMs);
+  }
+
+  showSyncOverlay(stageText = 'SYNCING SESSION...', progressPct = 30) {
+    if (this.onlineSyncStageEl) {
+      this.onlineSyncStageEl.textContent = stageText;
+    }
+    if (this.onlineSyncBarEl) {
+      this.onlineSyncBarEl.style.width = `${Math.max(8, Math.min(100, progressPct))}%`;
+    }
+    if (this.onlineSyncOverlayEl) {
+      this.onlineSyncOverlayEl.classList.remove('hidden');
+    }
+  }
+
+  hideSyncOverlay() {
+    if (this.onlineSyncOverlayEl) {
+      this.onlineSyncOverlayEl.classList.add('hidden');
     }
   }
 }

@@ -2865,28 +2865,35 @@ def natural_terrain_z(wx, wy):
     base_z = mainland_z * (1.0 - t_sea) + ocean_floor * t_sea
 
     # 10. Southern Tropical Archipelago Barrier Islands, Marina Cay & Outer Coral Atolls rising above sea floor
-    harbor_marina_cay = 15.2 * math.exp(-(((wx - 228.0) / 135.0) ** 2 + ((wy + 895.0) / 96.0) ** 2))
-    isl_1 = 19.0 * math.exp(-(((wx - 555.0) / 195.0) ** 2 + ((wy + 1045.0) / 135.0) ** 2))
-    isl_cove = 17.0 * math.exp(-(((wx - 745.0) / 170.0) ** 2 + ((wy + 985.0) / 145.0) ** 2))
-    isl_2 = 20.0 * math.exp(-(((wx - 865.0) / 175.0) ** 2 + ((wy + 785.0) / 165.0) ** 2))
-    se_reef_island = 20.0 * math.exp(-(((wx - 1395.0) / 205.0) ** 2 + ((wy + 755.0) / 145.0) ** 2))
-    se_south_cay = 17.5 * math.exp(-(((wx - 1225.0) / 150.0) ** 2 + ((wy + 1095.0) / 115.0) ** 2))
-    sw_atoll = 21.0 * math.exp(-(((wx + 660.0) / 225.0) ** 2 + ((wy + 1185.0) / 155.0) ** 2))
-    sw_sunset_island = 20.0 * math.exp(-(((wx + 1235.0) / 215.0) ** 2 + ((wy + 1055.0) / 145.0) ** 2))
-    sw_cay = 17.0 * math.exp(-(((wx + 975.0) / 145.0) ** 2 + ((wy + 1275.0) / 105.0) ** 2))
-    south_atoll_w = 21.5 * math.exp(-(((wx - 95.0) / 245.0) ** 2 + ((wy + 1415.0) / 150.0) ** 2))
-    south_atoll_e = 22.0 * math.exp(-(((wx - 935.0) / 275.0) ** 2 + ((wy + 1375.0) / 175.0) ** 2))
+    # Varied sizes, aspect ratios, and orientations so each island has a distinct natural silhouette
+    def _rot_island(amp, cx, cy, rx, ry, ang_rad):
+        dx = wx - cx
+        dy = wy - cy
+        ca = math.cos(ang_rad)
+        sa = math.sin(ang_rad)
+        ux = dx * ca + dy * sa
+        vy = -dx * sa + dy * ca
+        # Subtle organic shoreline undulation so islands don't look like identical ovals
+        theta = math.atan2(vy, ux)
+        warp = 1.0 + 0.09 * math.sin(2.0 * theta + cx * 0.01) + 0.06 * math.cos(3.0 * theta - cy * 0.01)
+        return amp * math.exp(-((ux / (rx * warp)) ** 2 + (vy / (ry * warp)) ** 2))
+
+    harbor_marina_cay = _rot_island(15.8, 230.0, -900.0, 112.0, 82.0, 0.12)
+    isl_1 = _rot_island(18.5, 535.0, -1045.0, 144.0, 96.0, 0.32)
+    isl_2 = _rot_island(19.0, 890.0, -785.0, 122.0, 102.0, -0.25)
+    se_reef_island = _rot_island(20.5, 1435.0, -760.0, 195.0, 96.0, -0.42)
+    sw_atoll = _rot_island(21.5, -640.0, -1185.0, 224.0, 120.0, -0.38)
+    sw_sunset_island = _rot_island(19.2, -1245.0, -1055.0, 130.0, 100.0, 0.26)
+    south_atoll_w = _rot_island(20.5, 95.0, -1415.0, 155.0, 110.0, -0.15)
+    south_atoll_e = _rot_island(23.0, 935.0, -1375.0, 246.0, 156.0, 0.24)
 
     islands_z = (
         harbor_marina_cay
         + isl_1
-        + isl_cove
         + isl_2
         + se_reef_island
-        + se_south_cay
         + sw_atoll
         + sw_sunset_island
-        + sw_cay
         + south_atoll_w
         + south_atoll_e
     )

@@ -376,17 +376,17 @@ def build_spline_road_segment(
 
         rings.append((v0, v1, v2, v3, v4, v5, v6, v7, pos, right, on_bridge, tan2, on_tunnel))
 
-        # Keep ground_samples active on ground AND inside tunnels so `Circuit_Terrain` is carved cleanly
-        # below the tunnel roadbed and NEVER blocks tunnel portals!
-        if not on_bridge:
+        # Keep ground_samples active only on land (and inside tunnels) so roads over water
+        # never pull the sea floor up into pointy "bud" peninsulas along bridge approaches!
+        nat_under = natural_terrain_z(pos.x, pos.y)
+        if not on_bridge and (on_tunnel or nat_under >= -0.35 or pos.z <= 0.5):
             rw_total = half_asphalt + curb_w + (2.5 if on_tunnel else 0.0)
             ground_samples.append((pos.x, pos.y, pos.z, rw_total))
             if guard_pts is not None:
                 for f_off in (-1.04, -0.72, -0.36, 0.0, 0.36, 0.72, 1.04):
                     guard_pts.append((pos.x + right.x * rw_total * f_off, pos.y + right.y * rw_total * f_off, pos.z))
         elif guard_pts is not None:
-            # Even on elevated viaducts/bridges, clamp terrain at least 1.34m below the bridge deck
-            # so steep cliffside ridges never poke through bridge undersides or abutments!
+            # Clamp terrain below over-water approaches and elevated bridges so terrain never pokes through!
             rw_total = half_asphalt + curb_w + 1.5
             for f_off in (-1.04, -0.52, 0.0, 0.52, 1.04):
                 guard_pts.append((pos.x + right.x * rw_total * f_off, pos.y + right.y * rw_total * f_off, pos.z - 1.2))
@@ -1272,6 +1272,9 @@ def compute_terrain_surface_z(wx, wy, corridor_grid, cell_size=12.0):
     # Flush shoulder height: 0.18m below crown nestles ground roads naturally into the terrain
     road_bed_z = z_road - 0.18
 
+    if nat_z < -0.35 and road_bed_z > 0.0:
+        return nat_z, d_clear
+
     if d_clear <= 2.4:
         tz = road_bed_z
     elif d_clear < 44.0:
@@ -1336,7 +1339,7 @@ def build_smooth_terrain(ground_road_samples, road_guard_pts=None):
                 max_z = z_near - 0.18 + 0.08 * smoothstep(2.0, 10.0, d_c)
                 if z_grid[j][i] > max_z:
                     z_grid[j][i] = max_z
-                if d_c <= 2.4:
+                if d_c <= 2.4 and natural_terrain_z(wx, wy) >= -0.35:
                     min_z = z_near - 0.28
                     if z_grid[j][i] < min_z:
                         z_grid[j][i] = min_z

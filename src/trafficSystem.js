@@ -144,7 +144,16 @@ export class TrafficSystem {
     this._vUp = new THREE.Vector3();
     this._vLeft = new THREE.Vector3();
     this._quat = new THREE.Quaternion();
+    this._qTmp = new THREE.Quaternion();
     this._projVec = new THREE.Vector3();
+
+    // Multiplayer sync state (host exports snapshots; guests run kinematic proxies)
+    this.remoteSyncMode = false;
+    this.remoteAgents = new Map();
+    this._remoteClockOffset = null;
+    this._remoteJitterMs = 0;
+    this._remoteLastSenderTs = null;
+    this._remoteLastRecvMs = null;
   }
 
   /**
@@ -937,17 +946,18 @@ export class TrafficSystem {
 
   async _spawnOne(playerPos, mode = 'local', playerVel = null, camera = null, isFreeCam = false) {
     const candidate = this._findSpawnCandidate(playerPos, mode, this.agents.length < 5, playerVel, camera, isFreeCam);
-    if (!candidate) return;
+    if (this.remoteSyncMode || !candidate) return;
 
     this._pendingSpawns++;
     try {
-      const spec = AI_VEHICLE_SPECS[this._specCursor % AI_VEHICLE_SPECS.length];
+      const specIndex = this._specCursor % AI_VEHICLE_SPECS.length;
+      const spec = AI_VEHICLE_SPECS[specIndex];
       this._specCursor++;
       const brakeUniform = { value: 0.0 };
       const paintColorHex = AI_PAINT_PALETTE[Math.floor(Math.random() * AI_PAINT_PALETTE.length)];
 
       const { parts, clonedMaterials } = await this.createAICarParts(spec.url, brakeUniform, paintColorHex);
-      if (!this.world || !this.scene) return;
+      if (this.remoteSyncMode || !this.world || !this.scene) return;
 
       const id = this._nextId++;
       const vehicle = new RaycastVehicleController(this.RAPIER, this.world, parts, {
@@ -991,6 +1001,8 @@ export class TrafficSystem {
         id,
         role: candidate.mode, // 'local' (circles player region) | 'global' (roams entire map)
         spec,
+        specIndex,
+        paintColorHex,
         vehicle,
         brakeUniform,
         clonedMaterials,
@@ -1199,7 +1211,7 @@ export class TrafficSystem {
       const directHalfWidth = 0.85 + otherDimsHalfX * 0.70;
       if (ahead > -0.2 && ahead < 30.0 && Math.abs(lat) < directHalfWidth) {
         // When breaking an intersection deadlock, only stop for immediate bumper-level obstacles
-        if (ignoreCrossing && isCrossing && ahead > 5.5) return;
+        if (ignoreCrossing && isCrossing && ahead > 7.2) return;
         if (ahead < minBlockDist) {
           minBlockDist = ahead;
           blockerFwdSpeed = otherFwdSpeed;
@@ -1223,10 +1235,10 @@ export class TrafficSystem {
         }
         if (pathDist > 28.0) break;
         const dToWp = Math.hypot(op.x - wp.x, op.z - wp.z);
-        if (dToWp < 1.70) {
+        if (dToWp < 2.05) {
           // Don't deadlock on a stopped crossing/opposing car far ahead on the turn arc
-          if (isCrossing && otherSpeedAbs < 1.2 && pathDist > 8.5) break;
-          if (ignoreCrossing && isCrossing && pathDist > 5.5) break;
+          if (isCrossing && otherSpeedAbs < 1.2 && pathDist > 12.0) break;
+          if (ignoreCrossing && isCrossing && pathDist > 7.2) break;
           if (pathDist < minBlockDist) {
             minBlockDist = pathDist;
             blockerFwdSpeed = otherFwdSpeed;
@@ -1235,6 +1247,36 @@ export class TrafficSystem {
             blockerSpeedAbs = otherSpeedAbs;
           }
           break;
+        }
+
+        // Predictive intersection conflict check: yield to lower-ID moving crossing car whose path intersects ours
+        if (
+          isCrossing &&
+          !ignoreCrossing &&
+          otherAgent &&
+          agent.id > otherAgent.id &&
+          otherSpeedAbs > 1.5 &&
+          pathDist < 20.0 &&
+          otherAgent.queue &&
+          otherAgent.queue.length > 3
+        ) {
+          const oMax = Math.min(otherAgent.queue.length, 6);
+          let futureHit = false;
+          for (let j = 1; j < oMax; j += 2) {
+            const owp = otherAgent.queue[j];
+            if (Math.hypot(owp.x - wp.x, owp.z - wp.z) < 2.5) {
+              futureHit = true;
+              break;
+            }
+          }
+          if (futureHit && pathDist < minBlockDist) {
+            minBlockDist = pathDist;
+            blockerFwdSpeed = 0;
+            blockerAgent = otherAgent;
+            blockerIsCrossing = true;
+            blockerSpeedAbs = otherSpeedAbs;
+            break;
+          }
         }
       }
     };
@@ -1257,6 +1299,10 @@ export class TrafficSystem {
   }
 
   updatePhysicsStep(subDt, playerVehicle) {
+    if (this.remoteSyncMode) {
+      this._updateRemotePhysicsStep(playerVehicle);
+      return;
+    }
     if (!this.isReady) return;
 
     for (const agent of this.agents) {
@@ -1344,19 +1390,32 @@ export class TrafficSystem {
       }
 
       const blocker = this._detectBlockerAhead(agent, pos, fwdX, fwdZ, rightX, rightZ, playerVehicle);
+      if (agent.yieldOverrideTimer > 0 && blocker.dist < 10.0 && blocker.speedAbs >= 1.5) {
+        agent.yieldOverrideTimer = 0;
+      }
       const isWaitingForTraffic =
         blocker.dist < 22.0 && blocker.fwdSpeed < 2.5 && !offRoute;
 
       if (isWaitingForTraffic && speedAbs < 1.5) {
         agent.yieldWaitTimer += subDt;
-        // Break mutual intersection deadlocks deterministically: lower ID (or stalled queue) proceeds
+        // If physically wedged nose-to-side/bumper-to-bumper, back up gently to clear the collision
         if (
+          blocker.dist < 5.0 &&
+          agent.yieldWaitTimer > 1.0 &&
+          agent.reverseTimer <= 0 &&
+          (!blocker.agent || agent.id > blocker.agent.id)
+        ) {
+          agent.reverseTimer = 1.05;
+          agent.reverseSteerSign = alpha >= 0 ? -1 : 1;
+          agent.yieldWaitTimer = 0;
+        } else if (
           agent.yieldWaitTimer > 1.2 &&
           blocker.agent &&
           blocker.speedAbs < 1.5 &&
           (blocker.isCrossing || blocker.agent.yieldWaitTimer > 0.6) &&
           agent.id < blocker.agent.id
         ) {
+          // Break mutual intersection deadlocks deterministically: lower ID proceeds
           agent.yieldOverrideTimer = 2.6;
           agent.yieldWaitTimer = 0;
         }
@@ -1453,6 +1512,10 @@ export class TrafficSystem {
   }
 
   updateFrame(dt, playerVehicle, isPaused = false, camera = null, isFreeCam = false) {
+    if (this.remoteSyncMode) {
+      this._updateRemoteFrame(dt);
+      return;
+    }
     if (!this.isReady || !playerVehicle || !playerVehicle.rigidBody) return;
 
     const playerPos = playerVehicle.rigidBody.translation();
@@ -1513,6 +1576,505 @@ export class TrafficSystem {
     for (const a of this.agents) {
       a.vehicle.syncVisuals();
       a.brakeUniform.value += (a.targetBrakeLight - a.brakeUniform.value) * brakeLerp;
+    }
+  }
+
+  setRemoteSyncMode(enabled) {
+    const next = Boolean(enabled);
+    if (this.remoteSyncMode === next) return;
+    this.remoteSyncMode = next;
+    this._remoteClockOffset = null;
+    this._remoteJitterMs = 0;
+    this._remoteLastSenderTs = null;
+    this._remoteLastRecvMs = null;
+
+    if (next) {
+      while (this.agents.length > 0) {
+        this._despawnAgentAt(this.agents.length - 1);
+      }
+    } else {
+      this._clearRemoteAgents();
+      this._spawnCooldown = 0.05;
+    }
+  }
+
+  _clearRemoteAgents() {
+    for (const proxy of this.remoteAgents.values()) {
+      this._destroyRemoteProxy(proxy);
+    }
+    this.remoteAgents.clear();
+  }
+
+  _destroyRemoteProxy(proxy) {
+    if (!proxy) return;
+    proxy.disposed = true;
+    if (proxy.rigidBody && this.world) {
+      try {
+        this.world.removeRigidBody(proxy.rigidBody);
+      } catch (_) {}
+      proxy.rigidBody = null;
+    }
+    if (proxy.rootGroup && proxy.rootGroup.parent) {
+      proxy.rootGroup.parent.remove(proxy.rootGroup);
+    }
+    if (proxy.clonedMaterials) {
+      for (const mat of proxy.clonedMaterials) {
+        mat.dispose();
+      }
+    }
+  }
+
+  exportSyncSnapshot() {
+    const vehicles = [];
+    for (const a of this.agents) {
+      const v = a.vehicle;
+      const body = v?.rigidBody;
+      if (!body) continue;
+      const pos = body.translation();
+      const rot = body.rotation();
+      const vel = body.linvel();
+      const spinAngle = v.wheels && v.wheels[0] ? v.wheels[0].spinAngle : 0;
+      vehicles.push({
+        id: a.id,
+        specIndex: a.specIndex ?? 0,
+        paintColorHex: a.paintColorHex ?? AI_PAINT_PALETTE[0],
+        px: pos.x,
+        py: pos.y,
+        pz: pos.z,
+        qx: rot.x,
+        qy: rot.y,
+        qz: rot.z,
+        qw: rot.w,
+        vx: vel.x,
+        vy: vel.y,
+        vz: vel.z,
+        steer: v.currentSteer || 0,
+        spin: spinAngle,
+        brake: a.targetBrakeLight || 0,
+      });
+    }
+    return {
+      timestamp: performance.now(),
+      vehicles,
+    };
+  }
+
+  async syncInitialSnapshot(snapshot) {
+    if (!snapshot || !Array.isArray(snapshot.vehicles)) return;
+    const promises = this._ingestSyncSnapshot(snapshot);
+    if (promises.length > 0) {
+      await Promise.allSettled(promises);
+    }
+  }
+
+  applySyncSnapshot(snapshot) {
+    if (!this.remoteSyncMode || !snapshot || !Array.isArray(snapshot.vehicles)) return;
+    this._ingestSyncSnapshot(snapshot);
+  }
+
+  _ingestSyncSnapshot(snapshot) {
+    const nowMs = performance.now();
+    const senderTs = Number.isFinite(snapshot.timestamp) ? snapshot.timestamp : nowMs;
+    const rawOffset = nowMs - senderTs;
+    if (this._remoteClockOffset === null) {
+      this._remoteClockOffset = rawOffset;
+    } else {
+      const alpha = rawOffset < this._remoteClockOffset ? 0.35 : 0.04;
+      this._remoteClockOffset += (rawOffset - this._remoteClockOffset) * alpha;
+    }
+    if (this._remoteLastSenderTs !== null && this._remoteLastRecvMs !== null) {
+      const dtSender = senderTs - this._remoteLastSenderTs;
+      const dtRecv = nowMs - this._remoteLastRecvMs;
+      const jitter = Math.abs(dtRecv - dtSender);
+      this._remoteJitterMs = this._remoteJitterMs * 0.8 + Math.min(jitter, 120) * 0.2;
+    }
+    this._remoteLastSenderTs = senderTs;
+    this._remoteLastRecvMs = nowMs;
+
+    const sampleTime = senderTs + this._remoteClockOffset;
+    const seenIds = new Set();
+    const spawnPromises = [];
+
+    for (const item of snapshot.vehicles) {
+      seenIds.add(item.id);
+      let proxy = this.remoteAgents.get(item.id);
+      if (!proxy) {
+        proxy = {
+          id: item.id,
+          specIndex: item.specIndex ?? 0,
+          paintColorHex: item.paintColorHex ?? AI_PAINT_PALETTE[0],
+          snapshots: [],
+          rootGroup: null,
+          wheels: [],
+          chassisLocalOffset: new THREE.Vector3(0, 0.36, 0),
+          rigidBody: null,
+          chassisCollider: null,
+          cabinCollider: null,
+          lastContactMs: 0,
+          brakeUniform: { value: item.brake || 0 },
+          targetBrakeLight: item.brake || 0,
+          clonedMaterials: [],
+          disposed: false,
+          pose: {
+            px: item.px,
+            py: item.py,
+            pz: item.pz,
+            qx: item.qx,
+            qy: item.qy,
+            qz: item.qz,
+            qw: item.qw,
+            vx: item.vx || 0,
+            vy: item.vy || 0,
+            vz: item.vz || 0,
+            steer: item.steer || 0,
+            spin: item.spin || 0,
+          },
+        };
+        this.remoteAgents.set(item.id, proxy);
+        spawnPromises.push(this._spawnRemoteTrafficProxy(proxy));
+      }
+
+      proxy.targetBrakeLight = item.brake || 0;
+      const snaps = proxy.snapshots;
+      if (snaps.length === 0 || sampleTime > snaps[snaps.length - 1].t) {
+        snaps.push({
+          t: sampleTime,
+          px: item.px,
+          py: item.py,
+          pz: item.pz,
+          qx: item.qx,
+          qy: item.qy,
+          qz: item.qz,
+          qw: item.qw,
+          vx: item.vx || 0,
+          vy: item.vy || 0,
+          vz: item.vz || 0,
+          steer: item.steer || 0,
+          spin: item.spin || 0,
+        });
+        if (snaps.length > 8) snaps.shift();
+      }
+    }
+
+    for (const [id, proxy] of this.remoteAgents.entries()) {
+      if (!seenIds.has(id)) {
+        this._destroyRemoteProxy(proxy);
+        this.remoteAgents.delete(id);
+      }
+    }
+
+    return spawnPromises;
+  }
+
+  async _spawnRemoteTrafficProxy(proxy) {
+    const spec = AI_VEHICLE_SPECS[proxy.specIndex % AI_VEHICLE_SPECS.length] || AI_VEHICLE_SPECS[0];
+    try {
+      const { parts, clonedMaterials } = await this.createAICarParts(
+        spec.url,
+        proxy.brakeUniform,
+        proxy.paintColorHex
+      );
+      if (proxy.disposed || !this.remoteSyncMode || !this.world || !this.scene) {
+        for (const mat of clonedMaterials) mat.dispose();
+        return;
+      }
+
+      const rootGroup = new THREE.Group();
+      rootGroup.name = `Synced_AI_${spec.id}_${proxy.id}`;
+      const chassisMesh = parts.Chassis_Body;
+      proxy.chassisLocalOffset.copy(chassisMesh.position);
+      rootGroup.add(chassisMesh);
+
+      const wheelOrder = ['Wheel_FL', 'Wheel_FR', 'Wheel_RL', 'Wheel_RR'];
+      proxy.wheels = wheelOrder.map((id, idx) => {
+        const mesh = parts[id];
+        mesh.rotation.order = 'YXZ';
+        rootGroup.add(mesh);
+        return {
+          mesh,
+          isFront: idx < 2,
+          restPos: mesh.position.clone(),
+        };
+      });
+
+      const bodyDesc = this.RAPIER.RigidBodyDesc.dynamic()
+        .setTranslation(proxy.pose.px, proxy.pose.py, proxy.pose.pz)
+        .setRotation({ x: proxy.pose.qx, y: proxy.pose.qy, z: proxy.pose.qz, w: proxy.pose.qw })
+        .setGravityScale(0.0)
+        .setLinearDamping(0.6)
+        .setAngularDamping(6.0)
+        .setCanSleep(false);
+      const rigidBody = this.world.createRigidBody(bodyDesc);
+
+      const dims = spec.chassisDims;
+      const proxyMass = spec.mass || 1360;
+      const lowerHull = this.RAPIER.ColliderDesc.cuboid(dims.x * 0.48, 0.16, dims.z * 0.48)
+        .setTranslation(0, 0.11, 0)
+        .setMass(proxyMass * 0.85)
+        .setFriction(0.12)
+        .setRestitution(0.0)
+        .setCollisionGroups(AI_CHASSIS_COLLISION_GROUPS);
+      const upperCabin = this.RAPIER.ColliderDesc.cuboid(dims.x * 0.42, 0.20, dims.z * 0.25)
+        .setTranslation(0, 0.44, -0.15)
+        .setMass(proxyMass * 0.15)
+        .setFriction(0.12)
+        .setRestitution(0.0)
+        .setCollisionGroups(AI_CHASSIS_COLLISION_GROUPS);
+
+      proxy.chassisCollider = this.world.createCollider(lowerHull, rigidBody);
+      proxy.cabinCollider = this.world.createCollider(upperCabin, rigidBody);
+
+      proxy.rootGroup = rootGroup;
+      proxy.rigidBody = rigidBody;
+      proxy.clonedMaterials = clonedMaterials;
+      this._applyRemoteProxyVisuals(proxy);
+      this.scene.add(rootGroup);
+    } catch (err) {
+      console.warn('Failed to spawn synced traffic car:', err);
+    }
+  }
+
+  _evaluateRemoteProxyPose(proxy, evalTimeMs) {
+    const snaps = proxy.snapshots;
+    if (snaps.length === 0) return;
+
+    const latest = snaps[snaps.length - 1];
+    const p = proxy.pose;
+
+    if (snaps.length === 1 || evalTimeMs >= latest.t) {
+      const dtExtra = clamp((evalTimeMs - latest.t) * 0.001, 0, 0.12);
+      p.px = latest.px + latest.vx * dtExtra;
+      p.py = latest.py + latest.vy * dtExtra;
+      p.pz = latest.pz + latest.vz * dtExtra;
+      p.vx = latest.vx;
+      p.vy = latest.vy;
+      p.vz = latest.vz;
+      p.qx = latest.qx;
+      p.qy = latest.qy;
+      p.qz = latest.qz;
+      p.qw = latest.qw;
+      p.steer = latest.steer;
+      p.spin = latest.spin;
+      return;
+    }
+
+    if (evalTimeMs <= snaps[0].t) {
+      const s = snaps[0];
+      p.px = s.px;
+      p.py = s.py;
+      p.pz = s.pz;
+      p.vx = s.vx;
+      p.vy = s.vy;
+      p.vz = s.vz;
+      p.qx = s.qx;
+      p.qy = s.qy;
+      p.qz = s.qz;
+      p.qw = s.qw;
+      p.steer = s.steer;
+      p.spin = s.spin;
+      return;
+    }
+
+    let s0 = snaps[0];
+    let s1 = snaps[1];
+    for (let i = 0; i < snaps.length - 1; i++) {
+      if (snaps[i].t <= evalTimeMs && evalTimeMs <= snaps[i + 1].t) {
+        s0 = snaps[i];
+        s1 = snaps[i + 1];
+        break;
+      }
+    }
+
+    const spanMs = Math.max(1, s1.t - s0.t);
+    const t = clamp((evalTimeMs - s0.t) / spanMs, 0, 1);
+    const dtSec = spanMs * 0.001;
+    const t2 = t * t;
+    const t3 = t2 * t;
+    const h00 = 2 * t3 - 3 * t2 + 1;
+    const h10 = t3 - 2 * t2 + t;
+    const h01 = -2 * t3 + 3 * t2;
+    const h11 = t3 - t2;
+
+    p.px = h00 * s0.px + h10 * dtSec * s0.vx + h01 * s1.px + h11 * dtSec * s1.vx;
+    p.py = h00 * s0.py + h10 * dtSec * s0.vy + h01 * s1.py + h11 * dtSec * s1.vy;
+    p.pz = h00 * s0.pz + h10 * dtSec * s0.vz + h01 * s1.pz + h11 * dtSec * s1.vz;
+    p.vx = s0.vx + (s1.vx - s0.vx) * t;
+    p.vy = s0.vy + (s1.vy - s0.vy) * t;
+    p.vz = s0.vz + (s1.vz - s0.vz) * t;
+
+    this._quat.set(s0.qx, s0.qy, s0.qz, s0.qw);
+    this._qTmp.set(s1.qx, s1.qy, s1.qz, s1.qw);
+    this._quat.slerp(this._qTmp, t);
+    p.qx = this._quat.x;
+    p.qy = this._quat.y;
+    p.qz = this._quat.z;
+    p.qw = this._quat.w;
+    p.steer = s0.steer + (s1.steer - s0.steer) * t;
+    p.spin = s0.spin + (s1.spin - s0.spin) * t;
+  }
+
+  _updateRemotePhysicsStep(playerVehicle) {
+    const nowMs = performance.now();
+    const interpDelay = clamp(65 + this._remoteJitterMs * 1.6, 55, 160);
+    const evalTime = nowMs - interpDelay;
+    const pPos = playerVehicle && playerVehicle.rigidBody ? playerVehicle.rigidBody.translation() : null;
+    const maxPhysDistSq = 220 * 220;
+
+    for (const proxy of this.remoteAgents.values()) {
+      this._evaluateRemoteProxyPose(proxy, evalTime);
+      const body = proxy.rigidBody;
+      if (!body) continue;
+
+      const p = proxy.pose;
+      if (pPos) {
+        const dx = p.px - pPos.x;
+        const dz = p.pz - pPos.z;
+        if (dx * dx + dz * dz > maxPhysDistSq) {
+          body.setTranslation({ x: p.px, y: p.py, z: p.pz }, true);
+          body.setRotation({ x: p.qx, y: p.qy, z: p.qz, w: p.qw }, true);
+          body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+          body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+          continue;
+        }
+      }
+
+      const cur = body.translation();
+      const dx = p.px - cur.x;
+      const dy = p.py - cur.y;
+      const dz = p.pz - cur.z;
+      const distSq = dx * dx + dy * dy + dz * dz;
+
+      if (distSq > 14.0 * 14.0) {
+        body.setTranslation({ x: p.px, y: p.py, z: p.pz }, true);
+        body.setRotation({ x: p.qx, y: p.qy, z: p.qz, w: p.qw }, true);
+        body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+        body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+        continue;
+      }
+
+      const inContact = nowMs - proxy.lastContactMs < 180;
+      const kHoriz = inContact ? 3.5 : 28.0;
+      const velBlend = inContact ? 0.35 : 1.0;
+
+      const curVel = body.linvel();
+      const targetVx = (p.vx || 0) * velBlend + dx * kHoriz;
+      const targetVz = (p.vz || 0) * velBlend + dz * kHoriz;
+      const targetVy = clamp((p.vy || 0) + dy * 16.0, -5.0, 5.0);
+
+      const alpha = inContact ? 0.20 : 0.90;
+      body.setLinvel(
+        {
+          x: curVel.x + (targetVx - curVel.x) * alpha,
+          y: targetVy,
+          z: curVel.z + (targetVz - curVel.z) * alpha,
+        },
+        true
+      );
+      body.setRotation({ x: p.qx, y: p.qy, z: p.qz, w: p.qw }, true);
+      if (!inContact) {
+        body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      }
+    }
+  }
+
+  _hasVehicleContact(localVehicle, otherChassis, otherCabin) {
+    let touching = false;
+    if (localVehicle.chassisCollider && otherChassis) {
+      this.world.contactPair(localVehicle.chassisCollider, otherChassis, () => {
+        touching = true;
+      });
+    }
+    if (!touching && localVehicle.chassisCollider && otherCabin) {
+      this.world.contactPair(localVehicle.chassisCollider, otherCabin, () => {
+        touching = true;
+      });
+    }
+    if (!touching && localVehicle.cabinCollider && otherChassis) {
+      this.world.contactPair(localVehicle.cabinCollider, otherChassis, () => {
+        touching = true;
+      });
+    }
+    return touching;
+  }
+
+  postPhysicsStep(playerVehicle) {
+    if (!this.world || !playerVehicle || !playerVehicle.rigidBody || !playerVehicle.chassisCollider) return;
+    const nowMs = performance.now();
+    const localBody = playerVehicle.rigidBody;
+    const localVel = localBody.linvel();
+    let anyContact = false;
+
+    if (this.remoteSyncMode) {
+      for (const proxy of this.remoteAgents.values()) {
+        if (!proxy.rigidBody || !proxy.chassisCollider) continue;
+        if (this._hasVehicleContact(playerVehicle, proxy.chassisCollider, proxy.cabinCollider)) {
+          anyContact = true;
+          proxy.lastContactMs = nowMs;
+        }
+      }
+    } else {
+      for (const agent of this.agents) {
+        const av = agent.vehicle;
+        if (!av || !av.rigidBody || !av.chassisCollider) continue;
+        if (this._hasVehicleContact(playerVehicle, av.chassisCollider, av.cabinCollider)) {
+          anyContact = true;
+          const aVel = av.rigidBody.linvel();
+          if (aVel.y > 1.6) {
+            av.rigidBody.setLinvel({ x: aVel.x, y: 1.6, z: aVel.z }, true);
+          }
+        }
+      }
+    }
+
+    if (anyContact) {
+      if (localVel.y > 1.6) {
+        localBody.setLinvel({ x: localVel.x, y: 1.6, z: localVel.z }, true);
+      }
+      const angVel = localBody.angvel();
+      if (Math.abs(angVel.x) > 2.2 || Math.abs(angVel.z) > 2.2) {
+        localBody.setAngvel(
+          {
+            x: clamp(angVel.x, -2.2, 2.2),
+            y: angVel.y,
+            z: clamp(angVel.z, -2.2, 2.2),
+          },
+          true
+        );
+      }
+    }
+  }
+
+  _applyRemoteProxyVisuals(proxy) {
+    if (!proxy.rootGroup) return;
+    const p = proxy.pose;
+    const pos = proxy.rigidBody ? proxy.rigidBody.translation() : p;
+    const rot = proxy.rigidBody ? proxy.rigidBody.rotation() : p;
+    const px = pos.x !== undefined ? pos.x : p.px;
+    const py = pos.y !== undefined ? pos.y : p.py;
+    const pz = pos.z !== undefined ? pos.z : p.pz;
+    const qx = rot.x !== undefined ? rot.x : p.qx;
+    const qy = rot.y !== undefined ? rot.y : p.qy;
+    const qz = rot.z !== undefined ? rot.z : p.qz;
+    const qw = rot.w !== undefined ? rot.w : p.qw;
+    proxy.rootGroup.position.set(
+      px - proxy.chassisLocalOffset.x,
+      py - proxy.chassisLocalOffset.y,
+      pz - proxy.chassisLocalOffset.z
+    );
+    proxy.rootGroup.quaternion.set(qx, qy, qz, qw);
+    for (const w of proxy.wheels) {
+      w.mesh.position.copy(w.restPos);
+      w.mesh.rotation.y = w.isFront ? p.steer : 0;
+      w.mesh.rotation.x = p.spin;
+      w.mesh.rotation.z = 0;
+    }
+  }
+
+  _updateRemoteFrame(dt) {
+    const brakeLerp = 1 - Math.exp(-20.0 * dt);
+    for (const proxy of this.remoteAgents.values()) {
+      this._applyRemoteProxyVisuals(proxy);
+      proxy.brakeUniform.value += (proxy.targetBrakeLight - proxy.brakeUniform.value) * brakeLerp;
     }
   }
 }
