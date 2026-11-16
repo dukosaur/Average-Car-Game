@@ -416,7 +416,11 @@
       }
 
       .player-tag-pill {
-        margin-top: 4px;
+        position: absolute;
+        top: calc(100% + 4px);
+        left: 50%;
+        transform: translateX(-50%);
+        white-space: nowrap;
         background: rgba(13, 17, 24, 0.90);
         border: 1px solid #e5a93c;
         border-radius: 4px;
@@ -2333,10 +2337,197 @@
 
       /* Footer Prompt Ribbon */
       .pause-footer {
+        position: relative;
         display: flex;
         align-items: center;
         justify-content: center;
         padding: 4px 8px;
+      }
+
+      .pause-feedback-btn {
+        position: absolute;
+        right: 8px;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        color: rgba(255, 255, 255, 0.82);
+        font-family: inherit;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        cursor: pointer;
+        transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.12s ease;
+      }
+
+      .pause-feedback-btn:hover {
+        background: rgba(229, 169, 60, 0.18);
+        border-color: rgba(229, 169, 60, 0.65);
+        color: #ffffff;
+        transform: translateY(-1px);
+      }
+
+      .pause-feedback-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 95;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(6, 9, 14, 0.72);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+      }
+
+      .pause-feedback-modal.hidden {
+        display: none;
+      }
+
+      .pause-feedback-card {
+        width: min(460px, 92vw);
+        background: rgba(14, 18, 26, 0.94);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 14px;
+        padding: 20px 22px;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65);
+        color: #ffffff;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .pause-feedback-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .pause-feedback-title {
+        font-size: 15px;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .pause-feedback-close {
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        color: rgba(255, 255, 255, 0.8);
+        border-radius: 6px;
+        width: 28px;
+        height: 28px;
+        cursor: pointer;
+        font-weight: 800;
+      }
+
+      .pause-feedback-types {
+        display: flex;
+        gap: 8px;
+      }
+
+      .pause-feedback-type {
+        flex: 1;
+        padding: 7px 10px;
+        border-radius: 7px;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        color: rgba(255, 255, 255, 0.7);
+        font-family: inherit;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        cursor: pointer;
+      }
+
+      .pause-feedback-type.active {
+        background: rgba(229, 169, 60, 0.22);
+        border-color: #e5a93c;
+        color: #ffffff;
+      }
+
+      .pause-feedback-input,
+      .pause-feedback-textarea {
+        width: 100%;
+        box-sizing: border-box;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 8px;
+        padding: 9px 11px;
+        color: #ffffff;
+        font-family: inherit;
+        font-size: 13px;
+        outline: none;
+      }
+
+      .pause-feedback-input:focus,
+      .pause-feedback-textarea:focus {
+        border-color: #e5a93c;
+      }
+
+      .pause-feedback-textarea {
+        min-height: 105px;
+        resize: vertical;
+      }
+
+      .pause-feedback-diag {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 11px;
+        color: rgba(255, 255, 255, 0.65);
+        user-select: none;
+      }
+
+      .pause-feedback-status {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        min-height: 16px;
+        color: #e5a93c;
+      }
+
+      .pause-feedback-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+      }
+
+      .pause-feedback-cancel {
+        padding: 8px 14px;
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.07);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        color: rgba(255, 255, 255, 0.8);
+        font-family: inherit;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        cursor: pointer;
+      }
+
+      .pause-feedback-submit {
+        padding: 8px 16px;
+        border-radius: 8px;
+        background: #e5a93c;
+        border: none;
+        color: #10141c;
+        font-family: inherit;
+        font-size: 11px;
+        font-weight: 900;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        cursor: pointer;
+      }
+
+      .pause-feedback-submit:disabled {
+        opacity: 0.55;
+        cursor: default;
       }
 
       .pause-footer-prompts {
@@ -3147,7 +3338,35 @@
               <div class="pause-footer-item"><span class="pause-key-badge">R</span> RESET POSITION</div>
               <div class="pause-footer-item"><span class="pause-key-badge">M</span> WORLD MAP</div>
             </div>
+            <button type="button" class="pause-feedback-btn" id="pause-feedback-btn">
+              <span>BUG / FEEDBACK</span>
+            </button>
           </footer>
+        </div>
+
+        <!-- Feedback / Bug Report Modal -->
+        <div id="pause-feedback-modal" class="pause-feedback-modal hidden" role="dialog" aria-modal="true" aria-labelledby="pause-feedback-title">
+          <div class="pause-feedback-card">
+            <div class="pause-feedback-head">
+              <div class="pause-feedback-title" id="pause-feedback-title">FEEDBACK / BUG REPORT</div>
+              <button type="button" class="pause-feedback-close" id="pause-feedback-close" aria-label="Close">✕</button>
+            </div>
+            <div class="pause-feedback-types">
+              <button type="button" class="pause-feedback-type active" data-feedback-type="Bug Report">BUG REPORT</button>
+              <button type="button" class="pause-feedback-type" data-feedback-type="Feedback">FEEDBACK</button>
+            </div>
+            <input type="text" class="pause-feedback-input" id="pause-feedback-summary" maxlength="100" placeholder="Short summary (e.g. Car clips through bridge)" />
+            <textarea class="pause-feedback-textarea" id="pause-feedback-details" maxlength="1500" placeholder="What happened or what would you like improved?"></textarea>
+            <label class="pause-feedback-diag">
+              <input type="checkbox" id="pause-feedback-diag" checked />
+              <span>Include game diagnostics (FPS, car, position, browser)</span>
+            </label>
+            <div class="pause-feedback-status" id="pause-feedback-status"></div>
+            <div class="pause-feedback-actions">
+              <button type="button" class="pause-feedback-cancel" id="pause-feedback-cancel">CANCEL</button>
+              <button type="button" class="pause-feedback-submit" id="pause-feedback-submit">SUBMIT</button>
+            </div>
+          </div>
         </div>
       </div>
 

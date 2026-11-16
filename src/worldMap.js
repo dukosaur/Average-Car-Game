@@ -553,10 +553,8 @@ export class WorldMapController {
    * Called whenever the GPS pathfinder updates the active route
    */
   onGpsRouteUpdated(waypoint, path, remDist) {
-    if (!this.gpsGroupEl) return;
-    this.gpsGroupEl.innerHTML = '';
-
     if (!waypoint || !path || path.length < 2) {
+      if (this.gpsGroupEl) this.gpsGroupEl.innerHTML = '';
       if (this.waypointMarkerEl) this.waypointMarkerEl.classList.add('hidden');
       if (this.mapGpsHudEl) this.mapGpsHudEl.classList.add('hidden');
       if (this.hudGpsIndicatorEl) this.hudGpsIndicatorEl.classList.add('hidden');
@@ -566,10 +564,37 @@ export class WorldMapController {
       return;
     }
 
-    // 1. Draw Vibrant Forza Blue Route Ribbon in SVG
+    const distStr = this._formatImperialDist(remDist);
+
+    // Always keep lightweight gameplay HUD GPS indicator up to date
+    if (this.hudGpsIndicatorEl) {
+      if (this.hudGpsNameEl) this.hudGpsNameEl.textContent = waypoint.name;
+      if (this.hudGpsDistEl) this.hudGpsDistEl.textContent = distStr;
+      this.hudGpsIndicatorEl.classList.remove('hidden');
+    }
+
+    const pauseOpen = Boolean(window.__pauseMenu && window.__pauseMenu.isOpen);
+    if (!this.isOpen && !pauseOpen) {
+      return;
+    }
+
+    if (!this.gpsGroupEl) return;
+    this.gpsGroupEl.innerHTML = '';
+
+    // 1. Draw Vibrant Forza Route Ribbon in SVG (decimated to >= 1.5px spacing, no expensive SVG blur filter)
     let d = '';
+    let lastPxX = -1e9;
+    let lastPxY = -1e9;
+    const lastIdx = path.length - 1;
     for (let i = 0; i < path.length; i++) {
       const p = this.worldToMapPx(path[i].x, path[i].z);
+      if (i > 0 && i < lastIdx) {
+        const dx = p.x - lastPxX;
+        const dy = p.y - lastPxY;
+        if (dx * dx + dy * dy < 2.25) continue;
+      }
+      lastPxX = p.x;
+      lastPxY = p.y;
       d += (i === 0 ? `M ${p.x.toFixed(1)} ${p.y.toFixed(1)} ` : `L ${p.x.toFixed(1)} ${p.y.toFixed(1)} `);
     }
 
@@ -581,8 +606,7 @@ export class WorldMapController {
     glowPath.setAttribute('stroke-width', '16.0');
     glowPath.setAttribute('stroke-linecap', 'round');
     glowPath.setAttribute('stroke-linejoin', 'round');
-    glowPath.setAttribute('opacity', '0.75');
-    glowPath.setAttribute('filter', 'url(#gps-route-glow)');
+    glowPath.setAttribute('opacity', '0.45');
     this.gpsGroupEl.appendChild(glowPath);
 
     // B. Contrast Casing Border
@@ -626,8 +650,6 @@ export class WorldMapController {
       this.waypointMarkerEl.classList.remove('hidden');
     }
 
-    const distStr = this._formatImperialDist(remDist);
-
     // 3. Update Map Top Bar GPS HUD
     if (this.mapGpsHudEl) {
       if (this.gpsTargetNameEl) this.gpsTargetNameEl.textContent = waypoint.name;
@@ -635,14 +657,7 @@ export class WorldMapController {
       this.mapGpsHudEl.classList.remove('hidden');
     }
 
-    // 4. Update HUD Gameplay Indicator
-    if (this.hudGpsIndicatorEl) {
-      if (this.hudGpsNameEl) this.hudGpsNameEl.textContent = waypoint.name;
-      if (this.hudGpsDistEl) this.hudGpsDistEl.textContent = distStr;
-      this.hudGpsIndicatorEl.classList.remove('hidden');
-    }
-
-    if (window.__pauseMenu && typeof window.__pauseMenu.syncGps === 'function') {
+    if (pauseOpen && window.__pauseMenu && typeof window.__pauseMenu.syncGps === 'function') {
       window.__pauseMenu.syncGps();
     }
   }
@@ -1257,16 +1272,12 @@ export class WorldMapController {
       ctx.restore();
     }
 
-    // PASS 3: Elevated road-crossing overpass casings (butt-capped + smooth shadow) + continuous upper road cores
+    // PASS 3: Elevated road-crossing overpass casings (butt-capped + fast halo shadow) + continuous upper road cores
     for (const b of bridgeSegments) {
       if (!routeNearCar(b)) continue;
       const bCoreW = getRoadCoreWidth({ type: b.road_type || 'secondary', id: b.id });
-      ctx.save();
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.50)';
-      ctx.shadowBlur = 9;
-      ctx.shadowOffsetY = 2;
+      drawPerspectivePolyline(b.points, bCoreW + 12.5, 'rgba(0, 0, 0, 0.34)', false, 'butt', 3);
       drawPerspectivePolyline(b.points, bCoreW + 6.5, '#0c1017', false, 'butt', 3);
-      ctx.restore();
     }
     for (const r of drivableRoutes) {
       if (upperIds.has(r.id) && routeNearCar(r)) {

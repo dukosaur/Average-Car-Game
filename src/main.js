@@ -1019,8 +1019,11 @@ function createStaticGrassField(terrainMesh, roadCorridors, obstacles, scene, su
     const camPos = isFreeCam && freeCamPos ? freeCamPos : cam.position;
     grassMat.uniforms.uCameraPos.value.copy(camPos);
 
-    // Distance threshold aligned with fade-out boundary (152m)
-    const maxDistSq = 152.0 * 152.0;
+    // Distance threshold aligned with fade-out boundary (default 152m, adaptive on low-FPS GPUs)
+    const maxDist = window.__grassMaxDist || 152.0;
+    const maxDistSq = maxDist * maxDist;
+    grassMat.uniforms.uFadeStart.value = maxDist * 0.605;
+    grassMat.uniforms.uFadeEnd.value = maxDist * 0.954;
 
     const density = window.__grassDensity || 'high';
     if (density === 'off') {
@@ -1952,7 +1955,7 @@ async function init() {
   // OPTIMIZATION: Cap device pixel ratio to 1.5 to eliminate Retina 4K fillrate stalls while keeping ultra-sharp rendering
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
   container.appendChild(renderer.domElement);
@@ -2739,6 +2742,32 @@ async function init() {
 
   const onlinePausedInput = { forward: false, backward: false, left: false, right: false, handbrake: true };
   let lastTrafficSyncSendMs = 0;
+  let lastMinimapUpdateMs = 0;
+  let perfTier = 0; // 0 = full quality, 1 = balanced (1x DPR, medium grass), 2 = fast (0.8x DPR, shorter grass, no shadows)
+  let perfSampleFrames = 0;
+  let perfSampleStartMs = performance.now();
+  let perfGoodStreak = 0;
+
+  function applyPerfTier(tier) {
+    perfTier = tier;
+    const nativeDpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    if (tier === 0) {
+      renderer.setPixelRatio(nativeDpr);
+      window.__grassDensity = 'high';
+      window.__grassMaxDist = 152.0;
+      dirLight.castShadow = true;
+    } else if (tier === 1) {
+      renderer.setPixelRatio(Math.min(nativeDpr, 1.0));
+      window.__grassDensity = 'medium';
+      window.__grassMaxDist = 132.0;
+      dirLight.castShadow = true;
+    } else {
+      renderer.setPixelRatio(0.8);
+      window.__grassDensity = 'medium';
+      window.__grassMaxDist = 104.0;
+      dirLight.castShadow = false;
+    }
+  }
 
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) {
@@ -3082,6 +3111,35 @@ async function init() {
       window.__fps = currentFps;
     }
 
+    // Adaptive GPU quality scaling for weaker/integrated-GPU laptops without hurting visuals on fast GPUs
+    if (!isPaused && !isTitleScreenOpen && !document.hidden) {
+      perfSampleFrames++;
+      const perfElapsed = now - perfSampleStartMs;
+      if (perfElapsed >= 1500) {
+        const avgFps = (perfSampleFrames * 1000) / perfElapsed;
+        perfSampleFrames = 0;
+        perfSampleStartMs = now;
+        if (avgFps < 26 && perfTier < 2) {
+          perfGoodStreak = 0;
+          applyPerfTier(2);
+        } else if (avgFps < 38 && perfTier < 1) {
+          perfGoodStreak = 0;
+          applyPerfTier(1);
+        } else if (avgFps >= 54 && perfTier > 0) {
+          perfGoodStreak++;
+          if (perfGoodStreak >= 3) {
+            perfGoodStreak = 0;
+            applyPerfTier(perfTier - 1);
+          }
+        } else {
+          perfGoodStreak = 0;
+        }
+      }
+    } else {
+      perfSampleFrames = 0;
+      perfSampleStartMs = now;
+    }
+
     speedValueEl.textContent = String(Math.round(vehicle.speedKmh * 0.621371));
     gearBadgeEl.textContent = vehicle.gear;
     rpmBarEl.style.width = `${Math.round(vehicle.rpmNormalized * 100)}%`;
@@ -3101,9 +3159,12 @@ async function init() {
       gpsNav.update(vehicle.rootGroup.position);
     }
     if (worldMap && vehicle && vehicle.rootGroup) {
-      const carHeadingDir = new THREE.Vector3();
-      vehicle.rootGroup.getWorldDirection(carHeadingDir);
-      worldMap.update(vehicle.rootGroup.position, vehicle.speedKmh, carHeadingDir);
+      if (worldMap.isOpen || now - lastMinimapUpdateMs >= 33) {
+        lastMinimapUpdateMs = now;
+        const carHeadingDir = new THREE.Vector3();
+        vehicle.rootGroup.getWorldDirection(carHeadingDir);
+        worldMap.update(vehicle.rootGroup.position, vehicle.speedKmh, carHeadingDir);
+      }
     }
 
     renderer.render(scene, camera);

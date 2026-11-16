@@ -13,6 +13,11 @@
 
 import { OnlineSessionManager, formatSessionCode } from './onlineSession.js';
 
+// Optional: Paste a Formspree endpoint (https://formspree.io/f/YOUR_ID) or Discord Webhook URL
+// to receive player bug reports & feedback silently in-game. When empty, opens a pre-filled GitHub Issue.
+const FEEDBACK_WEBHOOK_URL = 'https://discord.com/api/webhooks/1571864266456178712/64gMEUBEMbJF3Pc0HvYSOgcHLVbsQ-P3pV1f52O6TO35jAYqYeGjjNeEicd4Zq8q5Yg-';
+const GITHUB_ISSUES_URL = 'https://github.com/dukosaur/Average-Car-Game/issues/new';
+
 export class PauseMenuController {
   constructor({
     vehicle,
@@ -142,6 +147,20 @@ export class PauseMenuController {
     this.hudMinimapWrapEl = document.getElementById('hud-minimap-wrap');
     this.hudPauseBtnEl = document.getElementById('hud-pause-btn');
     this.footerPromptsEl = document.getElementById('pause-footer-prompts');
+
+    // Feedback / Bug Report Modal
+    this.feedbackBtnEl = document.getElementById('pause-feedback-btn');
+    this.feedbackModalEl = document.getElementById('pause-feedback-modal');
+    this.feedbackCloseEl = document.getElementById('pause-feedback-close');
+    this.feedbackCancelEl = document.getElementById('pause-feedback-cancel');
+    this.feedbackSubmitEl = document.getElementById('pause-feedback-submit');
+    this.feedbackSummaryEl = document.getElementById('pause-feedback-summary');
+    this.feedbackDetailsEl = document.getElementById('pause-feedback-details');
+    this.feedbackDiagEl = document.getElementById('pause-feedback-diag');
+    this.feedbackStatusEl = document.getElementById('pause-feedback-status');
+    this.feedbackTypeBtns = document.querySelectorAll('.pause-feedback-type');
+    this.feedbackType = 'Bug Report';
+    this.isFeedbackOpen = false;
 
     this.init();
   }
@@ -346,6 +365,179 @@ export class PauseMenuController {
         }
       });
     }
+
+    // Feedback / Bug Report Modal
+    if (this.feedbackBtnEl) {
+      this.feedbackBtnEl.addEventListener('click', () => this.setFeedbackOpen(true));
+    }
+    if (this.feedbackCloseEl) {
+      this.feedbackCloseEl.addEventListener('click', () => this.setFeedbackOpen(false));
+    }
+    if (this.feedbackCancelEl) {
+      this.feedbackCancelEl.addEventListener('click', () => this.setFeedbackOpen(false));
+    }
+    if (this.feedbackModalEl) {
+      this.feedbackModalEl.addEventListener('click', (e) => {
+        if (e.target === this.feedbackModalEl) {
+          this.setFeedbackOpen(false);
+        }
+      });
+      this.feedbackModalEl.addEventListener('keydown', (e) => {
+        if (e.code === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          this.setFeedbackOpen(false);
+          return;
+        }
+        e.stopPropagation();
+      });
+    }
+    if (this.feedbackTypeBtns) {
+      this.feedbackTypeBtns.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          this.feedbackType = btn.dataset.feedbackType || 'Bug Report';
+          this.feedbackTypeBtns.forEach((b) => b.classList.toggle('active', b === btn));
+        });
+      });
+    }
+    if (this.feedbackSubmitEl) {
+      this.feedbackSubmitEl.addEventListener('click', () => this._submitFeedback());
+    }
+  }
+
+  setFeedbackOpen(open) {
+    this.isFeedbackOpen = Boolean(open);
+    if (!this.feedbackModalEl) return;
+    this.feedbackModalEl.classList.toggle('hidden', !this.isFeedbackOpen);
+    if (this.isFeedbackOpen) {
+      if (this.feedbackStatusEl) this.feedbackStatusEl.textContent = '';
+      if (this.feedbackSummaryEl) {
+        setTimeout(() => this.feedbackSummaryEl.focus(), 20);
+      }
+    }
+  }
+
+  _getReadablePlatform() {
+    const ua = navigator.userAgent || '';
+    const os = /Mac OS X|Macintosh/.test(ua)
+      ? 'macOS'
+      : /Windows/.test(ua)
+        ? 'Windows'
+        : /Linux/.test(ua)
+          ? 'Linux'
+          : 'Unknown OS';
+    const browserMatch = ua.match(/(Edg|Chrome|Firefox|Safari)\/(\d+)/);
+    const browser = browserMatch
+      ? `${browserMatch[1] === 'Edg' ? 'Edge' : browserMatch[1]} ${browserMatch[2]}`
+      : 'Browser';
+    return `${browser} • ${os}`;
+  }
+
+  _collectFeedbackDiagnosticsObj() {
+    const carIdx = this.getActiveCarIndexFn ? this.getActiveCarIndexFn() : 0;
+    const carName = (this.carRoster[carIdx] && this.carRoster[carIdx].name) || 'Unknown';
+    const pos = this.vehicle && this.vehicle.rootGroup ? this.vehicle.rootGroup.position : null;
+    const coords = pos ? `(${Math.round(pos.x)}, ${pos.y.toFixed(1)}, ${Math.round(pos.z)})` : 'N/A';
+    const fps = window.__fps !== undefined ? `${window.__fps} FPS` : 'N/A';
+    const onlineStatus = this.onlineSession ? this.onlineSession.status : 'offline';
+    const driver = (this.onlineSession && this.onlineSession.localName) || 'Driver';
+    const display = `${window.innerWidth}×${window.innerHeight} (${window.devicePixelRatio || 1}x)`;
+    const platform = this._getReadablePlatform();
+    return { driver, carName, coords, fps, onlineStatus, display, platform };
+  }
+
+  _collectFeedbackDiagnostics() {
+    const d = this._collectFeedbackDiagnosticsObj();
+    return [
+      `Driver: ${d.driver}`,
+      `Car: ${d.carName}`,
+      `Coords: ${d.coords}`,
+      `FPS: ${d.fps}`,
+      `Online: ${d.onlineStatus}`,
+      `Display: ${d.display}`,
+      `Platform: ${d.platform}`,
+    ].join('\n');
+  }
+
+  async _submitFeedback() {
+    const summary = this.feedbackSummaryEl ? this.feedbackSummaryEl.value.trim() : '';
+    const details = this.feedbackDetailsEl ? this.feedbackDetailsEl.value.trim() : '';
+    if (!summary && !details) {
+      if (this.feedbackStatusEl) this.feedbackStatusEl.textContent = 'Please enter a short summary or description.';
+      return;
+    }
+
+    const title = `[${this.feedbackType}] ${summary || details.slice(0, 60)}`;
+    const includeDiag = this.feedbackDiagEl ? this.feedbackDiagEl.checked : true;
+    const diagText = includeDiag ? this._collectFeedbackDiagnostics() : '';
+    const fullBody = [details || summary, diagText ? `\n--- Diagnostics ---\n${diagText}` : ''].join('\n');
+
+    if (FEEDBACK_WEBHOOK_URL) {
+      if (this.feedbackSubmitEl) this.feedbackSubmitEl.disabled = true;
+      if (this.feedbackStatusEl) this.feedbackStatusEl.textContent = 'Sending...';
+      try {
+        const isDiscord = FEEDBACK_WEBHOOK_URL.includes('discord.com/api/webhooks/');
+        let payload;
+        if (isDiscord) {
+          const isBug = this.feedbackType === 'Bug Report';
+          const d = this._collectFeedbackDiagnosticsObj();
+          const fields = includeDiag
+            ? [
+                { name: 'Driver', value: d.driver, inline: true },
+                { name: 'Vehicle', value: d.carName, inline: true },
+                { name: 'Performance', value: d.fps, inline: true },
+                { name: 'Online', value: d.onlineStatus, inline: true },
+                { name: 'Coords', value: `\`${d.coords}\``, inline: true },
+                { name: 'Display', value: d.display, inline: true },
+                { name: 'Platform', value: d.platform, inline: false },
+              ]
+            : [{ name: 'Driver', value: d.driver, inline: true }];
+          payload = {
+            username: 'Average Car Game',
+            embeds: [
+              {
+                author: { name: isBug ? 'BUG REPORT' : 'PLAYER FEEDBACK' },
+                title: summary || (details.length > 80 ? `${details.slice(0, 77)}...` : details),
+                description: details && summary ? details : details || summary,
+                color: isBug ? 0xef4444 : 0xe5a93c,
+                fields,
+                footer: { text: 'Average Car Game • In-Game Report' },
+                timestamp: new Date().toISOString(),
+              },
+            ],
+          };
+        } else {
+          payload = { type: this.feedbackType, title, message: details || summary, diagnostics: diagText, timestamp: new Date().toISOString() };
+        }
+        const res = await fetch(FEEDBACK_WEBHOOK_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (this.feedbackStatusEl) this.feedbackStatusEl.textContent = 'Sent! Thank you for the report.';
+        if (this.feedbackSummaryEl) this.feedbackSummaryEl.value = '';
+        if (this.feedbackDetailsEl) this.feedbackDetailsEl.value = '';
+        setTimeout(() => this.setFeedbackOpen(false), 1100);
+      } catch (err) {
+        if (this.feedbackStatusEl) this.feedbackStatusEl.textContent = 'Failed to send. Opening GitHub Issue fallback...';
+        const url = `${GITHUB_ISSUES_URL}?title=${encodeURIComponent(title)}&body=${encodeURIComponent(fullBody)}`;
+        window.open(url, '_blank', 'noopener,noreferrer');
+      } finally {
+        if (this.feedbackSubmitEl) this.feedbackSubmitEl.disabled = false;
+      }
+      return;
+    }
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(`${title}\n\n${fullBody}`).catch(() => {});
+    }
+    const url = `${GITHUB_ISSUES_URL}?title=${encodeURIComponent(title)}&body=${encodeURIComponent(fullBody)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+    if (this.feedbackStatusEl) this.feedbackStatusEl.textContent = 'Opened pre-filled GitHub Issue & copied to clipboard.';
+    if (this.feedbackSummaryEl) this.feedbackSummaryEl.value = '';
+    if (this.feedbackDetailsEl) this.feedbackDetailsEl.value = '';
+    setTimeout(() => this.setFeedbackOpen(false), 1100);
   }
 
   updateGrassButtons(activeDensity) {
@@ -640,6 +832,7 @@ export class PauseMenuController {
   }
 
   syncGps() {
+    if (!this.isOpen) return;
     if (this.miniMapGpsGroupEl && this.worldMap && this.worldMap.gpsGroupEl) {
       this.miniMapGpsGroupEl.innerHTML = this.worldMap.gpsGroupEl.innerHTML;
     }
@@ -705,7 +898,14 @@ export class PauseMenuController {
       }
     }
 
-    // Sync GPS routes
+    // Sync GPS routes (refresh WorldMap SVG first if waypoint is active while map was closed)
+    if (this.worldMap && this.worldMap.gpsNav && this.worldMap.gpsNav.activeWaypoint) {
+      this.worldMap.onGpsRouteUpdated(
+        this.worldMap.gpsNav.activeWaypoint,
+        this.worldMap.gpsNav.activePath,
+        this.worldMap.gpsNav.remainingDistance
+      );
+    }
     if (this.miniMapGpsGroupEl && this.worldMap && this.worldMap.gpsGroupEl) {
       this.miniMapGpsGroupEl.innerHTML = this.worldMap.gpsGroupEl.innerHTML;
     }
