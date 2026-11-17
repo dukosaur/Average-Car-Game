@@ -1,46 +1,15 @@
-import { Peer } from 'peerjs';
+// Paste your deployed Render WebSocket URL here (e.g. 'wss://average-car-game-relay.onrender.com')
+const PROD_RELAY_URL = '';
+const LOCAL_RELAY_URL = 'ws://localhost:8080';
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-const PEER_PREFIX = 'thebestcargame-v1-';
-const JOIN_TIMEOUT_MS = 15000;
+const JOIN_TIMEOUT_MS = 35000; // Allow Render free tier cold-start wake-up
 
-// STUN + Port-443 TURN relay fallback so WebRTC works across symmetric NAT & restricted Wi-Fi
-const DEFAULT_ICE_SERVERS = [
-  { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:stun1.l.google.com:19302' },
-  { urls: 'stun:stun.cloudflare.com:3478' },
-  { urls: 'stun:stun.relay.metered.ca:80' },
-  {
-    urls: 'turn:standard.relay.metered.ca:80',
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
-  },
-  {
-    urls: 'turn:standard.relay.metered.ca:80?transport=tcp',
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
-  },
-  {
-    urls: 'turn:standard.relay.metered.ca:443',
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
-  },
-  {
-    urls: 'turns:standard.relay.metered.ca:443?transport=tcp',
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
-  },
-];
-
-function getPeerRtcConfig() {
-  const custom = typeof window !== 'undefined' && Array.isArray(window.__customIceServers)
-    ? window.__customIceServers
-    : null;
-  return {
-    iceServers: custom || DEFAULT_ICE_SERVERS,
-    iceTransportPolicy: 'all',
-    iceCandidatePoolSize: 4,
-  };
+function getRelayBaseUrl() {
+  if (typeof window !== 'undefined' && window.__relayUrl) return window.__relayUrl;
+  if (import.meta.env && import.meta.env.VITE_RELAY_URL) return import.meta.env.VITE_RELAY_URL;
+  if (PROD_RELAY_URL) return PROD_RELAY_URL;
+  return LOCAL_RELAY_URL;
 }
 
 const PKT_PLAYER_SINGLE = 1;
@@ -271,7 +240,7 @@ function decodeBumpPacket(dv) {
 }
 
 /**
- * Manages multiplayer sessions + low-latency WebRTC DataChannel state/traffic sync.
+ * Manages multiplayer sessions + low-latency WebSocket (wss://) relay state/traffic sync.
  */
 export class OnlineSessionManager {
   constructor(onChange = null) {
@@ -280,13 +249,10 @@ export class OnlineSessionManager {
     this.localName = 'Driver';
     this.localNetId = 1;
     this.nextNetId = 2;
-    this.peer = null;
-
-    this.ctrlConnections = new Map(); // host -> Map<ctrlPeerKey, DataConnection>
-    this.fastConnections = new Map(); // host -> Map<peerId, DataConnection>
-    this.hostCtrlConn = null;
-    this.hostFastConn = null;
+    this.ws = null;
+    this.connectedGuestIds = new Set();
     this.joinTimeout = null;
+    this.wakeTimer = null;
 
     this.sessionCode = null;
     this.isHost = false;
@@ -341,31 +307,26 @@ export class OnlineSessionManager {
       clearTimeout(this.joinTimeout);
       this.joinTimeout = null;
     }
-    this.ctrlConnections.forEach((conn) => {
-      try { conn.close(); } catch (_) {}
-    });
-    this.ctrlConnections.clear();
-    this.fastConnections.forEach((conn) => {
-      try { conn.close(); } catch (_) {}
-    });
-    this.fastConnections.clear();
-    if (this.hostCtrlConn) {
-      try { this.hostCtrlConn.close(); } catch (_) {}
-      this.hostCtrlConn = null;
+    if (this.wakeTimer) {
+      clearTimeout(this.wakeTimer);
+      this.wakeTimer = null;
     }
-    if (this.hostFastConn) {
-      try { this.hostFastConn.close(); } catch (_) {}
-      this.hostFastConn = null;
-    }
-    if (this.peer) {
-      try { this.peer.destroy(); } catch (_) {}
-      this.peer = null;
+    this.connectedGuestIds.clear();
+    if (this.ws) {
+      try { this.ws.close(); } catch (_) {}
+      this.ws = null;
     }
     this.latestPlayerStates.clear();
   }
 
+  _sendJson(obj) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(obj));
+    }
+  }
+
   _broadcastPlayers() {
-    const payload = {
+    this._sendJson({
       type: 'players',
       players: this.players.map((p) => ({
         id: p.id,
@@ -376,11 +337,6 @@ export class OnlineSessionManager {
         carThumb: p.carThumb,
         isHost: p.isHost,
       })),
-    };
-    this.ctrlConnections.forEach((conn) => {
-      if (conn.open) {
-        conn.send(payload);
-      }
     });
   }
 
@@ -414,12 +370,8 @@ export class OnlineSessionManager {
         if (typeof this.onBumpImpulseFn === 'function') {
           this.onBumpImpulseFn(bump);
         }
-      } else if (this.isHost) {
-        const targetPlayer = this.players.find((p) => p.netId === bump.targetNetId);
-        const targetConn = targetPlayer && this.fastConnections.get(targetPlayer.peerId);
-        if (targetConn && targetConn.open) {
-          targetConn.send(buf);
-        }
+      } else if (this.isHost && this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this.ws.send(buf);
       }
     }
   }
@@ -437,7 +389,7 @@ export class OnlineSessionManager {
       {
         id: this.localId,
         netId: 1,
-        peerId: null,
+        guestId: null,
         carIdx,
         name: this.localName,
         carName: car?.name || 'Unknown Car',
@@ -447,116 +399,123 @@ export class OnlineSessionManager {
     ];
     this._emitChange();
 
-    const peer = new Peer(`${PEER_PREFIX}${rawCode}`, {
-      config: getPeerRtcConfig(),
-    });
-    this.peer = peer;
+    const wsUrl = `${getRelayBaseUrl()}?role=host&code=${rawCode}`;
+    const ws = new WebSocket(wsUrl);
+    ws.binaryType = 'arraybuffer';
+    this.ws = ws;
 
-    peer.on('open', () => {
-      if (this.peer !== peer) return;
-      this.status = 'active';
-      this._emitChange();
-    });
-
-    peer.on('connection', (conn) => {
-      if (this.peer !== peer) return;
-      const kind = conn?.metadata?.kind || 'ctrl';
-
-      if (kind === 'fast') {
-        conn.on('open', () => {
-          this.fastConnections.set(conn.peer, conn);
-        });
-        conn.on('data', (data) => this._handleFastBinary(data));
-        const dropFast = () => {
-          if (this.fastConnections.get(conn.peer) === conn) {
-            this.fastConnections.delete(conn.peer);
-          }
-        };
-        conn.on('close', dropFast);
-        conn.on('error', dropFast);
+    ws.addEventListener('message', (ev) => {
+      if (this.ws !== ws) return;
+      if (ev.data instanceof ArrayBuffer) {
+        this._handleFastBinary(ev.data);
         return;
       }
+      let msg;
+      try {
+        msg = JSON.parse(ev.data);
+      } catch {
+        return;
+      }
+      if (!msg || typeof msg !== 'object') return;
 
-      conn.on('data', (msg) => {
-        if (!msg || typeof msg !== 'object') return;
-        if (msg.type === 'hello' && msg.player) {
-          this.ctrlConnections.set(conn.connectionId, conn);
-          let target = this.players.find((p) => p.id === msg.player.id);
-          if (!target) {
-            const assignedNetId = this.nextNetId++;
-            target = {
-              id: msg.player.id,
-              netId: assignedNetId,
-              peerId: conn.peer,
-              connId: conn.connectionId,
-              carIdx: msg.player.carIdx ?? 0,
-              name: msg.player.name || 'Guest',
-              carName: msg.player.carName || 'Unknown Car',
-              carThumb: msg.player.carThumb || '',
-              isHost: false,
-            };
-            this.players.push(target);
-          } else {
-            target.peerId = conn.peer;
-            target.connId = conn.connectionId;
-            target.carIdx = msg.player.carIdx ?? target.carIdx;
-            target.carName = msg.player.carName || target.carName;
-            target.carThumb = msg.player.carThumb || target.carThumb;
-          }
-
-          const initSnapshot =
-            typeof this.getInitialWorldStateFn === 'function' ? this.getInitialWorldStateFn() : {};
-          conn.send({
-            type: 'world-init',
-            assignedNetId: target.netId,
-            players: this.players.map((p) => ({
-              id: p.id,
-              netId: p.netId,
-              carIdx: p.carIdx,
-              name: p.name,
-              carName: p.carName,
-              carThumb: p.carThumb,
-              isHost: p.isHost,
-            })),
-            hostState: initSnapshot.hostState || null,
-            trafficSnapshot: initSnapshot.trafficSnapshot || null,
-          });
-
-          this._broadcastPlayers();
-          this._emitChange();
-        } else if (msg.type === 'car-update') {
-          const target = this.players.find((p) => p.id === msg.id || p.connId === conn.connectionId);
-          if (target) {
-            target.carIdx = msg.carIdx ?? target.carIdx;
-            target.carName = msg.carName || target.carName;
-            target.carThumb = msg.carThumb || target.carThumb;
-            this._broadcastPlayers();
-            this._emitChange();
-          }
-        }
-      });
-
-      const handleDisconnect = () => {
-        this.ctrlConnections.delete(conn.connectionId);
-        const removed = this.players.filter((p) => p.connId === conn.connectionId);
+      if (msg.type === 'room-created') {
+        this.status = 'active';
+        this.errorMessage = '';
+        this._emitChange();
+      } else if (msg.type === 'guest-joined' && msg.guestId) {
+        this.connectedGuestIds.add(msg.guestId);
+      } else if (msg.type === 'guest-left' && msg.guestId) {
+        this.connectedGuestIds.delete(msg.guestId);
+        const removed = this.players.filter((p) => p.guestId === msg.guestId);
         if (removed.length > 0) {
           for (const r of removed) {
             this.latestPlayerStates.delete(r.netId);
           }
-          this.players = this.players.filter((p) => p.connId !== conn.connectionId);
+          this.players = this.players.filter((p) => p.guestId !== msg.guestId);
           this._broadcastPlayers();
           this._emitChange();
         }
-      };
+      } else if (msg.type === 'hello' && msg.player && msg.fromGuestId) {
+        const guestId = msg.fromGuestId;
+        this.connectedGuestIds.add(guestId);
+        let target = this.players.find((p) => p.id === msg.player.id || p.guestId === guestId);
+        if (!target) {
+          const netId = this.nextNetId++;
+          target = {
+            id: msg.player.id || guestId,
+            netId,
+            guestId,
+            carIdx: msg.player.carIdx ?? 0,
+            name: msg.player.name || 'Guest',
+            carName: msg.player.carName || 'Unknown Car',
+            carThumb: msg.player.carThumb || '',
+            isHost: false,
+          };
+          this.players.push(target);
+        } else {
+          target.guestId = guestId;
+          target.carIdx = msg.player.carIdx ?? target.carIdx;
+          target.carName = msg.player.carName || target.carName;
+          target.carThumb = msg.player.carThumb || target.carThumb;
+        }
 
-      conn.on('close', handleDisconnect);
-      conn.on('error', handleDisconnect);
+        const initSnapshot =
+          typeof this.getInitialWorldStateFn === 'function' ? this.getInitialWorldStateFn() : {};
+        this._sendJson({
+          type: 'world-init',
+          targetGuestId: guestId,
+          assignedNetId: target.netId,
+          players: this.players.map((p) => ({
+            id: p.id,
+            netId: p.netId,
+            carIdx: p.carIdx,
+            name: p.name,
+            carName: p.carName,
+            carThumb: p.carThumb,
+            isHost: p.isHost,
+          })),
+          hostState: initSnapshot.hostState || null,
+          trafficSnapshot: initSnapshot.trafficSnapshot || null,
+        });
+
+        this._broadcastPlayers();
+        this._emitChange();
+      } else if (msg.type === 'car-update') {
+        const target = this.players.find((p) => p.id === msg.id || (msg.fromGuestId && p.guestId === msg.fromGuestId));
+        if (target) {
+          target.carIdx = msg.carIdx ?? target.carIdx;
+          target.carName = msg.carName || target.carName;
+          target.carThumb = msg.carThumb || target.carThumb;
+          this._broadcastPlayers();
+          this._emitChange();
+        }
+      } else if (msg.type === 'relay-error') {
+        this._cleanupNetwork();
+        this.status = 'idle';
+        this.sessionCode = null;
+        this.players = [];
+        this.errorMessage = msg.reason || 'RELAY ERROR';
+        this._emitChange();
+      }
     });
 
-    peer.on('error', (err) => {
-      if (this.peer !== peer) return;
-      console.warn('[OnlineSession] Host peer error:', err);
-      this.errorMessage = 'CONNECTION ERROR';
+    ws.addEventListener('close', () => {
+      if (this.ws !== ws) return;
+      const wasActive = this.status === 'active' || this.status === 'creating';
+      this._cleanupNetwork();
+      this.status = 'idle';
+      this.sessionCode = null;
+      this.players = [];
+      if (wasActive && !this.errorMessage) {
+        this.errorMessage = 'RELAY DISCONNECTED';
+      }
+      if (typeof this.onSessionEndedFn === 'function') this.onSessionEndedFn();
+      this._emitChange();
+    });
+
+    ws.addEventListener('error', () => {
+      if (this.ws !== ws) return;
+      this.errorMessage = 'RELAY CONNECTION ERROR';
       this._emitChange();
     });
 
@@ -576,16 +535,22 @@ export class OnlineSessionManager {
     this.status = 'joining';
     this.errorMessage = '';
     this.sessionCode = formatSessionCode(clean);
-    this._emitSyncStage('CONNECTING TO HOST...', 20);
+    this._emitSyncStage('CONNECTING TO RELAY...', 20);
     this._emitChange();
 
-    const peer = new Peer(undefined, {
-      config: getPeerRtcConfig(),
-    });
-    this.peer = peer;
+    const wsUrl = `${getRelayBaseUrl()}?role=guest&code=${clean}`;
+    const ws = new WebSocket(wsUrl);
+    ws.binaryType = 'arraybuffer';
+    this.ws = ws;
+
+    this.wakeTimer = setTimeout(() => {
+      if (this.ws === ws && this.status === 'joining') {
+        this._emitSyncStage('WAKING RELAY SERVER...', 30);
+      }
+    }, 3000);
 
     this.joinTimeout = setTimeout(() => {
-      if (this.peer !== peer || this.status !== 'joining') return;
+      if (this.ws !== ws || this.status !== 'joining') return;
       this._cleanupNetwork();
       this.status = 'idle';
       this.sessionCode = null;
@@ -595,24 +560,23 @@ export class OnlineSessionManager {
       this._emitChange();
     }, JOIN_TIMEOUT_MS);
 
-    peer.on('open', () => {
-      if (this.peer !== peer) return;
-      const hostPeerId = `${PEER_PREFIX}${clean}`;
-      const ctrlConn = peer.connect(hostPeerId, { metadata: { kind: 'ctrl' }, reliable: true });
-      const fastConn = peer.connect(hostPeerId, {
-        metadata: { kind: 'fast' },
-        reliable: false,
-        serialization: 'binary',
-      });
-      this.hostCtrlConn = ctrlConn;
-      this.hostFastConn = fastConn;
+    ws.addEventListener('message', async (ev) => {
+      if (this.ws !== ws) return;
+      if (ev.data instanceof ArrayBuffer) {
+        this._handleFastBinary(ev.data);
+        return;
+      }
+      let msg;
+      try {
+        msg = JSON.parse(ev.data);
+      } catch {
+        return;
+      }
+      if (!msg || typeof msg !== 'object') return;
 
-      fastConn.on('data', (data) => this._handleFastBinary(data));
-
-      ctrlConn.on('open', () => {
-        if (this.peer !== peer) return;
+      if (msg.type === 'room-joined') {
         this._emitSyncStage('REQUESTING WORLD STATE...', 45);
-        ctrlConn.send({
+        this._sendJson({
           type: 'hello',
           player: {
             id: this.localId,
@@ -622,62 +586,68 @@ export class OnlineSessionManager {
             carThumb: car?.thumb || '',
           },
         });
-      });
-
-      ctrlConn.on('data', async (msg) => {
-        if (this.peer !== peer || !msg || typeof msg !== 'object') return;
-        if (msg.type === 'world-init') {
-          if (this.joinTimeout) {
-            clearTimeout(this.joinTimeout);
-            this.joinTimeout = null;
-          }
-          this.localNetId = msg.assignedNetId || 2;
-          this.players = Array.isArray(msg.players) ? msg.players : [];
-          this.status = 'active';
-          this.errorMessage = '';
-
-          if (typeof this.onWorldInitFn === 'function') {
-            await this.onWorldInitFn(msg);
-          }
-          this._emitChange();
-        } else if (msg.type === 'players' && Array.isArray(msg.players)) {
-          this.players = msg.players;
-          this._emitChange();
+      } else if (msg.type === 'world-init') {
+        if (this.joinTimeout) {
+          clearTimeout(this.joinTimeout);
+          this.joinTimeout = null;
         }
-      });
+        if (this.wakeTimer) {
+          clearTimeout(this.wakeTimer);
+          this.wakeTimer = null;
+        }
+        this.localNetId = msg.assignedNetId || 2;
+        this.players = Array.isArray(msg.players) ? msg.players : [];
+        this.status = 'active';
+        this.errorMessage = '';
 
-      ctrlConn.on('close', () => {
-        if (this.peer !== peer) return;
-        const wasActive = this.status === 'active';
+        if (typeof this.onWorldInitFn === 'function') {
+          await this.onWorldInitFn(msg);
+        }
+        this._emitChange();
+      } else if (msg.type === 'players' && Array.isArray(msg.players)) {
+        this.players = msg.players;
+        this._emitChange();
+      } else if (msg.type === 'host-left') {
         this._cleanupNetwork();
         this.status = 'idle';
         this.sessionCode = null;
         this.players = [];
-        this.errorMessage = wasActive ? 'HOST ENDED THE SESSION' : 'UNABLE TO JOIN SESSION';
+        this.errorMessage = 'HOST ENDED THE SESSION';
         if (typeof this.onSessionEndedFn === 'function') this.onSessionEndedFn();
         this._emitChange();
-      });
-
-      ctrlConn.on('error', () => {
-        if (this.peer !== peer) return;
+      } else if (msg.type === 'relay-error') {
         this._cleanupNetwork();
         this.status = 'idle';
         this.sessionCode = null;
         this.players = [];
-        this.errorMessage = 'CONNECTION FAILED';
+        this.errorMessage = msg.reason || 'UNABLE TO JOIN SESSION';
         if (typeof this.onSessionEndedFn === 'function') this.onSessionEndedFn();
         this._emitChange();
-      });
+      }
     });
 
-    peer.on('error', (err) => {
-      if (this.peer !== peer) return;
-      console.warn('[OnlineSession] Join peer error:', err);
+    ws.addEventListener('close', () => {
+      if (this.ws !== ws) return;
+      const wasActive = this.status === 'active';
+      const hadError = Boolean(this.errorMessage);
       this._cleanupNetwork();
       this.status = 'idle';
       this.sessionCode = null;
       this.players = [];
-      this.errorMessage = err?.type === 'peer-unavailable' ? 'SESSION NOT FOUND' : 'CONNECTION ERROR';
+      if (!hadError) {
+        this.errorMessage = wasActive ? 'HOST ENDED THE SESSION' : 'UNABLE TO JOIN SESSION';
+      }
+      if (typeof this.onSessionEndedFn === 'function') this.onSessionEndedFn();
+      this._emitChange();
+    });
+
+    ws.addEventListener('error', () => {
+      if (this.ws !== ws) return;
+      this._cleanupNetwork();
+      this.status = 'idle';
+      this.sessionCode = null;
+      this.players = [];
+      this.errorMessage = 'CONNECTION ERROR';
       if (typeof this.onSessionEndedFn === 'function') this.onSessionEndedFn();
       this._emitChange();
     });
@@ -711,8 +681,8 @@ export class OnlineSessionManager {
         localPlayer.carThumb = car.thumb || '';
         this._broadcastPlayers();
       }
-    } else if (this.hostCtrlConn && this.hostCtrlConn.open) {
-      this.hostCtrlConn.send({
+    } else {
+      this._sendJson({
         type: 'car-update',
         id: this.localId,
         carIdx,
@@ -729,48 +699,41 @@ export class OnlineSessionManager {
     if (this.isHost) {
       const selfEntry = { netId: this.localNetId, carIdx, isAway, recvAtHost: now, ...localState };
       this.latestPlayerStates.set(this.localNetId, selfEntry);
-      if (this.fastConnections.size === 0) return;
+      if (this.connectedGuestIds.size === 0 || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+      if (this.ws.bufferedAmount >= 65536) return;
 
       const list = Array.from(this.latestPlayerStates.values());
       const buf = encodePlayersBatchPacket(now, list);
-      this.fastConnections.forEach((conn) => {
-        if (conn.open && (conn.dataChannel?.bufferedAmount || 0) < 65536) {
-          conn.send(buf);
-        }
-      });
-    } else if (this.hostFastConn && this.hostFastConn.open) {
-      if ((this.hostFastConn.dataChannel?.bufferedAmount || 0) < 32768) {
-        encodePlayerStatePacketInto(this._singleDv, this.localNetId, carIdx, now, localState, isAway);
-        this.hostFastConn.send(this._singleBuf);
-      }
+      this.ws.send(buf);
+    } else if (this.ws && this.ws.readyState === WebSocket.OPEN && this.ws.bufferedAmount < 32768) {
+      encodePlayerStatePacketInto(this._singleDv, this.localNetId, carIdx, now, localState, isAway);
+      this.ws.send(this._singleBuf);
     }
   }
 
   hasConnectedGuests() {
-    return this.isHost && this.fastConnections.size > 0;
+    return this.isHost && this.connectedGuestIds.size > 0;
   }
 
   sendTrafficSnapshot(snapshot) {
-    if (this.status !== 'active' || !this.isHost || this.fastConnections.size === 0 || !snapshot) return;
+    if (
+      this.status !== 'active' ||
+      !this.isHost ||
+      this.connectedGuestIds.size === 0 ||
+      !snapshot ||
+      !this.ws ||
+      this.ws.readyState !== WebSocket.OPEN ||
+      this.ws.bufferedAmount >= 131072
+    ) {
+      return;
+    }
     const buf = encodeTrafficBatchPacket(snapshot);
-    this.fastConnections.forEach((conn) => {
-      if (conn.open && (conn.dataChannel?.bufferedAmount || 0) < 131072) {
-        conn.send(buf);
-      }
-    });
+    this.ws.send(buf);
   }
 
   sendBumpImpulse(targetNetId, dvx, dvz, torqueY = 0) {
-    if (this.status !== 'active') return;
+    if (this.status !== 'active' || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
     const buf = encodeBumpPacket(targetNetId, dvx, dvz, torqueY);
-    if (this.isHost) {
-      const targetPlayer = this.players.find((p) => p.netId === targetNetId);
-      const targetConn = targetPlayer && this.fastConnections.get(targetPlayer.peerId);
-      if (targetConn && targetConn.open) {
-        targetConn.send(buf);
-      }
-    } else if (this.hostFastConn && this.hostFastConn.open) {
-      this.hostFastConn.send(buf);
-    }
+    this.ws.send(buf);
   }
 }

@@ -3,7 +3,8 @@
     "public": "dist",
     "ignore": [
       "firebase.json",
-      "**/.*",
+      "**/.git/**",
+      "**/.DS_Store",
       "**/node_modules/**",
       "assets/*.glb",
       "assets/satellite_world_map.png",
