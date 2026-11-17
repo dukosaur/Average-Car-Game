@@ -1,5 +1,5 @@
 // Paste your deployed Render WebSocket URL here (e.g. 'wss://average-car-game-relay.onrender.com')
-const PROD_RELAY_URL = '';
+const PROD_RELAY_URL = 'wss://average-car-game.onrender.com';
 const LOCAL_RELAY_URL = 'ws://localhost:8080';
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
