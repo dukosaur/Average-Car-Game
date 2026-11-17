@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 
-const REMOTE_PLAYER_COLLISION_GROUPS = (0x0004 << 16) | 0xFFFF;
+// Remote player proxies collide ONLY with the local player (0x0008), avoiding terrain/prop solver overhead
+const REMOTE_PLAYER_COLLISION_GROUPS = (0x0004 << 16) | 0x0008;
 const DEFAULT_CHASSIS_DIMS = new THREE.Vector3(1.86, 0.96, 4.36);
 const REMOTE_PLAYER_MASS = 1320;
 
@@ -76,7 +77,9 @@ export class MultiplayerWorldSync {
           id: p.id,
           name: p.name || 'Driver',
           carIdx,
+          loadedCarIdx: null,
           loadingCarIdx: null,
+          lastLoadAttemptMs: 0,
           disposed: false,
           rootGroup: new THREE.Group(),
           wheels: [],
@@ -218,10 +221,28 @@ export class MultiplayerWorldSync {
     proxy.cabinCollider = this.world.createCollider(upperCabin, proxy.rigidBody);
   }
 
+  _attachFallbackBody(proxy) {
+    if (!proxy || !proxy.rootGroup || proxy.rootGroup.children.length > 0) return;
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0xe5a93c,
+      roughness: 0.45,
+      metalness: 0.2,
+      transparent: true,
+      opacity: 0.55,
+    });
+    const hull = new THREE.Mesh(new THREE.BoxGeometry(1.86, 0.72, 4.25), mat);
+    hull.position.set(0, 0.45, 0);
+    hull.name = 'Proxy_Fallback_Mesh';
+    proxy.rootGroup.add(hull);
+    proxy.clonedMaterials = [mat];
+  }
+
   async _loadProxyCarModel(proxy, carIdx) {
     const carItem = this._getCarItem(carIdx);
     if (!carItem) return;
     proxy.loadingCarIdx = carIdx;
+    proxy.lastLoadAttemptMs = performance.now();
+    this._attachFallbackBody(proxy);
 
     try {
       const { parts, clonedMaterials, bounds } = await this.createAICarParts(
@@ -239,7 +260,9 @@ export class MultiplayerWorldSync {
       }
 
       while (proxy.rootGroup.children.length > 0) {
-        proxy.rootGroup.remove(proxy.rootGroup.children[0]);
+        const ch = proxy.rootGroup.children[0];
+        if (ch.name === 'Proxy_Fallback_Mesh' && ch.geometry) ch.geometry.dispose();
+        proxy.rootGroup.remove(ch);
       }
       for (const oldMat of proxy.clonedMaterials) {
         oldMat.dispose();
@@ -290,6 +313,8 @@ export class MultiplayerWorldSync {
         };
       });
 
+      proxy.loadedCarIdx = carIdx;
+      proxy.rootGroup.visible = true;
       this._applyVisuals(proxy);
     } catch (err) {
       console.warn('Failed to load remote player car model:', err);
@@ -694,6 +719,13 @@ export class MultiplayerWorldSync {
     const brakeLerp = 1 - Math.exp(-20.0 * dt);
     const localPos = localVehicle && localVehicle.rigidBody ? localVehicle.rigidBody.translation() : null;
     for (const proxy of this.remotePlayers.values()) {
+      if (
+        proxy.loadedCarIdx !== proxy.carIdx &&
+        proxy.loadingCarIdx === null &&
+        nowMs - proxy.lastLoadAttemptMs > 2000
+      ) {
+        this._loadProxyCarModel(proxy, proxy.carIdx);
+      }
       const shouldGhost = proxy.isAway || (proxy.lastRecvMs !== null && nowMs - proxy.lastRecvMs > 450);
       this._setProxyGhosted(proxy, shouldGhost);
       this._evaluatePose(proxy, nowMs, localPos);

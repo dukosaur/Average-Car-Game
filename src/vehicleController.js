@@ -163,45 +163,59 @@ export class RaycastVehicleController {
       const upperHy = Math.max(0.18, s.y * 0.27);
       const bevel = 0.08;
 
-      lowerHull = RAPIER.ColliderDesc.roundCuboid(
-        Math.max(0.2, s.x * 0.49 - bevel),
-        Math.max(0.05, lowerHy - bevel),
-        Math.max(0.4, s.z * 0.49 - bevel),
-        bevel
-      )
-        .setTranslation(c.x, clearedBottomY + lowerHy, c.z)
-        .setMass(params.mass * 0.85)
-        .setFriction(0.06)
-        .setRestitution(0.0);
+      if (params.isTraffic) {
+        lowerHull = RAPIER.ColliderDesc.cuboid(s.x * 0.48, lowerHy, s.z * 0.48)
+          .setTranslation(c.x, clearedBottomY + lowerHy, c.z)
+          .setMass(params.mass * 0.85)
+          .setFriction(0.08)
+          .setRestitution(0.0);
+      } else {
+        lowerHull = RAPIER.ColliderDesc.roundCuboid(
+          Math.max(0.2, s.x * 0.49 - bevel),
+          Math.max(0.05, lowerHy - bevel),
+          Math.max(0.4, s.z * 0.49 - bevel),
+          bevel
+        )
+          .setTranslation(c.x, clearedBottomY + lowerHy, c.z)
+          .setMass(params.mass * 0.85)
+          .setFriction(0.06)
+          .setRestitution(0.0);
+      }
 
-      upperCabin = RAPIER.ColliderDesc.roundCuboid(
-        Math.max(0.2, s.x * 0.44 - 0.05),
-        Math.max(0.08, upperHy - 0.05),
-        Math.max(0.3, s.z * 0.36 - 0.05),
-        0.05
-      )
+      upperCabin = RAPIER.ColliderDesc.cuboid(s.x * 0.44, upperHy, s.z * 0.36)
         .setTranslation(c.x, clearedBottomY + lowerHy * 2.0 + upperHy, c.z - s.z * 0.02)
         .setMass(params.mass * 0.15)
         .setFriction(0.10)
         .setRestitution(0.0);
     } else {
       const bevel = 0.08;
-      lowerHull = RAPIER.ColliderDesc.roundCuboid(
-        Math.max(0.2, params.chassisDims.x * 0.49 - bevel),
-        0.10,
-        Math.max(0.4, params.chassisDims.z * 0.49 - bevel),
-        bevel
-      )
-        .setTranslation(0, 0.18, 0)
-        .setMass(params.mass * 0.85)
-        .setFriction(0.06)
-        .setRestitution(0.0);
+      if (params.isTraffic) {
+        lowerHull = RAPIER.ColliderDesc.cuboid(
+          params.chassisDims.x * 0.48,
+          0.16,
+          params.chassisDims.z * 0.48
+        )
+          .setTranslation(0, 0.14, 0)
+          .setMass(params.mass * 0.85)
+          .setFriction(0.08)
+          .setRestitution(0.0);
+      } else {
+        lowerHull = RAPIER.ColliderDesc.roundCuboid(
+          Math.max(0.2, params.chassisDims.x * 0.49 - bevel),
+          0.10,
+          Math.max(0.4, params.chassisDims.z * 0.49 - bevel),
+          bevel
+        )
+          .setTranslation(0, 0.18, 0)
+          .setMass(params.mass * 0.85)
+          .setFriction(0.06)
+          .setRestitution(0.0);
+      }
 
-      upperCabin = RAPIER.ColliderDesc.roundCuboid(
-        Math.max(0.2, params.chassisDims.x * 0.44 - 0.05),
+      upperCabin = RAPIER.ColliderDesc.cuboid(
+        params.chassisDims.x * 0.44,
         0.18,
-        Math.max(0.3, params.chassisDims.z * 0.36 - 0.05),
-        0.05
+        params.chassisDims.z * 0.36
       )
         .setTranslation(0, 0.52, -0.08)
         .setMass(params.mass * 0.15)
@@ -239,8 +253,10 @@ export class RaycastVehicleController {
       .setTranslation(0, spawnY, 0)
       .setLinearDamping(0.02)
       .setAngularDamping(1.15) // Natural yaw flow & smooth corner exit
-      .setCcdEnabled(true)
       .setCanSleep(false);
+    if (this.params.ccdEnabled) {
+      bodyDesc.setCcdEnabled(true);
+    }
 
     this.rigidBody = world.createRigidBody(bodyDesc);
 

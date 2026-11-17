@@ -66,6 +66,8 @@ const AI_VEHICLE_SPECS = [
 // Membership = 0x0004 (AI vehicle hull), Collides with everything (0xFFFF).
 // Wheel raycasts use filter 0x0001 (track/terrain only), so tires never ride on car roofs.
 const AI_CHASSIS_COLLISION_GROUPS = (0x0004 << 16) | 0xFFFF;
+// Remote traffic proxies on guests collide ONLY with the local player (0x0008), skipping trimesh/prop/cross-proxy solver cost.
+const REMOTE_TRAFFIC_COLLISION_GROUPS = (0x0004 << 16) | 0x0008;
 
 const LANE_SPEEDS = {
   highway: 15.8,   // ~57 km/h (calm everyday highway traffic)
@@ -975,6 +977,7 @@ export class TrafficSystem {
         rearLateralGrip: 2.75,
         yawAssistTorque: 3200,
         downforceCoeff: 0.35,
+        isTraffic: true,
         collisionGroups: AI_CHASSIS_COLLISION_GROUPS,
       });
 
@@ -1813,13 +1816,13 @@ export class TrafficSystem {
         .setMass(proxyMass * 0.85)
         .setFriction(0.12)
         .setRestitution(0.0)
-        .setCollisionGroups(AI_CHASSIS_COLLISION_GROUPS);
+        .setCollisionGroups(REMOTE_TRAFFIC_COLLISION_GROUPS);
       const upperCabin = this.RAPIER.ColliderDesc.cuboid(dims.x * 0.42, 0.20, dims.z * 0.25)
         .setTranslation(0, 0.44, -0.15)
         .setMass(proxyMass * 0.15)
         .setFriction(0.12)
         .setRestitution(0.0)
-        .setCollisionGroups(AI_CHASSIS_COLLISION_GROUPS);
+        .setCollisionGroups(REMOTE_TRAFFIC_COLLISION_GROUPS);
 
       proxy.chassisCollider = this.world.createCollider(lowerHull, rigidBody);
       proxy.cabinCollider = this.world.createCollider(upperCabin, rigidBody);

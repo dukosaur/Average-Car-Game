@@ -1731,6 +1731,7 @@ async function buildTestGround(scene, world, maxAnisotropy = 8, sun) {
 }
 
 const gltfCache = new Map();
+const gltfPromiseCache = new Map();
 const loader = new GLTFLoader();
 const brakeLightUniform = { value: 0.0 };
 
@@ -1742,7 +1743,10 @@ function loadRiggedCar(url) {
   if (gltfCache.has(url)) {
     return Promise.resolve(gltfCache.get(url));
   }
-  return new Promise((resolve, reject) => {
+  if (gltfPromiseCache.has(url)) {
+    return gltfPromiseCache.get(url);
+  }
+  const promise = new Promise((resolve, reject) => {
     loader.load(
       url,
       (gltf) => {
@@ -1808,6 +1812,7 @@ function loadRiggedCar(url) {
         for (const name of requiredNames) {
           const obj = gltf.scene.getObjectByName(name);
           if (!obj) {
+            gltfPromiseCache.delete(url);
             reject(new Error(`Missing required hierarchy object "${name}" in ${url}`));
             return;
           }
@@ -1823,12 +1828,18 @@ function loadRiggedCar(url) {
 
         const entry = { gltf, parts, bounds: { size, center } };
         gltfCache.set(url, entry);
+        gltfPromiseCache.delete(url);
         resolve(entry);
       },
       undefined,
-      (err) => reject(err)
+      (err) => {
+        gltfPromiseCache.delete(url);
+        reject(err);
+      }
     );
   });
+  gltfPromiseCache.set(url, promise);
+  return promise;
 }
 
 /**
@@ -2056,7 +2067,10 @@ async function init() {
   if (isTitleScreenOpen) setTitleLoadingProgress(75, 'PREPARING VEHICLES...');
   const { parts, bounds } = await loadRiggedCar(CAR_ROSTER[0].url);
 
-  const vehicle = new RaycastVehicleController(RAPIER, world, parts, { carBounds: bounds });
+  const vehicle = new RaycastVehicleController(RAPIER, world, parts, {
+    carBounds: bounds,
+    collisionGroups: (0x0008 << 16) | 0xFFFF,
+  });
   vehicle.setCarParts(parts, bounds);
   vehicle.applyVehicleStats(CAR_ROSTER[0].stats);
   scene.add(vehicle.rootGroup);
@@ -2099,6 +2113,9 @@ async function init() {
     const loaded = await loadRiggedCar(item.url);
     vehicle.setCarParts(loaded.parts, loaded.bounds);
     vehicle.applyVehicleStats(item.stats);
+    if (window.__pauseMenu && window.__pauseMenu.onlineSession) {
+      window.__pauseMenu.onlineSession.updateLocalCar(item, index);
+    }
 
     // Smooth focal shift / subtle camera turntable glide
     if (camera && vehicle && vehicle.rootGroup) {
