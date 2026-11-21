@@ -1,0 +1,1525 @@
+/* ==========================================================================
+   ATELIER MOTORSPORT — Smoked Ceramic Glass × Swiss Racing Telemetry UI
+   ==========================================================================
+   - Zero neon / cyberpunk glow
+   - Zero PokeBonk / cartoon pixel copying
+   - Zero audio (100% pure visual & tactile spring-physics juice)
+   - Preserves Forza Horizon layouts while elevating every surface, transition,
+     keycap, tab, card, and HUD instrument.
+   ========================================================================== */
+
+:root {
+  --am-ivory: #f6f3ec;
+  --am-ivory-soft: rgba(246, 243, 236, 0.72);
+  --am-ivory-muted: rgba(246, 243, 236, 0.44);
+  --am-slate: #98a0ae;
+  --am-red: #e23e2b;
+  --am-red-deep: #b82c1c;
+  --am-brass: #e6b85c;
+  --am-glass: rgba(15, 16, 21, 0.76);
+  --am-glass-strong: rgba(18, 20, 26, 0.88);
+  --am-glass-hover: rgba(26, 29, 37, 0.88);
+  --am-border: rgba(246, 243, 236, 0.13);
+  --am-border-hi: rgba(246, 243, 236, 0.28);
+  --am-grain: repeating-linear-gradient(
+    -45deg,
+    rgba(246, 243, 236, 0.016) 0px,
+    rgba(246, 243, 236, 0.016) 1px,
+    transparent 1px,
+    transparent 7px
+  );
+  --am-spring: cubic-bezier(0.22, 1.38, 0.36, 1);
+  --am-smooth: cubic-bezier(0.16, 1, 0.3, 1);
+  --am-font-display: 'Space Grotesk', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --am-font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --am-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+}
+
+html,
+body {
+  font-family: var(--am-font-ui);
+  color: var(--am-ivory);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ==========================================================================
+   KEYFRAMES — Tactile Spring Physics, Specular Glints & Instrument Juice
+   ========================================================================== */
+@keyframes amCardEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(18px) scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes amSlideDown {
+  0% {
+    opacity: 0;
+    transform: translateY(-14px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes amSlideUp {
+  0% {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes amGearPop {
+  0% {
+    transform: scale(1);
+  }
+  38% {
+    transform: scale(1.24) translateY(-1px);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes amPillPop {
+  0% {
+    transform: scale(0.92);
+  }
+  55% {
+    transform: scale(1.04);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes amBarSweep {
+  0% {
+    transform: scaleX(0);
+  }
+  100% {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes amRedlinePulse {
+  0%, 100% {
+    border-color: rgba(226, 62, 43, 0.55);
+    box-shadow: inset 0 0 0 1px rgba(226, 62, 43, 0.25);
+  }
+  50% {
+    border-color: rgba(226, 62, 43, 0.95);
+    box-shadow: inset 0 0 0 1px rgba(226, 62, 43, 0.55);
+  }
+}
+
+@keyframes amTitleReveal {
+  0% {
+    opacity: 0;
+    transform: translateY(22px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ==========================================================================
+   SHARED TACTILE KEYCAP & INLINE KBD SYSTEM
+   ========================================================================== */
+.hud-pause-key,
+.pause-key-badge,
+.pause-kbadge,
+.map-keycap,
+.hud-minimap-key,
+.inline-kbd,
+.pause-subview-back-btn kbd,
+.title-side-hint kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--am-font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  line-height: 1;
+  color: var(--am-ivory);
+  background: linear-gradient(180deg, rgba(246, 243, 236, 0.16) 0%, rgba(246, 243, 236, 0.07) 100%);
+  border: 1px solid rgba(246, 243, 236, 0.22);
+  border-radius: 5px;
+  padding: 4px 7px;
+  box-shadow:
+    0 2px 0 rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  transition: transform 0.12s var(--am-spring), box-shadow 0.12s ease, background 0.15s ease;
+}
+
+.inline-kbd {
+  font-size: 9px;
+  padding: 2px 5px;
+  margin-right: 4px;
+  vertical-align: 1px;
+}
+
+/* ==========================================================================
+   1. TITLE SCREEN — Swiss Motorsport Editorial × Smoked Ceramic Glass
+   ========================================================================== */
+.title-lockup {
+  animation: amTitleReveal 0.65s var(--am-smooth) both;
+}
+
+.title-accent-rule {
+  width: 52px !important;
+  height: 4px !important;
+  border-radius: 2px !important;
+  background: var(--am-red) !important;
+  box-shadow: none !important;
+}
+
+.title-word-top {
+  font-family: var(--am-font-mono) !important;
+  letter-spacing: 0.34em !important;
+  color: var(--am-ivory-soft) !important;
+}
+
+.title-word-main {
+  font-family: var(--am-font-display) !important;
+  letter-spacing: -0.025em !important;
+  color: var(--am-ivory) !important;
+  text-shadow: 0 12px 32px rgba(0, 0, 0, 0.52) !important;
+}
+
+.title-progress-track {
+  background: rgba(246, 243, 236, 0.14) !important;
+  border-radius: 2px !important;
+  height: 3px !important;
+}
+
+.title-progress-fill {
+  background: linear-gradient(90deg, var(--am-brass), var(--am-red)) !important;
+  border-radius: 2px !important;
+  box-shadow: none !important;
+}
+
+.title-loading-label {
+  font-family: var(--am-font-mono) !important;
+  color: var(--am-ivory-soft) !important;
+  letter-spacing: 0.16em !important;
+}
+
+.title-side-card {
+  position: relative;
+  overflow: hidden;
+  background: var(--am-grain), var(--am-glass-strong) !important;
+  border: 1px solid var(--am-border) !important;
+  border-radius: 16px !important;
+  padding: 26px 24px 22px !important;
+  gap: 16px !important;
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.58),
+    inset 0 1px 0 rgba(255, 250, 240, 0.16),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.35) !important;
+  animation: amCardEnter 0.55s var(--am-spring) 0.12s both;
+  transition: border-color 0.25s ease, transform 0.3s var(--am-spring);
+}
+
+/* Racing vermilion top hairline on title card */
+.title-side-card::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 24px;
+  right: 24px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--am-red) 0%, var(--am-red) 38%, rgba(246, 243, 236, 0.18) 38%, transparent 100%);
+  pointer-events: none;
+}
+
+/* Cursor-reactive warm ceramic glass specular spotlight (resets legacy index.html skew/slide!) */
+.title-side-card::before,
+.pause-glass-tile::before,
+.pause-car-card::before,
+.pause-setting-section::before {
+  content: '';
+  position: absolute;
+  inset: 0 !important;
+  left: 0 !important;
+  top: 0 !important;
+  width: auto !important;
+  height: auto !important;
+  transform: none !important;
+  border-radius: inherit;
+  background: radial-gradient(
+    280px circle at var(--mx, 50%) var(--my, 50%),
+    rgba(255, 250, 240, 0.105),
+    transparent 65%
+  ) !important;
+  opacity: 0;
+  transition: opacity 0.26s ease !important;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.title-side-card:hover::before,
+.pause-glass-tile:hover::before,
+.pause-car-card:hover::before,
+.pause-setting-section:hover::before {
+  left: 0 !important;
+  opacity: 1;
+}
+
+/* Keep World Map Hero Tile preview crystal-clear (no white spotlight haze over map) */
+.pause-tile-map::before {
+  display: none !important;
+}
+
+.title-welcome-banner {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 0 !important;
+  background: none !important;
+  border: none !important;
+  margin-bottom: -2px !important;
+}
+
+.title-welcome-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--am-red);
+  transform: rotate(45deg);
+  flex-shrink: 0;
+}
+
+.title-welcome-text {
+  font-family: var(--am-font-mono) !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.18em !important;
+  color: var(--am-ivory-soft) !important;
+}
+
+.title-name-input {
+  font-family: var(--am-font-display) !important;
+  font-size: 16px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.08em !important;
+  background: rgba(9, 10, 14, 0.72) !important;
+  border: 1px solid rgba(246, 243, 236, 0.16) !important;
+  border-radius: 10px !important;
+  color: var(--am-ivory) !important;
+  padding: 13px 52px 13px 15px !important;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.22s var(--am-spring) !important;
+}
+
+.title-name-input:focus {
+  border-color: var(--am-ivory) !important;
+  background: rgba(9, 10, 14, 0.9) !important;
+  box-shadow: 0 0 0 3px rgba(246, 243, 236, 0.1) !important;
+  transform: translateY(-1px);
+}
+
+.title-name-count {
+  font-family: var(--am-font-mono) !important;
+  color: var(--am-ivory-muted) !important;
+}
+
+/* Primary PLAY CTA — Ivory Porcelain with Vermilion Motorsport Edge & Tactile Sweep */
+.title-start-btn {
+  position: relative;
+  overflow: hidden;
+  font-family: var(--am-font-display) !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.14em !important;
+  color: #111318 !important;
+  background: var(--am-ivory) !important;
+  border: none !important;
+  border-left: 5px solid var(--am-red) !important;
+  border-radius: 10px !important;
+  padding: 14px 20px !important;
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9) !important;
+  transition:
+    transform 0.24s var(--am-spring),
+    background-color 0.2s ease,
+    box-shadow 0.24s ease,
+    border-left-width 0.2s var(--am-spring) !important;
+}
+
+.title-start-btn::after {
+  content: '';
+  position: absolute;
+  inset: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  background: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.65) 50%, transparent 70%);
+  transform: translateX(-130%);
+  transition: transform 0.55s var(--am-smooth) !important;
+  pointer-events: none;
+}
+
+.title-start-btn:hover:not(:disabled) {
+  transform: translateY(-3px) scale(1.015) !important;
+  border-left-width: 8px !important;
+  background: #ffffff !important;
+  box-shadow:
+    0 16px 32px rgba(0, 0, 0, 0.44),
+    inset 0 1px 0 #ffffff !important;
+}
+
+.title-start-btn:hover:not(:disabled)::after {
+  left: 0 !important;
+  transform: translateX(130%);
+}
+
+.title-start-btn:active:not(:disabled) {
+  transform: translateY(0) scale(0.968) !important;
+  transition-duration: 0.08s !important;
+}
+
+.title-start-icon {
+  fill: var(--am-red) !important;
+  transition: transform 0.22s var(--am-spring);
+}
+
+.title-start-btn:hover:not(:disabled) .title-start-icon {
+  transform: translateX(3px);
+}
+
+.title-side-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  font-family: var(--am-font-mono) !important;
+  font-size: 10px !important;
+  letter-spacing: 0.14em !important;
+  color: var(--am-ivory-muted) !important;
+}
+
+/* ==========================================================================
+   2. DRIVING HUD — Crisp Ceramic Instruments & Kinetic Feedback
+   ========================================================================== */
+
+/* Top-Left Pause Pill */
+.hud-pause-prompt {
+  background: var(--am-grain), var(--am-glass) !important;
+  backdrop-filter: blur(14px) saturate(1.15);
+  -webkit-backdrop-filter: blur(14px) saturate(1.15);
+  border: 1px solid var(--am-border) !important;
+  border-radius: 10px !important;
+  padding: 7px 13px 7px 9px !important;
+  box-shadow:
+    0 10px 26px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 250, 240, 0.15) !important;
+  opacity: 0.94 !important;
+  transition:
+    transform 0.24s var(--am-spring),
+    border-color 0.2s ease,
+    background 0.2s ease,
+    opacity 0.2s ease !important;
+}
+
+.hud-pause-prompt:hover {
+  transform: translateY(-2px) scale(1.03) !important;
+  border-color: var(--am-border-hi) !important;
+  background: var(--am-grain), var(--am-glass-hover) !important;
+}
+
+.hud-pause-prompt:active {
+  transform: translateY(0) scale(0.95) !important;
+}
+
+.hud-pause-prompt:active .hud-pause-key {
+  transform: translateY(1px);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.55);
+}
+
+.hud-pause-label {
+  font-family: var(--am-font-display) !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.1em !important;
+  text-transform: uppercase !important;
+  color: var(--am-ivory) !important;
+  text-shadow: none !important;
+}
+
+/* Bottom-Left Circular Minimap — Ceramic Bezel */
+.hud-minimap-wrap {
+  transition: transform 0.26s var(--am-spring), opacity 0.22s ease !important;
+}
+
+.hud-minimap-wrap:hover {
+  transform: translateY(-3px) scale(1.022) !important;
+}
+
+.hud-minimap-wrap:active {
+  transform: translateY(0) scale(0.97) !important;
+}
+
+.hud-minimap-circle {
+  border: 2px solid rgba(246, 243, 236, 0.22) !important;
+  box-shadow:
+    0 16px 38px rgba(0, 0, 0, 0.52),
+    0 0 0 4px rgba(15, 16, 21, 0.58),
+    inset 0 1px 0 rgba(255, 250, 240, 0.2) !important;
+  transition: border-color 0.22s ease;
+}
+
+.hud-minimap-wrap:hover .hud-minimap-circle {
+  border-color: rgba(246, 243, 236, 0.42) !important;
+}
+
+.hud-minimap-bar {
+  background: var(--am-grain), var(--am-glass-strong) !important;
+  border: 1px solid var(--am-border) !important;
+  border-radius: 9px !important;
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 250, 240, 0.14) !important;
+  font-family: var(--am-font-mono) !important;
+  color: var(--am-ivory) !important;
+}
+
+.hud-minimap-route-dot {
+  background: var(--am-brass) !important;
+  box-shadow: none !important;
+}
+
+.hud-minimap-route-dot.idle {
+  background: var(--am-red) !important;
+}
+
+/* Bottom-Right Speedometer & Tachometer Pod */
+#telemetry {
+  background: var(--am-grain), var(--am-glass-strong) !important;
+  backdrop-filter: blur(18px) saturate(1.18) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(1.18) !important;
+  border: 1px solid var(--am-border) !important;
+  border-left: 3.5px solid var(--am-red) !important;
+  border-radius: 14px !important;
+  padding: 14px 18px 12px 18px !important;
+  box-shadow:
+    0 18px 42px rgba(0, 0, 0, 0.48),
+    inset 0 1px 0 rgba(255, 250, 240, 0.15) !important;
+  transition: border-color 0.2s ease, transform 0.25s var(--am-spring);
+}
+
+#telemetry.am-redline {
+  animation: amRedlinePulse 0.28s ease-in-out infinite;
+}
+
+#speed-value {
+  font-family: var(--am-font-display) !important;
+  font-size: 46px !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.03em !important;
+  font-variant-numeric: tabular-nums !important;
+  color: var(--am-ivory) !important;
+  line-height: 0.94 !important;
+  transition: color 0.18s ease;
+}
+
+#telemetry.am-highspeed #speed-value {
+  color: #ffffff !important;
+}
+
+.speed-unit {
+  font-family: var(--am-font-mono) !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.14em !important;
+  color: var(--am-ivory-muted) !important;
+  margin-left: 6px !important;
+}
+
+#gear-badge {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 !important;
+  font-family: var(--am-font-display) !important;
+  font-size: 20px !important;
+  font-weight: 700 !important;
+  min-width: 38px !important;
+  height: 38px !important;
+  border-radius: 9px !important;
+  background: rgba(246, 243, 236, 0.08) !important;
+  border: 1px solid rgba(246, 243, 236, 0.2) !important;
+  color: var(--am-ivory) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18) !important;
+  transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+}
+
+#gear-badge.am-gear-pop {
+  animation: amGearPop 0.28s var(--am-spring);
+  background: var(--am-red) !important;
+  border-color: var(--am-red) !important;
+  color: var(--am-ivory) !important;
+}
+
+#telemetry.am-redline #gear-badge {
+  background: var(--am-red) !important;
+  border-color: var(--am-ivory) !important;
+  color: var(--am-ivory) !important;
+}
+
+/* Segmented Notched Motorsport Tachometer Bar */
+.bar-wrap {
+  position: relative;
+  height: 7px !important;
+  border-radius: 4px !important;
+  background: rgba(246, 243, 236, 0.11) !important;
+  overflow: hidden !important;
+  margin-top: 11px !important;
+}
+
+.bar-wrap::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0px,
+    transparent 9px,
+    rgba(14, 15, 20, 0.78) 9px,
+    rgba(14, 15, 20, 0.78) 11px
+  );
+  pointer-events: none;
+  z-index: 2;
+}
+
+#rpm-bar {
+  height: 100% !important;
+  border-radius: 3px !important;
+  background: linear-gradient(90deg, var(--am-ivory) 0%, var(--am-brass) 68%, var(--am-red) 100%) !important;
+  transition: width 0.055s linear !important;
+}
+
+#status-line {
+  font-family: var(--am-font-mono) !important;
+  font-size: 10px !important;
+  letter-spacing: 0.08em !important;
+  color: var(--am-ivory-muted) !important;
+  margin-top: 8px !important;
+}
+
+/* In-Game GPS Pill */
+.hud-gps-indicator {
+  background: var(--am-grain), var(--am-glass-strong) !important;
+  border: 1px solid var(--am-border) !important;
+  border-left: 3px solid var(--am-brass) !important;
+  border-radius: 11px !important;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.44), inset 0 1px 0 rgba(255, 250, 240, 0.14) !important;
+}
+
+/* ==========================================================================
+   3. PAUSE MENU — Preserved Forza Layout × Atelier Tactile Juice
+   ========================================================================== */
+.pause-menu-overlay {
+  background: radial-gradient(circle at 50% 35%, rgba(20, 23, 31, 0.56), rgba(8, 10, 14, 0.78)) !important;
+  backdrop-filter: blur(22px) saturate(1.12) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(1.12) !important;
+}
+
+/* Choreographed entrance when Pause opens */
+.pause-menu-overlay:not(.hidden) .pause-header {
+  animation: amSlideDown 0.34s var(--am-smooth) both;
+}
+
+.pause-menu-overlay:not(.hidden) .pause-col-left {
+  animation: amCardEnter 0.4s var(--am-spring) 0.05s both;
+}
+
+.pause-menu-overlay:not(.hidden) .pause-col-center {
+  animation: amCardEnter 0.42s var(--am-spring) 0.1s both;
+}
+
+.pause-menu-overlay:not(.hidden) .pause-col-right {
+  animation: amCardEnter 0.4s var(--am-spring) 0.15s both;
+}
+
+.pause-menu-overlay:not(.hidden) .pause-footer {
+  animation: amSlideUp 0.34s var(--am-smooth) 0.14s both;
+}
+
+/* Header Bar — Clean Floating Pills (Zero Full-Width Background Bar) */
+.pause-header {
+  background: none !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  padding: 0 2px !important;
+}
+
+.pause-brand-badge {
+  background: var(--am-grain), var(--am-glass-strong) !important;
+  border: 1px solid var(--am-border) !important;
+  border-radius: 11px !important;
+  box-shadow:
+    0 10px 26px rgba(0, 0, 0, 0.36),
+    inset 0 1px 0 rgba(255, 250, 240, 0.14) !important;
+}
+
+.pause-brand-pill {
+  width: 5px !important;
+  height: 20px !important;
+  border-radius: 2px !important;
+  background: var(--am-red) !important;
+  box-shadow: none !important;
+}
+
+.pause-brand-title {
+  font-family: var(--am-font-display) !important;
+  font-size: 16px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.18em !important;
+  color: var(--am-ivory) !important;
+}
+
+/* Header Tabs — Crisp Tactile Pill Switcher */
+.pause-tabs {
+  background: rgba(8, 9, 13, 0.62) !important;
+  border: 1px solid rgba(246, 243, 236, 0.12) !important;
+  border-radius: 10px !important;
+  padding: 4px !important;
+  gap: 4px !important;
+}
+
+.pause-tab-btn {
+  font-family: var(--am-font-display) !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.15em !important;
+  color: var(--am-ivory-muted) !important;
+  border-radius: 7px !important;
+  padding: 8px 22px !important;
+  transition:
+    transform 0.22s var(--am-spring),
+    background-color 0.2s ease,
+    color 0.2s ease,
+    box-shadow 0.2s ease !important;
+}
+
+.pause-tab-btn:hover:not(.active) {
+  color: var(--am-ivory) !important;
+  background: rgba(246, 243, 236, 0.08) !important;
+  transform: translateY(-1px);
+}
+
+.pause-tab-btn.active {
+  background: var(--am-ivory) !important;
+  color: #111318 !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.32) !important;
+  animation: amPillPop 0.28s var(--am-spring);
+}
+
+.pause-tab-btn:active {
+  transform: scale(0.95) !important;
+}
+
+/* Telemetry Chips (Header & World Map) */
+.pause-telemetry-chip {
+  background: rgba(9, 10, 14, 0.56) !important;
+  border: 1px solid var(--am-border) !important;
+  border-radius: 10px !important;
+  box-shadow: inset 0 1px 0 rgba(255, 250, 240, 0.1) !important;
+}
+
+.pause-chip-label {
+  font-family: var(--am-font-mono) !important;
+  font-size: 9px !important;
+  letter-spacing: 0.14em !important;
+  color: var(--am-ivory-muted) !important;
+}
+
+.pause-chip-val {
+  font-family: var(--am-font-display) !important;
+  font-weight: 700 !important;
+  color: var(--am-ivory) !important;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Main Pause Tiles — Smoked Ceramic Glass + Vermilion Top Edge + Spring Hover */
+.pause-glass-tile {
+  position: relative;
+  overflow: hidden;
+  background: var(--am-grain), var(--am-glass) !important;
+  border: 1px solid var(--am-border) !important;
+  border-radius: 16px !important;
+  box-shadow:
+    0 18px 44px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 250, 240, 0.15),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.35) !important;
+  transition:
+    transform 0.28s var(--am-spring),
+    border-color 0.22s ease,
+    background-color 0.22s ease,
+    box-shadow 0.28s ease !important;
+}
+
+/* Animated Vermilion Racing Accent Stripe on Hover / Focus */
+.pause-glass-tile::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--am-red);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 0.3s var(--am-spring);
+  z-index: 4;
+  pointer-events: none;
+}
+
+.pause-glass-tile:hover,
+.pause-glass-tile.keyboard-focused {
+  transform: translateY(-5px) scale(1.012) !important;
+  border-color: var(--am-border-hi) !important;
+  background: var(--am-grain), var(--am-glass-hover) !important;
+  box-shadow:
+    0 26px 56px rgba(0, 0, 0, 0.56),
+    inset 0 1px 0 rgba(255, 250, 240, 0.26) !important;
+}
+
+.pause-glass-tile:hover::after,
+.pause-glass-tile.keyboard-focused::after {
+  transform: scaleX(1);
+}
+
+.pause-glass-tile:active {
+  transform: translateY(-1px) scale(0.975) !important;
+  transition-duration: 0.08s !important;
+}
+
+/* Online container tiles shouldn't jump/squish while clicking inputs or buttons inside them */
+.pause-glass-tile.pause-online-tile:hover,
+.pause-glass-tile.pause-online-tile:active {
+  transform: none !important;
+}
+
+.pause-menu-shell.tab-online .pause-online-view .pause-col-left {
+  animation: amCardEnter 0.36s var(--am-spring) 0.02s both;
+}
+.pause-menu-shell.tab-online .pause-online-view .pause-col-center {
+  animation: amCardEnter 0.38s var(--am-spring) 0.07s both;
+}
+.pause-menu-shell.tab-online .pause-online-view .pause-col-right {
+  animation: amCardEnter 0.36s var(--am-spring) 0.12s both;
+}
+
+/* Tile Header Tags */
+.pause-tile-tag {
+  font-family: var(--am-font-mono) !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.16em !important;
+  color: var(--am-ivory-soft) !important;
+  z-index: 2;
+}
+
+.pause-tag-dot {
+  width: 6px !important;
+  height: 6px !important;
+  border-radius: 1.5px !important;
+  transform: rotate(45deg);
+  background: var(--am-red) !important;
+  box-shadow: none !important;
+}
+
+.pause-tile-title,
+.pause-tile-car-name {
+  font-family: var(--am-font-display) !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.04em !important;
+  color: var(--am-ivory) !important;
+}
+
+.pause-tile-sub {
+  font-family: var(--am-font-mono) !important;
+  font-size: 10px !important;
+  letter-spacing: 0.1em !important;
+  color: var(--am-ivory-muted) !important;
+}
+
+/* Garage Tile Car Thumbnail Lift */
+.pause-tile-car-img {
+  transition: transform 0.36s var(--am-spring), filter 0.3s ease !important;
+}
+
+.pause-tile-garage:hover .pause-tile-car-img,
+.pause-tile-garage.keyboard-focused .pause-tile-car-img {
+  transform: scale(1.075) translateY(-4px) !important;
+}
+
+.pause-tile-action-prompt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--am-font-mono) !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.14em !important;
+  color: var(--am-ivory) !important;
+  background: rgba(246, 243, 236, 0.1);
+  border: 1px solid rgba(246, 243, 236, 0.18);
+  border-radius: 7px;
+  padding: 5px 10px;
+  margin-top: 6px;
+  width: fit-content;
+  transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.24s var(--am-spring);
+}
+
+.pause-tile-garage:hover .pause-tile-action-prompt,
+.pause-tile-garage.keyboard-focused .pause-tile-action-prompt {
+  background: var(--am-ivory);
+  border-color: var(--am-ivory);
+  color: #111318 !important;
+  transform: translateX(3px);
+}
+
+.pause-tile-action-prompt svg {
+  transition: transform 0.24s var(--am-spring);
+}
+
+.pause-tile-garage:hover .pause-tile-action-prompt svg {
+  transform: translateX(3px);
+}
+
+/* Icon Badges inside Reset, Camera, Settings, Online Tiles */
+.pause-reset-icon-wrap,
+.pause-cam-icon-wrap,
+.pause-settings-icon-wrap,
+.pause-online-icon-wrap {
+  background: rgba(246, 243, 236, 0.08) !important;
+  border: 1px solid rgba(246, 243, 236, 0.16) !important;
+  border-radius: 12px !important;
+  color: var(--am-ivory) !important;
+  transition:
+    transform 0.3s var(--am-spring),
+    background-color 0.22s ease,
+    border-color 0.22s ease,
+    color 0.22s ease !important;
+}
+
+.pause-glass-tile:hover .pause-reset-icon-wrap,
+.pause-glass-tile:hover .pause-cam-icon-wrap,
+.pause-glass-tile:hover .pause-settings-icon-wrap,
+.pause-glass-tile:hover .pause-online-icon-wrap {
+  background: var(--am-red) !important;
+  border-color: var(--am-red) !important;
+  color: var(--am-ivory) !important;
+  transform: scale(1.08);
+}
+
+.pause-tile-reset:hover .pause-reset-icon-wrap svg {
+  transform: rotate(-42deg);
+  transition: transform 0.32s var(--am-spring);
+}
+
+.pause-tile-settings:hover .pause-settings-icon-wrap svg {
+  transform: rotate(35deg);
+  transition: transform 0.36s var(--am-spring);
+}
+
+/* Camera Mode Dots */
+.pause-cam-dot {
+  background: rgba(246, 243, 236, 0.2) !important;
+  transition: width 0.26s var(--am-spring), background-color 0.2s ease !important;
+}
+
+.pause-cam-dot.active {
+  background: var(--am-red) !important;
+  box-shadow: none !important;
+}
+
+/* World Map Hero Tile Banner */
+.pause-mini-map-banner {
+  background: linear-gradient(180deg, transparent 0%, rgba(11, 13, 18, 0.88) 72%) !important;
+}
+
+.pause-hero-title {
+  font-family: var(--am-font-display) !important;
+  letter-spacing: 0.12em !important;
+  color: var(--am-ivory) !important;
+  transition: transform 0.28s var(--am-spring);
+}
+
+.pause-tile-map:hover .pause-hero-title,
+.pause-tile-map.keyboard-focused .pause-hero-title {
+  transform: translateX(4px);
+}
+
+.pause-mini-map-viewport {
+  transition: transform 0.36s var(--am-spring);
+}
+
+.pause-tile-map:hover .pause-mini-map-viewport,
+.pause-tile-map.keyboard-focused .pause-mini-map-viewport {
+  transform: scale(1.022);
+}
+
+/* ==========================================================================
+   4. SUB-VIEWS — GARAGE & SETTINGS (WITH MOVED PIXEL SCALE & INK CONTROLS)
+   ========================================================================== */
+.pause-subview {
+  background: var(--am-grain), var(--am-glass-strong) !important;
+  border: 1px solid var(--am-border) !important;
+  border-radius: 18px !important;
+  box-shadow:
+    0 24px 64px rgba(0, 0, 0, 0.56),
+    inset 0 1px 0 rgba(255, 250, 240, 0.16) !important;
+}
+
+.pause-subview:not(.hidden) {
+  animation: amCardEnter 0.34s var(--am-spring) both;
+}
+
+.pause-subview-title {
+  font-family: var(--am-font-display) !important;
+  font-size: 22px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.12em !important;
+  color: var(--am-ivory) !important;
+}
+
+.pause-subview-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--am-font-display) !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.12em !important;
+  color: var(--am-ivory) !important;
+  background: rgba(246, 243, 236, 0.08) !important;
+  border: 1px solid rgba(246, 243, 236, 0.18) !important;
+  border-radius: 10px !important;
+  padding: 9px 14px !important;
+  cursor: pointer;
+  transition:
+    transform 0.22s var(--am-spring),
+    background-color 0.2s ease,
+    border-color 0.2s ease !important;
+}
+
+.pause-subview-back-btn:hover {
+  background: rgba(246, 243, 236, 0.16) !important;
+  border-color: var(--am-border-hi) !important;
+  transform: translateX(-3px);
+}
+
+.pause-subview-back-btn:active {
+  transform: scale(0.95);
+}
+
+/* Garage Car Cards — Staggered Spring Cascade & Sweeping Speed Bars */
+.pause-car-card {
+  position: relative;
+  overflow: hidden;
+  background: var(--am-grain), rgba(14, 16, 22, 0.84) !important;
+  border: 1px solid var(--am-border) !important;
+  border-radius: 14px !important;
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.36),
+    inset 0 1px 0 rgba(255, 250, 240, 0.12) !important;
+  transition:
+    transform 0.28s var(--am-spring),
+    border-color 0.22s ease,
+    background-color 0.22s ease,
+    box-shadow 0.28s ease !important;
+}
+
+.pause-cars-view:not(.hidden) .pause-car-card {
+  animation: amCardEnter 0.4s var(--am-spring) both;
+}
+
+.pause-cars-view:not(.hidden) .pause-car-card:nth-child(1) { animation-delay: 0.03s; }
+.pause-cars-view:not(.hidden) .pause-car-card:nth-child(2) { animation-delay: 0.07s; }
+.pause-cars-view:not(.hidden) .pause-car-card:nth-child(3) { animation-delay: 0.11s; }
+.pause-cars-view:not(.hidden) .pause-car-card:nth-child(4) { animation-delay: 0.15s; }
+.pause-cars-view:not(.hidden) .pause-car-card:nth-child(5) { animation-delay: 0.19s; }
+
+.pause-car-card::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--am-red);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 0.28s var(--am-spring);
+  z-index: 3;
+}
+
+.pause-car-card:hover,
+.pause-car-card.keyboard-focused {
+  transform: translateY(-6px) scale(1.018) !important;
+  border-color: var(--am-border-hi) !important;
+  background: var(--am-grain), rgba(24, 27, 35, 0.94) !important;
+  box-shadow: 0 22px 44px rgba(0, 0, 0, 0.54) !important;
+}
+
+.pause-car-card:hover::after,
+.pause-car-card.keyboard-focused::after,
+.pause-car-card.active::after {
+  transform: scaleX(1);
+}
+
+.pause-car-card.active,
+.pause-car-card.active.keyboard-focused {
+  border-color: rgba(246, 243, 236, 0.36) !important;
+  box-shadow:
+    0 18px 38px rgba(0, 0, 0, 0.52),
+    inset 0 1px 0 rgba(255, 250, 240, 0.22) !important;
+}
+
+.pause-car-card:active {
+  transform: translateY(-2px) scale(0.97) !important;
+  transition-duration: 0.08s !important;
+}
+
+.pause-car-thumb {
+  transition: transform 0.34s var(--am-spring) !important;
+}
+
+.pause-car-card:hover .pause-car-thumb {
+  transform: scale(1.08) translateY(-3px) !important;
+}
+
+.pause-car-name {
+  font-family: var(--am-font-display) !important;
+  font-weight: 700 !important;
+  color: var(--am-ivory) !important;
+}
+
+.pause-car-stat-label {
+  font-family: var(--am-font-mono) !important;
+  color: var(--am-ivory-muted) !important;
+}
+
+.pause-car-stat-val {
+  font-family: var(--am-font-mono) !important;
+  color: var(--am-ivory) !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.pause-car-stat-bar {
+  background: rgba(246, 243, 236, 0.12) !important;
+  height: 5px !important;
+  border-radius: 3px !important;
+}
+
+.pause-car-stat-fill {
+  background: linear-gradient(90deg, var(--am-brass), var(--am-red)) !important;
+  transform-origin: left center;
+  animation: amBarSweep 0.52s var(--am-smooth) 0.14s both;
+}
+
+.pause-car-badge {
+  font-family: var(--am-font-mono) !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.14em !important;
+  background: rgba(246, 243, 236, 0.08) !important;
+  border: 1px solid rgba(246, 243, 236, 0.16) !important;
+  color: var(--am-ivory-soft) !important;
+  border-radius: 8px !important;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.pause-car-card:hover .pause-car-badge:not(.active) {
+  background: rgba(246, 243, 236, 0.18) !important;
+  color: var(--am-ivory) !important;
+}
+
+.pause-car-badge.active {
+  background: var(--am-ivory) !important;
+  border-color: var(--am-ivory) !important;
+  color: #111318 !important;
+}
+
+/* Settings Subview Sections & New Pixel Scale + Ink Segmented Controls */
+.pause-settings-view {
+  min-height: 0 !important;
+  padding: 20px 22px !important;
+  gap: 14px !important;
+}
+
+.pause-settings-content {
+  gap: 12px !important;
+}
+
+.pause-setting-section {
+  position: relative;
+  overflow: hidden;
+  background: var(--am-grain), rgba(12, 14, 19, 0.72) !important;
+  border: 1px solid var(--am-border) !important;
+  border-radius: 14px !important;
+  padding: 13px 18px !important;
+  box-shadow: inset 0 1px 0 rgba(255, 250, 240, 0.1) !important;
+}
+
+.pause-setting-section .pause-setting-header {
+  margin-bottom: 9px !important;
+}
+
+.pause-setting-col .pause-setting-header {
+  margin-bottom: 0 !important;
+}
+
+.pause-settings-view:not(.hidden) .pause-setting-section {
+  animation: amCardEnter 0.36s var(--am-spring) both;
+}
+.pause-settings-view:not(.hidden) .pause-setting-section:nth-child(1) { animation-delay: 0.03s; }
+.pause-settings-view:not(.hidden) .pause-setting-section:nth-child(2) { animation-delay: 0.08s; }
+.pause-settings-view:not(.hidden) .pause-setting-section:nth-child(3) { animation-delay: 0.13s; }
+
+.pause-setting-visual-row {
+  display: grid !important;
+  grid-template-columns: 1.85fr 1fr;
+  gap: 18px;
+  align-items: end;
+}
+
+.pause-setting-col {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pause-setting-name {
+  font-family: var(--am-font-mono) !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.16em !important;
+  color: var(--am-ivory-soft) !important;
+}
+
+.pause-seg-row,
+.pause-grass-opt-row {
+  display: flex;
+  gap: 7px;
+  background: rgba(7, 8, 12, 0.6);
+  border: 1px solid rgba(246, 243, 236, 0.1);
+  border-radius: 11px;
+  padding: 5px;
+}
+
+.pause-seg-btn,
+.pause-grass-opt-btn {
+  flex: 1;
+  font-family: var(--am-font-mono) !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.08em !important;
+  color: var(--am-ivory-soft) !important;
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  border-radius: 8px !important;
+  padding: 10px 10px !important;
+  cursor: pointer;
+  transition:
+    transform 0.22s var(--am-spring),
+    background-color 0.18s ease,
+    color 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.2s ease !important;
+}
+
+.pause-seg-btn:hover:not(.active),
+.pause-grass-opt-btn:hover:not(.active) {
+  background: rgba(246, 243, 236, 0.09) !important;
+  color: var(--am-ivory) !important;
+  transform: translateY(-1px);
+}
+
+.pause-seg-btn.active,
+.pause-grass-opt-btn.active {
+  background: var(--am-ivory) !important;
+  color: #111318 !important;
+  border-color: var(--am-ivory) !important;
+  box-shadow: 0 5px 14px rgba(0, 0, 0, 0.34) !important;
+  animation: amPillPop 0.26s var(--am-spring);
+}
+
+.pause-seg-btn:active,
+.pause-grass-opt-btn:active {
+  transform: scale(0.95) !important;
+}
+
+/* Keybinds Grid */
+.pause-keybind-item {
+  font-family: var(--am-font-ui) !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: var(--am-ivory-soft) !important;
+  background: rgba(246, 243, 236, 0.04) !important;
+  border: 1px solid rgba(246, 243, 236, 0.09) !important;
+  border-radius: 9px !important;
+  padding: 9px 12px !important;
+  transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.22s var(--am-spring);
+}
+
+.pause-keybind-item:hover {
+  border-color: rgba(246, 243, 236, 0.22) !important;
+  background: rgba(246, 243, 236, 0.08) !important;
+  transform: translateY(-2px);
+}
+
+/* ==========================================================================
+   5. ONLINE TAB & BUTTONS — Crisp Ceramic + Vermilion Racing CTA
+   ========================================================================== */
+.pause-online-btn {
+  position: relative;
+  overflow: hidden;
+  font-family: var(--am-font-display) !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.14em !important;
+  border-radius: 10px !important;
+  background: rgba(246, 243, 236, 0.1) !important;
+  border: 1px solid rgba(246, 243, 236, 0.2) !important;
+  color: var(--am-ivory) !important;
+  transition:
+    transform 0.24s var(--am-spring),
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.24s ease !important;
+}
+
+.pause-online-btn:hover {
+  transform: translateY(-2px) scale(1.015) !important;
+  background: rgba(246, 243, 236, 0.18) !important;
+  border-color: var(--am-border-hi) !important;
+}
+
+.pause-online-btn:active {
+  transform: scale(0.96) !important;
+}
+
+.pause-online-btn-primary {
+  background: var(--am-ivory) !important;
+  color: #111318 !important;
+  border: none !important;
+  border-left: 4px solid var(--am-red) !important;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.34) !important;
+}
+
+.pause-online-btn-primary:hover {
+  background: #ffffff !important;
+  border-left-width: 7px !important;
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.44) !important;
+}
+
+.pause-online-code-box,
+.pause-online-input-box {
+  background: rgba(8, 9, 13, 0.68) !important;
+  border: 1px solid rgba(246, 243, 236, 0.14) !important;
+  border-radius: 11px !important;
+}
+
+.pause-online-code-value,
+.pause-online-input {
+  font-family: var(--am-font-mono) !important;
+  color: var(--am-ivory) !important;
+}
+
+/* ==========================================================================
+   6. PAUSE FOOTER (CLEAN FLOATING KEYS — NO BACKGROUND BAR), MODALS & TOASTS
+   ========================================================================== */
+.pause-footer {
+  padding: 4px 2px !important;
+  min-height: 36px !important;
+  background: none !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+.pause-footer-item {
+  font-family: var(--am-font-mono) !important;
+  font-size: 10px !important;
+  letter-spacing: 0.11em !important;
+  color: var(--am-ivory-soft) !important;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.65);
+}
+
+.pause-feedback-btn {
+  right: 2px !important;
+  font-family: var(--am-font-mono) !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.14em !important;
+  color: var(--am-ivory-soft) !important;
+  background: var(--am-grain), var(--am-glass-strong) !important;
+  border: 1px solid var(--am-border) !important;
+  border-radius: 9px !important;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 250, 240, 0.12) !important;
+  transition: transform 0.22s var(--am-spring), background-color 0.2s ease, color 0.2s ease !important;
+}
+
+.pause-feedback-btn:hover {
+  background: var(--am-ivory) !important;
+  color: #111318 !important;
+  border-color: var(--am-ivory) !important;
+  transform: translateY(-2px);
+}
+
+.pause-feedback-btn:active {
+  transform: scale(0.95);
+}
+
+.pause-feedback-card {
+  background: var(--am-grain), rgba(16, 18, 24, 0.94) !important;
+  border: 1px solid var(--am-border-hi) !important;
+  border-top: 3px solid var(--am-red) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 28px 72px rgba(0, 0, 0, 0.68) !important;
+  animation: amCardEnter 0.3s var(--am-spring) both;
+}
+
+.pause-feedback-title {
+  font-family: var(--am-font-display) !important;
+  letter-spacing: 0.12em !important;
+  color: var(--am-ivory) !important;
+}
+
+.pause-feedback-type {
+  font-family: var(--am-font-mono) !important;
+  border-radius: 8px !important;
+  transition: transform 0.2s var(--am-spring), background-color 0.18s ease, color 0.18s ease !important;
+}
+
+.pause-feedback-type.active {
+  background: var(--am-ivory) !important;
+  color: #111318 !important;
+  border-color: var(--am-ivory) !important;
+}
+
+.pause-feedback-submit {
+  font-family: var(--am-font-display) !important;
+  background: var(--am-ivory) !important;
+  color: #111318 !important;
+  border: none !important;
+  border-left: 4px solid var(--am-red) !important;
+  border-radius: 9px !important;
+  transition: transform 0.22s var(--am-spring), background-color 0.18s ease !important;
+}
+
+.pause-feedback-submit:hover {
+  background: #ffffff !important;
+  transform: translateY(-2px);
+}
+
+.pause-online-toast,
+.online-sync-card {
+  background: var(--am-grain), var(--am-glass-strong) !important;
+  border: 1px solid var(--am-border-hi) !important;
+  border-left: 3.5px solid var(--am-red) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.52) !important;
+}
+
+.online-sync-bar {
+  background: linear-gradient(90deg, var(--am-brass), var(--am-red)) !important;
+}
+
+.remote-nameplate-pill {
+  font-family: var(--am-font-display) !important;
+  background: var(--am-grain), var(--am-glass-strong) !important;
+  border: 1px solid var(--am-border-hi) !important;
+  border-left: 2.5px solid var(--am-red) !important;
+  border-radius: 7px !important;
+  color: var(--am-ivory) !important;
+}
+
+/* ==========================================================================
+   7. WORLD MAP OVERLAY — Crisp Ceramic Chrome Over Stylized Overworld Map
+   ========================================================================== */
+.world-map-overlay:not(.hidden) .map-hud-top {
+  animation: amSlideDown 0.32s var(--am-smooth) both;
+}
+
+.world-map-overlay:not(.hidden) .map-hud-bottom {
+  animation: amSlideUp 0.32s var(--am-smooth) 0.06s both;
+}
+
+.map-brand-badge,
+.map-controls-card,
+.map-glass-btn,
+.map-zoom-group,
+.map-gps-hud {
+  background: var(--am-grain), var(--am-glass-strong) !important;
+  border: 1px solid var(--am-border) !important;
+  border-radius: 12px !important;
+  box-shadow:
+    0 12px 30px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 250, 240, 0.14) !important;
+}
+
+.map-brand-badge {
+  border-left: 3.5px solid var(--am-red) !important;
+}
+
+.map-brand-title {
+  font-family: var(--am-font-display) !important;
+  letter-spacing: 0.14em !important;
+  color: var(--am-ivory) !important;
+}
+
+.map-brand-sub {
+  font-family: var(--am-font-mono) !important;
+  color: var(--am-brass) !important;
+}
+
+.map-glass-btn,
+.map-zoom-btn {
+  font-family: var(--am-font-display) !important;
+  color: var(--am-ivory) !important;
+  transition:
+    transform 0.22s var(--am-spring),
+    background-color 0.18s ease,
+    border-color 0.18s ease !important;
+}
+
+.map-glass-btn:hover,
+.map-zoom-btn:hover {
+  transform: translateY(-2px) !important;
+  border-color: var(--am-border-hi) !important;
+  background: var(--am-grain), var(--am-glass-hover) !important;
+}
+
+.map-glass-btn:active,
+.map-zoom-btn:active {
+  transform: scale(0.95) !important;
+}
+
+.map-zoom-label {
+  font-family: var(--am-font-mono) !important;
+  color: var(--am-ivory) !important;
+}
+
+/* Responsive safeguard for 1280x720 and narrower windows */
+@media (max-width: 900px) {
+  .pause-setting-visual-row {
+    grid-template-columns: 1fr;
+  }
+}

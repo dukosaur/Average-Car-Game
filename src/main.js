@@ -1,3 +1,4 @@
+import './uiOverhaul.css';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -11,6 +12,36 @@ import { TrafficSystem } from './trafficSystem.js';
 import { MultiplayerWorldSync } from './multiplayerSync.js';
 import { createStuntRamps } from './stuntRamps.js';
 import { assetUrl } from './assetUrl.js';
+import {
+  PIXEL_THEME_ENABLED,
+  isPixelBillboardKey,
+  isSlopeHuggingBillboardKey,
+  isPixelRockKey,
+  getBiomeIdAt,
+  createTerrainSurfaceSampler,
+  createPixelBillboardPart,
+  createPixelGrassGeometry,
+  createPixelGrassMaterial,
+  createPixelWaterMaterial,
+  createPixelSkyDome,
+  patchCloudsForPixelTheme,
+  patchTerrainMaterialForPixelTheme,
+  patchRoadMaterialForPixelTheme,
+  patchRockMaterialForPixelTheme,
+  patchWorldPropMaterialForPixelTheme,
+  patchCarMaterialForPixelTheme,
+  createPixelLivingWorld,
+  PixelRenderPipeline,
+} from './pixelTheme.js';
+import {
+  isUpgraded3DBuildingKey,
+  buildUpgraded3DBuildingParts,
+  patchBridgeSceneryMaterial,
+  createBridgeGuardrails,
+  createPixel3DLandmarks,
+  createExpandedScatterWorld,
+  bakePixelWorldMap,
+} from './pixelAssets.js';
 
 // DOM Telemetry Elements
 const speedValueEl = document.getElementById('speed-value');
@@ -704,6 +735,9 @@ function createStaticGrassField(terrainMesh, roadCorridors, obstacles, scene, su
       // 2) Obstacle clearance: must NOT be inside any rock or bush!
       if (isInsideObstacle(px, pz)) continue;
 
+      // In Pixel Theme prototype, keep meadow tufts spaced out so the vibrant pixel turf breathes clearly
+      if (PIXEL_THEME_ENABLED && rand() > 0.46) continue;
+
       const col = Math.floor((px - MIN_X) / CHUNK_SIZE);
       const row = Math.floor((pz - MIN_Z) / CHUNK_SIZE);
       const chunkKey = `${col}_${row}`;
@@ -904,7 +938,9 @@ function createStaticGrassField(terrainMesh, roadCorridors, obstacles, scene, su
   `;
 
   // Shared single material across ALL chunk meshes!
-  const grassMat = new THREE.ShaderMaterial({
+  const grassMat = PIXEL_THEME_ENABLED
+    ? createPixelGrassMaterial(sun)
+    : new THREE.ShaderMaterial({
     vertexShader,
     fragmentShader,
     uniforms: {
@@ -921,6 +957,7 @@ function createStaticGrassField(terrainMesh, roadCorridors, obstacles, scene, su
     side: THREE.DoubleSide,
     fog: true,
   });
+  const activeBladeGeo = PIXEL_THEME_ENABLED ? createPixelGrassGeometry() : bladeGeo;
 
   // 5. Build Chunk InstancedMeshes with individual AABB Bounding Boxes
   const grassChunks = [];
@@ -932,6 +969,7 @@ function createStaticGrassField(terrainMesh, roadCorridors, obstacles, scene, su
 
     const colors = new Float32Array(count * 3);
     const flowerTypes = new Float32Array(count);
+    const biomeIds = PIXEL_THEME_ENABLED ? new Float32Array(count) : null;
 
     let minX = 9999.0, maxX = -9999.0;
     let minY = 9999.0, maxY = -9999.0;
@@ -999,17 +1037,24 @@ function createStaticGrassField(terrainMesh, roadCorridors, obstacles, scene, su
       colors[i * 3 + 2] = tmpBiomeCol.b;
 
       const allowFlower = tVolcano < 0.35 && tDesert < 0.45 && tCold < 0.45;
-      if (allowFlower && rand() < 0.08) {
+      const flowerChance = PIXEL_THEME_ENABLED ? 0.24 : 0.08;
+      if (allowFlower && rand() < flowerChance) {
         flowerTypes[i] = Math.floor(rand() * 5.0);
       } else {
         flowerTypes[i] = -1.0;
       }
+      if (biomeIds) {
+        biomeIds[i] = getBiomeIdAt(p.x, p.y, p.z);
+      }
     }
 
     // Per-chunk custom geometry clone for per-instance color & flower buffers
-    const chunkGeo = bladeGeo.clone();
+    const chunkGeo = activeBladeGeo.clone();
     chunkGeo.setAttribute('aInstanceColor', new THREE.InstancedBufferAttribute(colors, 3));
     chunkGeo.setAttribute('aFlowerType', new THREE.InstancedBufferAttribute(flowerTypes, 1));
+    if (biomeIds) {
+      chunkGeo.setAttribute('aBiomeId', new THREE.InstancedBufferAttribute(biomeIds, 1));
+    }
 
     const chunkMesh = new THREE.InstancedMesh(chunkGeo, grassMat, count);
     for (let i = 0; i < count; i++) {
@@ -1187,7 +1232,7 @@ function createStylizedWaterMaterial(sun) {
   });
 }
 
-function createInstancedNatureField(templateMap, natureInstances, obstacles, scene, world) {
+function createInstancedNatureField(templateMap, natureInstances, obstacles, scene, world, terrainSampler = null) {
   if (!templateMap || !templateMap.size || !natureInstances || !natureInstances.length) {
     return null;
   }
@@ -1227,6 +1272,7 @@ function createInstancedNatureField(templateMap, natureInstances, obstacles, sce
 
   const dummy = new THREE.Object3D();
   const natureChunks = [];
+  const billboardMaterials = new Set();
   let totalBatches = 0;
 
   for (const [, keyMap] of chunkBuckets.entries()) {
@@ -1239,7 +1285,8 @@ function createInstancedNatureField(templateMap, natureInstances, obstacles, sce
       const parts = templateMap.get(key);
       if (!parts || !parts.length) continue;
       const count = list.length;
-      const canCastShadow = !NO_SHADOW_KEYS.has(key);
+      const isBillboard = Boolean(parts[0] && parts[0].isPixelBillboard);
+      const canCastShadow = !isBillboard && !NO_SHADOW_KEYS.has(key);
 
       // Update chunk AABB (with generous canopy/boulder padding)
       for (let i = 0; i < count; i++) {
@@ -1254,23 +1301,90 @@ function createInstancedNatureField(templateMap, natureInstances, obstacles, sce
         if (z + padXZ > maxZ) maxZ = z + padXZ;
       }
 
+      const isRock = PIXEL_THEME_ENABLED && isPixelRockKey(key);
+      const isSlopeBush = PIXEL_THEME_ENABLED && isSlopeHuggingBillboardKey(key);
+      const upVec = new THREE.Vector3(0, 1, 0);
+      const surfNormVec = new THREE.Vector3(0, 1, 0);
+      const qSlope = new THREE.Quaternion();
+      const qYaw = new THREE.Quaternion();
+
       for (let pIdx = 0; pIdx < parts.length; pIdx++) {
         const part = parts[pIdx];
-        const instMesh = new THREE.InstancedMesh(part.geometry, part.material, count);
+        if (part.isPixelBillboard && part.material) {
+          billboardMaterials.add(part.material);
+        }
+        const geo = part.isPixelBillboard ? part.geometry.clone() : part.geometry;
+        // Measure unscaled local bottom Y for 3D rocks so we NEVER bury or float boulders!
+        let partMinY = 0.0;
+        if (isRock && geo) {
+          if (!geo.boundingBox) geo.computeBoundingBox();
+          if (geo.boundingBox) {
+            partMinY = geo.boundingBox.min.y;
+          }
+        }
+        const terrainNormals = part.isPixelBillboard ? new Float32Array(count * 3) : null;
+        const instMesh = new THREE.InstancedMesh(geo, part.material, count);
         for (let i = 0; i < count; i++) {
-          const [x, y, z, s, rotY] = list[i];
+          let [x, y, z, s, rotY] = list[i];
+          let nx = 0.0, ny = 1.0, nz = 0.0;
+          if (terrainSampler) {
+            const surf = terrainSampler.sample(x, z, y);
+            if (surf) {
+              // Snap cleanly to exact terrain surface (leaving bridge-top / elevated props intact)
+              if (Math.abs(surf.y - y) < 3.6) {
+                y = surf.y;
+              }
+              nx = surf.nx;
+              ny = surf.ny;
+              nz = surf.nz;
+            }
+          }
+
+          const slopeSin = Math.sqrt(Math.max(0.0, 1.0 - ny * ny));
+          if (PIXEL_THEME_ENABLED) {
+            // Fixed world-meter grounding seats (NEVER multiplied by huge s=4.4 scales!)
+            if (isRock) {
+              // Rest rock's exact bottom flush on terrain with a tiny 8-24cm hillside seat
+              y = y - partMinY * s - (0.08 + slopeSin * 0.24);
+            } else if (isSlopeBush) {
+              // Bushes, plants & logs hug slopes with a tiny 4-16cm seat (never buried, never floating)
+              y -= 0.04 + slopeSin * 0.16;
+            } else if (part.isPixelBillboard) {
+              // Trees grow straight up with roots seated 6-26cm into hillside (trunks always fully visible!)
+              y -= 0.06 + slopeSin * 0.26;
+            } else {
+              // Buildings / houses / signs keep grounded foundations without burying doorways
+              y -= 0.04 + slopeSin * 0.30;
+            }
+          }
+
           dummy.position.set(x, y, z);
-          dummy.rotation.set(0, rotY, 0);
+          if (isRock && terrainSampler) {
+            surfNormVec.set(nx, ny, nz).normalize();
+            qSlope.setFromUnitVectors(upVec, surfNormVec);
+            qYaw.setFromAxisAngle(upVec, rotY);
+            dummy.quaternion.copy(qSlope).multiply(qYaw);
+          } else {
+            dummy.rotation.set(0, rotY, 0);
+          }
           dummy.scale.set(s, s, s);
           dummy.updateMatrix();
           if (part.localMatrix) {
             dummy.matrix.multiply(part.localMatrix);
           }
           instMesh.setMatrixAt(i, dummy.matrix);
+          if (terrainNormals) {
+            terrainNormals[i * 3 + 0] = nx;
+            terrainNormals[i * 3 + 1] = ny;
+            terrainNormals[i * 3 + 2] = nz;
+          }
+        }
+        if (terrainNormals) {
+          geo.setAttribute('aTerrainNormal', new THREE.InstancedBufferAttribute(terrainNormals, 3));
         }
         instMesh.instanceMatrix.needsUpdate = true;
         instMesh.frustumCulled = false; // Handled manually at chunk level
-        instMesh.receiveShadow = true;
+        instMesh.receiveShadow = !part.isPixelBillboard;
         instMesh.castShadow = false;
         scene.add(instMesh);
         meshes.push({ mesh: instMesh, canCastShadow });
@@ -1509,12 +1623,20 @@ function createInstancedNatureField(templateMap, natureInstances, obstacles, sce
     }
   }
 
-  return { natureChunks, updateCulling, updateColliders };
+  function updateTime(timeSec) {
+    for (const mat of billboardMaterials) {
+      if (mat.uniforms && mat.uniforms.uTime) {
+        mat.uniforms.uTime.value = timeSec;
+      }
+    }
+  }
+
+  return { natureChunks, updateCulling, updateColliders, updateTime };
 }
 
 async function buildTestGround(scene, world, maxAnisotropy = 8, sun) {
   const groundSize = 5200;
-  const waterMat = createStylizedWaterMaterial(sun);
+  const waterMat = PIXEL_THEME_ENABLED ? createPixelWaterMaterial(sun) : createStylizedWaterMaterial(sun);
 
   // Deep safety catch floor at Y = -50m (far below the -12m Suspension Bridge Canyon)
   const safetyBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, -50.0, 0));
@@ -1524,10 +1646,11 @@ async function buildTestGround(scene, world, maxAnisotropy = 8, sun) {
     .setRestitution(0.0);
   world.createCollider(safetyCollider, safetyBody);
 
-  const [obstacles, roadCorridors, natureInstances] = await Promise.all([
+  const [obstacles, roadCorridors, natureInstances, mapRoutesData] = await Promise.all([
     fetch(assetUrl('/assets/nature_obstacles.json?v=49')).then((r) => r.json()).catch(() => []),
     fetch(assetUrl('/assets/road_corridors.json?v=49')).then((r) => r.json()).catch(() => []),
     fetch(assetUrl('/assets/nature_instances.json?v=49')).then((r) => r.json()).catch(() => []),
+    fetch(assetUrl('/assets/map_routes.json?v=49')).then((r) => r.json()).catch(() => null),
   ]);
 
   return new Promise((resolve) => {
@@ -1634,40 +1757,70 @@ async function buildTestGround(scene, world, maxAnisotropy = 8, sun) {
                   m.roughness = 0.35;
                   m.metalness = 0.04;
                   if (m.color) m.color.setRGB(1.0, 1.0, 1.0);
+                  if (PIXEL_THEME_ENABLED && m.map) {
+                    m.map.magFilter = THREE.NearestFilter;
+                    m.map.minFilter = THREE.NearestFilter;
+                    m.map.generateMipmaps = false;
+                    m.map.needsUpdate = true;
+                  }
                 } else if (isRoad) {
-                  m.roughness = 0.62;
-                  m.metalness = 0.05;
+                  if (PIXEL_THEME_ENABLED) {
+                    patchRoadMaterialForPixelTheme(m);
+                  } else {
+                    m.roughness = 0.62;
+                    m.metalness = 0.05;
+                  }
                 } else if (isTerrain) {
-                  m.roughness = 0.84;
-                  m.metalness = 0.0;
-                  // Inject procedural multi-scale up-close micro-grain so terrain never looks blurry near the car!
-                  m.onBeforeCompile = (shader) => {
-                    shader.vertexShader = shader.vertexShader.replace(
-                      '#include <common>',
-                      '#include <common>\nvarying vec3 vTerrainWorldPos;'
-                    );
-                    shader.vertexShader = shader.vertexShader.replace(
-                      '#include <worldpos_vertex>',
-                      '#include <worldpos_vertex>\nvTerrainWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;'
-                    );
-                    shader.fragmentShader = shader.fragmentShader.replace(
-                      '#include <common>',
-                      '#include <common>\nvarying vec3 vTerrainWorldPos;'
-                    );
-                    shader.fragmentShader = shader.fragmentShader.replace(
-                      '#include <map_fragment>',
-                      `#include <map_fragment>
-                       float g1 = sin(vTerrainWorldPos.x * 1.7 + vTerrainWorldPos.z * 1.3) * cos(vTerrainWorldPos.z * 1.9 - vTerrainWorldPos.x * 1.1);
-                       float g2 = sin(vTerrainWorldPos.x * 5.3 - vTerrainWorldPos.z * 4.7) * 0.5;
-                       diffuseColor.rgb *= (1.0 + (g1 * 0.032 + g2 * 0.018));`
-                    );
-                  };
+                  if (PIXEL_THEME_ENABLED) {
+                    patchTerrainMaterialForPixelTheme(m);
+                  } else {
+                    m.roughness = 0.84;
+                    m.metalness = 0.0;
+                    // Inject procedural multi-scale up-close micro-grain so terrain never looks blurry near the car!
+                    m.onBeforeCompile = (shader) => {
+                      shader.vertexShader = shader.vertexShader.replace(
+                        '#include <common>',
+                        '#include <common>\nvarying vec3 vTerrainWorldPos;'
+                      );
+                      shader.vertexShader = shader.vertexShader.replace(
+                        '#include <worldpos_vertex>',
+                        '#include <worldpos_vertex>\nvTerrainWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;'
+                      );
+                      shader.fragmentShader = shader.fragmentShader.replace(
+                        '#include <common>',
+                        '#include <common>\nvarying vec3 vTerrainWorldPos;'
+                      );
+                      shader.fragmentShader = shader.fragmentShader.replace(
+                        '#include <map_fragment>',
+                        `#include <map_fragment>
+                         float g1 = sin(vTerrainWorldPos.x * 1.7 + vTerrainWorldPos.z * 1.3) * cos(vTerrainWorldPos.z * 1.9 - vTerrainWorldPos.x * 1.1);
+                         float g2 = sin(vTerrainWorldPos.x * 5.3 - vTerrainWorldPos.z * 4.7) * 0.5;
+                         diffuseColor.rgb *= (1.0 + (g1 * 0.032 + g2 * 0.018));`
+                      );
+                    };
+                  }
                 } else {
-                  m.roughness = 0.78;
-                  m.metalness = 0.02;
+                  if (PIXEL_THEME_ENABLED) {
+                    const isSceneryProp = child.name.includes('Scenery_Props') || pName.includes('Scenery_Props');
+                    if (isSceneryProp) {
+                      const cloned = m.clone();
+                      const isEmitter = Boolean((m.name && m.name.toLowerCase().includes('emitter')) || (m.emissive && (m.emissive.r + m.emissive.g + m.emissive.b) > 0.2));
+                      patchBridgeSceneryMaterial(cloned, isEmitter);
+                      if (Array.isArray(child.material)) {
+                        child.material[mats.indexOf(m)] = cloned;
+                      } else {
+                        child.material = cloned;
+                      }
+                      continue;
+                    }
+                    patchWorldPropMaterialForPixelTheme(m);
+                  } else {
+                    m.roughness = 0.78;
+                    m.metalness = 0.02;
+                  }
                 }
 
-                if (m.map) {
+                if (m.map && !PIXEL_THEME_ENABLED) {
                   m.map.anisotropy = Math.min(maxAnisotropy, 8);
                   m.map.generateMipmaps = true;
                   if (isTerrain) {
@@ -1713,18 +1866,85 @@ async function buildTestGround(scene, world, maxAnisotropy = 8, sun) {
         });
         scene.add(trackRoot);
 
+        // Build exact terrain surface & slope-normal sampler so ZERO trees/rocks/bushes float!
+        const terrainSampler = PIXEL_THEME_ENABLED && terrainMesh ? createTerrainSurfaceSampler(terrainMesh) : null;
+
+        // In Pixel Theme prototype, replace foliage templates with crisp outlined 2D pixel-art billboard sprites
+        // sized to match each original 3D template's exact bounding box, pixel-shade rocks & buildings.
+        if (PIXEL_THEME_ENABLED) {
+          const tmpBox = new THREE.Box3();
+          const partBox = new THREE.Box3();
+          const tmpSize = new THREE.Vector3();
+          for (const [key, parts] of templateMap.entries()) {
+            if (isPixelBillboardKey(key)) {
+              tmpBox.makeEmpty();
+              for (const p of parts) {
+                if (!p.geometry) continue;
+                if (!p.geometry.boundingBox) p.geometry.computeBoundingBox();
+                if (!p.geometry.boundingBox) continue;
+                partBox.copy(p.geometry.boundingBox);
+                if (p.localMatrix) partBox.applyMatrix4(p.localMatrix);
+                tmpBox.union(partBox);
+              }
+              tmpBox.getSize(tmpSize);
+              const measuredW = Math.max(tmpSize.x, tmpSize.z);
+              const measuredH = Math.max(tmpSize.y, tmpBox.max.y);
+              templateMap.set(key, [createPixelBillboardPart(key, measuredW, measuredH, sun)]);
+            } else if (isUpgraded3DBuildingKey(key)) {
+              const upgradedParts = buildUpgraded3DBuildingParts(key);
+              if (upgradedParts && upgradedParts.length > 0) {
+                templateMap.set(key, upgradedParts);
+              }
+            } else if (isPixelRockKey(key)) {
+              for (const p of parts) {
+                const mats = Array.isArray(p.material) ? p.material : [p.material];
+                for (const m of mats) {
+                  if (m && !m._pixelRockPatched) {
+                    m._pixelRockPatched = true;
+                    patchRockMaterialForPixelTheme(m, key);
+                  }
+                }
+              }
+            } else {
+              for (const p of parts) {
+                const mats = Array.isArray(p.material) ? p.material : [p.material];
+                for (const m of mats) {
+                  if (m && !m._pixelPropPatched) {
+                    m._pixelPropPatched = true;
+                    patchWorldPropMaterialForPixelTheme(m);
+                  }
+                }
+              }
+            }
+          }
+        }
+
         // Spawn spatially chunked GPU InstancedMesh nature field & lightweight Rapier colliders
-        const natureField = createInstancedNatureField(templateMap, natureInstances, obstacles, scene, world);
+        const natureField = createInstancedNatureField(templateMap, natureInstances, obstacles, scene, world, terrainSampler);
 
         // Spawn permanent static world-space grass field across terrain triangles
         const grassField = createStaticGrassField(terrainMesh, roadCorridors, obstacles, scene, sun);
 
-        resolve({ grassField, natureField, waterMat });
+        // Spawn lively animated pixel world (soaring birds, fluttering butterflies, campfires, fences, sailboats & landmarks!)
+        const livingWorld = PIXEL_THEME_ENABLED
+          ? createPixelLivingWorld(scene, terrainSampler, roadCorridors, natureInstances)
+          : null;
+
+        // Spawn 3D pixel bridge guardrail fences, spinning 3D windmills, village wells/stalls,
+        // desert water towers, volcanic rune obelisks, and expanded 8-tile biome scatter!
+        let landmarks3D = null;
+        if (PIXEL_THEME_ENABLED) {
+          createBridgeGuardrails(scene, terrainSampler, mapRoutesData, obstacles, roadCorridors, RAPIER, world);
+          landmarks3D = createPixel3DLandmarks(scene, terrainSampler, roadCorridors, natureInstances);
+          createExpandedScatterWorld(scene, terrainSampler, roadCorridors);
+        }
+
+        resolve({ grassField, natureField, waterMat, livingWorld, landmarks3D, obstacles });
       },
       undefined,
       (err) => {
         console.warn('Could not load circuit_track.glb:', err);
-        resolve({ grassField: null, natureField: null, waterMat: null });
+        resolve({ grassField: null, natureField: null, waterMat: null, livingWorld: null, landmarks3D: null, obstacles: [] });
       }
     );
   });
@@ -1802,6 +2022,10 @@ function loadRiggedCar(url) {
                          }`
                       );
                   };
+                }
+                if (PIXEL_THEME_ENABLED && !m._pixelCarPatched) {
+                  m._pixelCarPatched = true;
+                  patchCarMaterialForPixelTheme(m, hasEmission ? 'em' : 'base');
                 }
                 m.needsUpdate = true;
               }
@@ -1886,6 +2110,9 @@ async function createAICarParts(rawUrl, aiBrakeUniform, paintColorHex = null) {
                    }`
                 );
             };
+            if (PIXEL_THEME_ENABLED) {
+              patchCarMaterialForPixelTheme(cm, 'ai_em');
+            }
             cm.needsUpdate = true;
             clonedMaterials.push(cm);
             return cm;
@@ -1919,6 +2146,9 @@ async function createAICarParts(rawUrl, aiBrakeUniform, paintColorHex = null) {
                    }`
                 );
             };
+            if (PIXEL_THEME_ENABLED) {
+              patchCarMaterialForPixelTheme(pm, 'ai_paint');
+            }
             pm.needsUpdate = true;
             clonedMaterials.push(pm);
             return pm;
@@ -1953,7 +2183,7 @@ async function init() {
     if (!titleNameInputEl) return;
     const val = titleNameInputEl.value.trim().slice(0, 16);
     const display = (val || 'DRIVER').toUpperCase();
-    if (titleWelcomeTextEl) titleWelcomeTextEl.textContent = `WELCOME, ${display}`;
+    if (titleWelcomeTextEl) titleWelcomeTextEl.textContent = display;
     if (titleNameCountEl) titleNameCountEl.textContent = `${titleNameInputEl.value.length}/16`;
   };
   if (titleNameInputEl) {
@@ -1997,14 +2227,14 @@ async function init() {
   await RAPIER.init();
 
   const container = document.getElementById('app');
-  const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  const renderer = new THREE.WebGLRenderer({ antialias: !PIXEL_THEME_ENABLED, powerPreference: 'high-performance' });
   renderer.setSize(window.innerWidth, window.innerHeight);
   // OPTIMIZATION: Cap device pixel ratio to 1.5 to eliminate Retina 4K fillrate stalls while keeping ultra-sharp rendering
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFShadowMap;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
+  renderer.toneMappingExposure = PIXEL_THEME_ENABLED ? 1.08 : 1.05;
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -2025,32 +2255,35 @@ async function init() {
   const theta = THREE.MathUtils.degToRad(sunAzimuth);
   sun.setFromSphericalCoords(1, phi, theta);
 
-  // 1. Radiant Atmospheric Skydome & Volumetric 3D Anime Clouds (Matching Images 1 & 2)
-  const { skyMesh, skyMat } = createHorizonSkyDome(scene, sun);
-  const { cloudMesh, cloudMat } = createStylized3DClouds(scene, sun);
+  // 1. Radiant 360° Animated Pixel-Art Skydome (with built-in animated cumulus, horizon towers & cirrus clouds!)
+  const { skyMesh, skyMat } = PIXEL_THEME_ENABLED ? createPixelSkyDome(scene, sun) : createHorizonSkyDome(scene, sun);
+  const { cloudMesh, cloudMat } = PIXEL_THEME_ENABLED
+    ? { cloudMesh: null, cloudMat: null }
+    : createStylized3DClouds(scene, sun);
 
-  // 2. Realistic Sunlight & Ambient Ground Bounce
-  const hemiLight = new THREE.HemisphereLight(0x8ec3f8, 0x485838, 1.35);
+  // 2. Realistic Sunlight & Balanced Ambient Ground Bounce (clean natural shadows, no blue puddles)
+  const hemiLight = new THREE.HemisphereLight(0xc8dcf0, 0x464e3e, 1.05);
   scene.add(hemiLight);
 
   const dirLight = new THREE.DirectionalLight(0xfff6e3, 2.75);
   dirLight.position.set(sun.x * 100, sun.y * 100, sun.z * 100);
   dirLight.castShadow = true;
-  dirLight.shadow.mapSize.set(1024, 1024);
+  dirLight.shadow.mapSize.set(2048, 2048);
   dirLight.shadow.camera.near = 1;
   dirLight.shadow.camera.far = 165;
-  const d = 38;
+  const d = 28;
   dirLight.shadow.camera.left = -d;
   dirLight.shadow.camera.right = d;
   dirLight.shadow.camera.top = d;
   dirLight.shadow.camera.bottom = -d;
-  dirLight.shadow.bias = -0.00035;
-  dirLight.shadow.normalBias = 0.02;
+  dirLight.shadow.bias = -0.00025;
+  dirLight.shadow.normalBias = 0.045;
+  dirLight.shadow.radius = 2.0;
   scene.add(dirLight);
   scene.add(dirLight.target);
 
-  // Soft opposite sky fill light so shadows in mountain valleys and under bridges aren't pitch black
-  const fillLight = new THREE.DirectionalLight(0x9fc0db, 0.65);
+  // Subtle opposite fill light so shadowed recesses stay readable without tinting road shadows blue
+  const fillLight = new THREE.DirectionalLight(0xd8e2ec, 0.38);
   fillLight.position.set(-sun.x * 80, 45, -sun.z * 80);
   scene.add(fillLight);
 
@@ -2062,7 +2295,7 @@ async function init() {
 
   if (isTitleScreenOpen) setTitleLoadingProgress(40, 'LOADING WORLD & BIOMES...');
   const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
-  const { grassField, natureField, waterMat } = await buildTestGround(scene, world, maxAnisotropy, sun);
+  const { grassField, natureField, waterMat, livingWorld, landmarks3D, obstacles } = await buildTestGround(scene, world, maxAnisotropy, sun);
 
   if (isTitleScreenOpen) setTitleLoadingProgress(75, 'PREPARING VEHICLES...');
   const { parts, bounds } = await loadRiggedCar(CAR_ROSTER[0].url);
@@ -2081,6 +2314,10 @@ async function init() {
   window.__freeCam = freeCam;
   window.__input = input;
   window.__renderer = renderer;
+  window.__bakePixelWorldMap = () => bakePixelWorldMap(renderer, scene, sun, obstacles, [vehicle.rootGroup, cloudMesh]);
+
+  const pixelPipeline = PIXEL_THEME_ENABLED ? new PixelRenderPipeline(renderer, scene, camera) : null;
+  window.__pixelPipeline = pixelPipeline;
 
   // Setup Forza Horizon GPS Navigation & 3D Chevron System
   const gpsNav = new GPSNavigationSystem(scene, vehicle);
@@ -2244,6 +2481,14 @@ async function init() {
     getCurrentCamIndexFn: () => currentCamIndex,
     setGrassDensityFn: setGrassDensity,
     getGrassDensityFn: getGrassDensity,
+    setPixelScaleFn: (scale) => {
+      if (pixelPipeline) pixelPipeline.setPixelScale(scale);
+    },
+    getPixelScaleFn: () => (pixelPipeline ? pixelPipeline.pixelScale : 1.0),
+    setOutlinesEnabledFn: (enabled) => {
+      if (pixelPipeline) pixelPipeline.setOutlinesEnabled(enabled);
+    },
+    getOutlinesEnabledFn: () => (pixelPipeline ? pixelPipeline.outlinesEnabled : true),
     resetVehicleFn: resetVehicleToClosestRoad
   });
   window.__pauseMenu = pauseMenu;
@@ -2418,12 +2663,12 @@ async function init() {
       if (titleOverlayEl) titleOverlayEl.classList.add('is-ready');
       if (titleLoadingBoxEl) titleLoadingBoxEl.classList.add('hidden');
       if (titleStartBtnEl) titleStartBtnEl.disabled = false;
-      if (titleStartBtnLabelEl) titleStartBtnLabelEl.textContent = 'START GAME';
+      if (titleStartBtnLabelEl) titleStartBtnLabelEl.textContent = 'DRIVE';
       if (titleActionsEl) titleActionsEl.classList.remove('hidden');
     }, 260);
   }
 
-  if (statusLineEl) statusLineEl.textContent = 'Nodes: Chassis_Body + 4x Wheel (FL/FR/RL/RR)';
+  if (statusLineEl) statusLineEl.textContent = '';
 
   // Continuous Ribbon Skidmark System with Timed Fade-Out (Disappears after 5 seconds, Never Frustum-Culled)
   const MAX_SKID_SEGMENTS = 1200;
@@ -2735,6 +2980,7 @@ async function init() {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+    if (pixelPipeline) pixelPipeline.resize(window.innerWidth, window.innerHeight);
   });
 
   // Smooth Chase Camera State & Dynamic Speed FOV State
@@ -2801,26 +3047,6 @@ async function init() {
   const onlinePausedInput = { forward: false, backward: false, left: false, right: false, handbrake: true };
   let lastTrafficSyncSendMs = 0;
   let lastMinimapUpdateMs = 0;
-  let perfTier = 0; // 0 = full quality, 1 = balanced (1x DPR, medium grass), 2 = fast (0.85x DPR, shorter grass, no shadows)
-  let perfSampleFrames = 0;
-  let perfSampleStartMs = performance.now();
-
-  function applyPerfTier(tier) {
-    if (tier <= perfTier) return; // Step down only, never resize WebGL backbuffer back up mid-drive
-    perfTier = tier;
-    const nativeDpr = Math.min(window.devicePixelRatio || 1, 1.5);
-    if (tier === 1) {
-      if (nativeDpr > 1.0) renderer.setPixelRatio(1.0);
-      window.__grassDensity = 'medium';
-      window.__grassMaxDist = 128.0;
-      dirLight.castShadow = true;
-    } else {
-      renderer.setPixelRatio(0.85);
-      window.__grassDensity = 'medium';
-      window.__grassMaxDist = 104.0;
-      dirLight.castShadow = false;
-    }
-  }
 
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) {
@@ -3125,6 +3351,9 @@ async function init() {
     if (skyMesh) {
       skyMesh.position.copy(camera.position);
     }
+    if (skyMat && skyMat.uniforms && skyMat.uniforms.uTime) {
+      skyMat.uniforms.uTime.value = now * 0.001;
+    }
     if (!freeCam.active && !isTitleScreenOpen && !titleIntroActive) {
       const targetFov = camMode.type === 'orbit'
         ? 56.0
@@ -3164,6 +3393,15 @@ async function init() {
     if (natureField && natureField.updateCulling) {
       natureField.updateCulling(camera, useShowcaseCulling, showcaseFocus, shadowCenter);
     }
+    if (natureField && natureField.updateTime) {
+      natureField.updateTime(now * 0.001);
+    }
+    if (livingWorld) {
+      livingWorld.update(now * 0.001);
+    }
+    if (landmarks3D) {
+      landmarks3D.update(now * 0.001);
+    }
     dirLight.position.set(
       shadowCenter.x + sun.x * 65,
       shadowCenter.y + sun.y * 65,
@@ -3179,38 +3417,32 @@ async function init() {
       window.__fps = currentFps;
     }
 
-    // Adaptive GPU quality scaling for weaker/integrated-GPU laptops without hurting visuals on fast GPUs
-    if (!isPaused && !isTitleScreenOpen && !document.hidden) {
-      perfSampleFrames++;
-      const perfElapsed = now - perfSampleStartMs;
-      if (perfElapsed >= 1500) {
-        const avgFps = (perfSampleFrames * 1000) / perfElapsed;
-        perfSampleFrames = 0;
-        perfSampleStartMs = now;
-        if (avgFps < 26 && perfTier < 2) {
-          applyPerfTier(2);
-        } else if (avgFps < 38 && perfTier < 1) {
-          applyPerfTier(1);
-        }
+    const speedMph = Math.round(vehicle.speedKmh * 0.621371);
+    speedValueEl.textContent = String(speedMph);
+    const nextGear = String(vehicle.gear);
+    if (gearBadgeEl.textContent !== nextGear) {
+      gearBadgeEl.textContent = nextGear;
+      gearBadgeEl.classList.remove('am-gear-pop');
+      void gearBadgeEl.offsetWidth;
+      gearBadgeEl.classList.add('am-gear-pop');
+      if (speedMph > 16 && atmosphere && typeof atmosphere.triggerGearShiftPop === 'function') {
+        atmosphere.triggerGearShiftPop(chassisWorldPos, carForward, carRight);
       }
-    } else {
-      perfSampleFrames = 0;
-      perfSampleStartMs = now;
     }
-
-    speedValueEl.textContent = String(Math.round(vehicle.speedKmh * 0.621371));
-    gearBadgeEl.textContent = vehicle.gear;
-    rpmBarEl.style.width = `${Math.round(vehicle.rpmNormalized * 100)}%`;
+    const rpmNorm = vehicle.rpmNormalized || 0;
+    rpmBarEl.style.width = `${Math.round(rpmNorm * 100)}%`;
+    const telEl = gearBadgeEl.closest('#telemetry');
+    if (telEl) {
+      telEl.classList.toggle('am-redline', rpmNorm > 0.84 && speedMph > 8);
+      telEl.classList.toggle('am-highspeed', speedMph >= 95);
+    }
     if (statusLineEl) {
-      const pMs = window.__perfStats ? window.__perfStats.physicsMs.toFixed(1) : '0.0';
-      const wMs = (window.__perfWorldStepMs || 0).toFixed(1);
-      const rMs = window.__perfStats ? window.__perfStats.renderMs.toFixed(1) : '0.0';
       if (freeCam.active) {
-        statusLineEl.textContent = `FREE CAM: (${freeCam.pos.x.toFixed(0)}, ${freeCam.pos.y.toFixed(0)}, ${freeCam.pos.z.toFixed(0)}) | ${currentFps} FPS | P:${pMs}(W:${wMs}) R:${rMs}`;
+        statusLineEl.textContent = `FREE CAM · ${freeCam.pos.x.toFixed(0)}, ${freeCam.pos.y.toFixed(0)}, ${freeCam.pos.z.toFixed(0)} · ${currentFps} FPS`;
       } else {
         statusLineEl.textContent = vehicle.isDrifting
-          ? `STATUS: DRIFTING | ${currentFps} FPS | P:${pMs}(W:${wMs}) R:${rMs}`
-          : `STEER: ${(vehicle.currentSteer * (180 / Math.PI)).toFixed(1)}° | ${currentFps} FPS | P:${pMs}(W:${wMs}) R:${rMs}`;
+          ? `DRIFT · ${currentFps} FPS`
+          : `${currentFps} FPS`;
       }
     }
 
@@ -3229,7 +3461,11 @@ async function init() {
     }
 
     const tRend0 = performance.now();
-    renderer.render(scene, camera);
+    if (pixelPipeline) {
+      pixelPipeline.render();
+    } else {
+      renderer.render(scene, camera);
+    }
     const renderMs = performance.now() - tRend0;
     const totalMs = performance.now() - frameStartMs;
     window.__perfStats = {
@@ -3237,7 +3473,6 @@ async function init() {
       renderMs: +renderMs.toFixed(2),
       totalMs: +totalMs.toFixed(2),
       agents: trafficSystem ? trafficSystem.agents.length : 0,
-      perfTier,
     };
     if (totalMs > 33 && (!window.__perfWorstFrame || totalMs > window.__perfWorstFrame.totalMs)) {
       window.__perfWorstFrame = { ...window.__perfStats, atMs: Math.round(now) };

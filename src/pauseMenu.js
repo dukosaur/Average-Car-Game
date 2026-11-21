@@ -31,6 +31,10 @@ export class PauseMenuController {
     getCurrentCamIndexFn,
     setGrassDensityFn,
     getGrassDensityFn,
+    setPixelScaleFn,
+    getPixelScaleFn,
+    setOutlinesEnabledFn,
+    getOutlinesEnabledFn,
     resetVehicleFn
   }) {
     this.vehicle = vehicle;
@@ -44,6 +48,10 @@ export class PauseMenuController {
     this.getCurrentCamIndexFn = getCurrentCamIndexFn;
     this.setGrassDensityFn = setGrassDensityFn;
     this.getGrassDensityFn = getGrassDensityFn;
+    this.setPixelScaleFn = setPixelScaleFn;
+    this.getPixelScaleFn = getPixelScaleFn;
+    this.setOutlinesEnabledFn = setOutlinesEnabledFn;
+    this.getOutlinesEnabledFn = getOutlinesEnabledFn;
     this.resetVehicleFn = resetVehicleFn;
 
     this.isOpen = false;
@@ -143,6 +151,8 @@ export class PauseMenuController {
     // Settings Subview
     this.settingsBackBtnEl = document.getElementById('pause-settings-back-btn');
     this.grassOptionBtns = document.querySelectorAll('.pause-grass-opt-btn');
+    this.pixelScaleBtns = document.querySelectorAll('.pause-pixel-scale-btn');
+    this.inkOptionBtns = document.querySelectorAll('.pause-ink-opt-btn');
 
     // Minimalist HUD Pause Prompt (Top-Left) & Circular Mini-Map (Bottom-Left)
     this.hudPausePromptEl = document.getElementById('hud-pause-prompt');
@@ -172,7 +182,23 @@ export class PauseMenuController {
     this.buildCameraDots();
     this.bindEvents();
     this.initParallax();
+    this.initGlassSpotlight();
+    this.updatePixelStyleButtons();
     this.updateFocusedTile(1);
+  }
+
+  initGlassSpotlight() {
+    // Lightweight cursor-reactive frosted glass specular refraction (zero neon, pure ceramic sheen)
+    const updateSpot = (e) => {
+      const target = e.target && e.target.closest
+        ? e.target.closest('.pause-glass-tile, .pause-car-card, .pause-setting-section, .title-side-card')
+        : null;
+      if (!target) return;
+      const rect = target.getBoundingClientRect();
+      target.style.setProperty('--mx', `${(e.clientX - rect.left).toFixed(1)}px`);
+      target.style.setProperty('--my', `${(e.clientY - rect.top).toFixed(1)}px`);
+    };
+    document.addEventListener('pointermove', updateSpot, { passive: true });
   }
 
   initParallax() {
@@ -223,10 +249,9 @@ export class PauseMenuController {
         </div>
         <div class="pause-car-info">
           <div class="pause-car-name">${car.name}</div>
-          <div class="pause-car-fullname">${car.fullName}</div>
           <div class="pause-car-stats-panel">
             <div class="pause-car-stat-row">
-              <span class="pause-car-stat-label">SPEED</span>
+              <span class="pause-car-stat-label">TOP SPEED</span>
               <span class="pause-car-stat-val">${topSpeedMph} MPH</span>
             </div>
             <div class="pause-car-stat-bar">
@@ -234,7 +259,7 @@ export class PauseMenuController {
             </div>
           </div>
           <div class="pause-car-badge ${idx === activeIdx ? 'active' : ''}">
-            ${idx === activeIdx ? 'CURRENTLY DRIVING' : 'SELECT VEHICLE'}
+            ${idx === activeIdx ? 'DRIVING' : 'SELECT'}
           </div>
         </div>
       `;
@@ -368,6 +393,32 @@ export class PauseMenuController {
             this.setGrassDensityFn(density);
           }
           this.updateGrassButtons(density);
+        });
+      });
+    }
+
+    // Pixel Scale Presets (Moved from HUD bar -> Settings, 1.0x default)
+    if (this.pixelScaleBtns) {
+      this.pixelScaleBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          const scale = parseFloat(btn.dataset.scale);
+          if (!Number.isNaN(scale) && this.setPixelScaleFn) {
+            this.setPixelScaleFn(scale);
+          }
+          this.updatePixelStyleButtons();
+        });
+      });
+    }
+
+    // Ink Outlines Toggle (Moved from HUD bar -> Settings)
+    if (this.inkOptionBtns) {
+      this.inkOptionBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          const enabled = btn.dataset.ink === 'on';
+          if (this.setOutlinesEnabledFn) {
+            this.setOutlinesEnabledFn(enabled);
+          }
+          this.updatePixelStyleButtons();
         });
       });
     }
@@ -562,6 +613,22 @@ export class PauseMenuController {
     });
   }
 
+  updatePixelStyleButtons() {
+    const activeScale = this.getPixelScaleFn ? this.getPixelScaleFn() : 1.0;
+    if (this.pixelScaleBtns) {
+      this.pixelScaleBtns.forEach(btn => {
+        const val = parseFloat(btn.dataset.scale);
+        btn.classList.toggle('active', Math.abs(activeScale - val) < 0.04);
+      });
+    }
+    const inkOn = this.getOutlinesEnabledFn ? Boolean(this.getOutlinesEnabledFn()) : true;
+    if (this.inkOptionBtns) {
+      this.inkOptionBtns.forEach(btn => {
+        btn.classList.toggle('active', (btn.dataset.ink === 'on') === inkOn);
+      });
+    }
+  }
+
   showView(viewName) {
     this.currentView = viewName;
     if (this.mainViewEl) this.mainViewEl.classList.toggle('hidden', viewName !== 'main');
@@ -572,6 +639,8 @@ export class PauseMenuController {
       const activeIdx = this.getActiveCarIndexFn ? this.getActiveCarIndexFn() : 0;
       this.focusedCarIndex = activeIdx;
       this.updateCarFocus(activeIdx);
+    } else if (viewName === 'settings') {
+      this.updatePixelStyleButtons();
     } else if (viewName === 'main') {
       this.updateTilePreviews();
     }
@@ -582,22 +651,20 @@ export class PauseMenuController {
     if (!this.footerPromptsEl) return;
     if (this.currentView === 'cars') {
       this.footerPromptsEl.innerHTML = `
-        <div class="pause-footer-item"><span class="pause-key-badge">ENTER</span> EQUIP CAR</div>
-        <div class="pause-footer-item"><span class="pause-key-badge">ESC</span> BACK TO MENU</div>
-        <div class="pause-footer-item"><span class="pause-key-badge">A D / ARROWS</span> NAVIGATE FLEET</div>
+        <div class="pause-footer-item"><span class="pause-key-badge">ENTER</span> EQUIP</div>
+        <div class="pause-footer-item"><span class="pause-key-badge">ESC</span> BACK</div>
+        <div class="pause-footer-item"><span class="pause-key-badge">A D</span> BROWSE</div>
       `;
     } else if (this.currentView === 'settings') {
       this.footerPromptsEl.innerHTML = `
-        <div class="pause-footer-item"><span class="pause-key-badge">ESC</span> BACK TO MENU</div>
-        <div class="pause-footer-item"><span class="pause-key-badge">CLICK</span> SELECT DENSITY PRESET</div>
+        <div class="pause-footer-item"><span class="pause-key-badge">ESC</span> BACK</div>
       `;
     } else {
       this.footerPromptsEl.innerHTML = `
         <div class="pause-footer-item"><span class="pause-key-badge">ENTER</span> SELECT</div>
         <div class="pause-footer-item"><span class="pause-key-badge">ESC</span> RESUME</div>
-        <div class="pause-footer-item"><span class="pause-key-badge">WASD / ARROWS</span> NAVIGATE</div>
-        <div class="pause-footer-item"><span class="pause-key-badge">R</span> RESET POSITION</div>
-        <div class="pause-footer-item"><span class="pause-key-badge">M</span> WORLD MAP</div>
+        <div class="pause-footer-item"><span class="pause-key-badge">R</span> RESET</div>
+        <div class="pause-footer-item"><span class="pause-key-badge">M</span> MAP</div>
       `;
     }
   }

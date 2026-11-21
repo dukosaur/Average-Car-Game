@@ -7,6 +7,9 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="alternate icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" href="/favicon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
     <style>
       * {
         box-sizing: border-box;
@@ -357,7 +360,8 @@
         object-fit: cover;
         pointer-events: none;
         display: block;
-        filter: saturate(1.30) contrast(1.12) brightness(1.06);
+        image-rendering: pixelated;
+        filter: saturate(1.06) contrast(1.04);
       }
 
       .map-routes-svg {
@@ -1934,7 +1938,8 @@
         display: block;
         user-select: none;
         pointer-events: none;
-        filter: saturate(1.30) contrast(1.12) brightness(1.06);
+        image-rendering: pixelated;
+        filter: saturate(1.06) contrast(1.04);
       }
 
       .pause-mini-map-roads {
@@ -3074,15 +3079,9 @@
         <aside class="title-side-panel">
           <div class="title-side-card">
             <div class="title-welcome-banner">
-              <svg class="title-welcome-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <circle cx="12" cy="12" r="9" />
-                <circle cx="12" cy="12" r="2.2" />
-                <path d="M12 3v6.8M4.2 15.5l5.8-2.6M19.8 15.5l-5.8-2.6" />
-              </svg>
-              <span id="title-welcome-text" class="title-welcome-text">WELCOME, DRIVER</span>
+              <span class="title-welcome-dot" aria-hidden="true"></span>
+              <span id="title-welcome-text" class="title-welcome-text">DRIVER</span>
             </div>
-            <h2 class="title-side-heading">Driver Name</h2>
-            <p class="title-side-sub">Choose the tag shown above your car in online sessions.</p>
             <div class="title-name-field">
               <input
                 id="title-player-name-input"
@@ -3100,10 +3099,10 @@
                 <svg class="title-start-icon" viewBox="0 0 16 16" aria-hidden="true">
                   <polygon points="3,1.5 14,8 3,14.5" />
                 </svg>
-                <span id="title-start-btn-label">LOADING...</span>
+                <span id="title-start-btn-label">LOADING</span>
               </button>
             </div>
-            <div class="title-side-hint">PRESS ENTER TO DRIVE</div>
+            <div class="title-side-hint"><kbd>ENTER</kbd> TO DRIVE</div>
           </div>
         </aside>
       </div>
@@ -3178,7 +3177,7 @@
                   <div class="pause-tile-car-info">
                     <div class="pause-tile-car-name" id="pause-garage-current-name">JDM SUPRA GT</div>
                     <div class="pause-tile-action-prompt">
-                      <span>CHANGE CAR</span>
+                      <span>SWAP</span>
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
                     </div>
                   </div>
@@ -3189,11 +3188,11 @@
               <div class="pause-glass-tile pause-tile-reset" id="pause-tile-reset" tabindex="0">
                 <div class="pause-tile-reset-content">
                   <div class="pause-reset-icon-wrap">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
                   </div>
                   <div class="pause-reset-text-wrap">
-                    <div class="pause-tile-title">RESET POSITION</div>
-                    <div class="pause-tile-sub">FLIP UPRIGHT ON ROAD</div>
+                    <div class="pause-tile-title">RESET CAR</div>
+                    <div class="pause-tile-sub"><kbd class="inline-kbd">R</kbd> ROAD SNAP</div>
                   </div>
                 </div>
               </div>
@@ -3205,7 +3204,7 @@
               <div class="pause-glass-tile pause-tile-map" id="pause-tile-map" tabindex="0">
                 <div class="pause-mini-map-viewport">
                   <div class="pause-mini-map-plane" id="pause-mini-map-plane">
-                    <img class="pause-mini-map-satellite" src="/assets/satellite_world_map.png?v=45" alt="Satellite Map Preview" />
+                    <img class="pause-mini-map-satellite" src="/assets/satellite_world_map.png?v=47" alt="Satellite Map Preview" />
                     <!-- Mini SVG Road Overlay Traced Over Map (Inherits full road network + active GPS routes) -->
                     <svg class="pause-mini-map-roads" id="pause-mini-map-roads-svg" viewBox="0 0 2048 1920" xmlns="http://www.w3.org/2000/svg">
                       <defs>
@@ -3264,21 +3263,21 @@
                   </div>
                   <div class="pause-cam-info">
                     <div class="pause-tile-title" id="pause-cam-current-name">Chase Near</div>
-                    <div class="pause-tile-sub">CYCLE VIEW (KEY C)</div>
+                    <div class="pause-tile-sub"><kbd class="inline-kbd">C</kbd> CYCLE</div>
                     <div class="pause-cam-dots" id="pause-cam-dots"></div>
                   </div>
                 </div>
               </div>
 
-              <!-- Tile 4: Performance & Settings -->
+              <!-- Tile 4: Settings -->
               <div class="pause-glass-tile pause-tile-settings" id="pause-tile-settings" tabindex="0">
                 <div class="pause-tile-settings-content">
                   <div class="pause-settings-icon-wrap">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
                   </div>
                   <div class="pause-settings-text-wrap">
                     <div class="pause-tile-title">SETTINGS</div>
-                    <div class="pause-tile-sub">PERFORMANCE &amp; KEYS</div>
+                    <div class="pause-tile-sub">VISUALS · KEYS</div>
                   </div>
                 </div>
               </div>
@@ -3289,8 +3288,7 @@
           <div class="pause-subview pause-cars-view hidden" id="pause-cars-view">
             <div class="pause-subview-header">
               <div>
-                <div class="pause-subview-title">FLEET GARAGE</div>
-                <div class="pause-subview-sub">5 HIGH-PERFORMANCE CARS &bull; INSTANT SELECTION</div>
+                <div class="pause-subview-title">GARAGE</div>
               </div>
               <button class="pause-subview-back-btn" id="pause-cars-back-btn">
                 <span>BACK</span>
@@ -3300,12 +3298,11 @@
             <div class="pause-cars-grid" id="pause-cars-grid"></div>
           </div>
 
-          <!-- Sub-View: Settings & Performance (Slides in over tiles) -->
+          <!-- Sub-View: Settings (Slides in over tiles) -->
           <div class="pause-subview pause-settings-view hidden" id="pause-settings-view">
             <div class="pause-subview-header">
               <div>
-                <div class="pause-subview-title">SETTINGS &amp; CONTROLS</div>
-                <div class="pause-subview-sub">GRAPHICS PERFORMANCE &bull; DRIVING SHORTCUTS</div>
+                <div class="pause-subview-title">SETTINGS</div>
               </div>
               <button class="pause-subview-back-btn" id="pause-settings-back-btn">
                 <span>BACK</span>
@@ -3313,33 +3310,56 @@
               </button>
             </div>
             <div class="pause-settings-content">
-              <!-- Grass Performance Density Controls -->
+              <!-- Pixel Render Scale & Ink Outlines (Moved from HUD, 1.0x default) -->
+              <div class="pause-setting-section pause-setting-visual-row">
+                <div class="pause-setting-col">
+                  <div class="pause-setting-header">
+                    <div class="pause-setting-name">PIXEL SCALE</div>
+                  </div>
+                  <div class="pause-seg-row" id="pause-pixel-scale-row">
+                    <button class="pause-seg-btn pause-pixel-scale-btn active" data-scale="1.0" type="button">1.0x</button>
+                    <button class="pause-seg-btn pause-pixel-scale-btn" data-scale="1.25" type="button">1.25x</button>
+                    <button class="pause-seg-btn pause-pixel-scale-btn" data-scale="1.4" type="button">1.4x</button>
+                    <button class="pause-seg-btn pause-pixel-scale-btn" data-scale="1.65" type="button">1.65x</button>
+                    <button class="pause-seg-btn pause-pixel-scale-btn" data-scale="2.0" type="button">2.0x</button>
+                  </div>
+                </div>
+                <div class="pause-setting-col pause-setting-col-ink">
+                  <div class="pause-setting-header">
+                    <div class="pause-setting-name">INK OUTLINES</div>
+                  </div>
+                  <div class="pause-seg-row" id="pause-ink-toggle-row">
+                    <button class="pause-seg-btn pause-ink-opt-btn active" data-ink="on" type="button">ON</button>
+                    <button class="pause-seg-btn pause-ink-opt-btn" data-ink="off" type="button">OFF</button>
+                  </div>
+                </div>
+              </div>
+              <!-- Grass Density Controls -->
               <div class="pause-setting-section">
                 <div class="pause-setting-header">
-                  <div class="pause-setting-name">GRASS TERRAIN DENSITY</div>
-                  <div class="pause-setting-desc">Adjust grass chunk rendering to maximize frame rates on all hardware</div>
+                  <div class="pause-setting-name">GRASS DENSITY</div>
                 </div>
                 <div class="pause-grass-opt-row">
-                  <button class="pause-grass-opt-btn active" data-density="high">LUSH (100%)</button>
-                  <button class="pause-grass-opt-btn" data-density="medium">BALANCED (50%)</button>
-                  <button class="pause-grass-opt-btn" data-density="off">OFF (MAX FPS)</button>
+                  <button class="pause-grass-opt-btn active" data-density="high" type="button">LUSH</button>
+                  <button class="pause-grass-opt-btn" data-density="medium" type="button">BALANCED</button>
+                  <button class="pause-grass-opt-btn" data-density="off" type="button">OFF</button>
                 </div>
               </div>
               <!-- Keybinds Grid -->
               <div class="pause-setting-section">
                 <div class="pause-setting-header">
-                  <div class="pause-setting-name">CONTROLS &amp; SHORTCUTS</div>
+                  <div class="pause-setting-name">CONTROLS</div>
                 </div>
                 <div class="pause-keybinds-grid">
                   <div class="pause-keybind-item"><span class="pause-kbadge">W / ↑</span> Throttle</div>
-                  <div class="pause-keybind-item"><span class="pause-kbadge">S / ↓</span> Brake / Reverse</div>
-                  <div class="pause-keybind-item"><span class="pause-kbadge">A D / ← →</span> Steering</div>
-                  <div class="pause-keybind-item"><span class="pause-kbadge">SPACE</span> Handbrake Drift</div>
-                  <div class="pause-keybind-item"><span class="pause-kbadge">C</span> Cycle Camera</div>
-                  <div class="pause-keybind-item"><span class="pause-kbadge">F</span> Drone Free Cam</div>
-                  <div class="pause-keybind-item"><span class="pause-kbadge">M</span> World Map</div>
-                  <div class="pause-keybind-item"><span class="pause-kbadge">R</span> Quick Reset Car</div>
-                  <div class="pause-keybind-item"><span class="pause-kbadge">ESC</span> Pause Menu</div>
+                  <div class="pause-keybind-item"><span class="pause-kbadge">S / ↓</span> Brake</div>
+                  <div class="pause-keybind-item"><span class="pause-kbadge">A D</span> Steer</div>
+                  <div class="pause-keybind-item"><span class="pause-kbadge">SPACE</span> Drift</div>
+                  <div class="pause-keybind-item"><span class="pause-kbadge">C</span> Camera</div>
+                  <div class="pause-keybind-item"><span class="pause-kbadge">F</span> Free Cam</div>
+                  <div class="pause-keybind-item"><span class="pause-kbadge">M</span> Map</div>
+                  <div class="pause-keybind-item"><span class="pause-kbadge">R</span> Reset</div>
+                  <div class="pause-keybind-item"><span class="pause-kbadge">ESC</span> Pause</div>
                 </div>
               </div>
             </div>
@@ -3352,23 +3372,22 @@
               <div class="pause-glass-tile pause-online-tile pause-online-panel-create">
                 <div class="pause-tile-tag">
                   <span class="pause-tag-dot"></span>
-                  <span>CREATE SESSION</span>
+                  <span>HOST</span>
                 </div>
                 <div class="pause-online-panel-hero">
                   <div class="pause-online-icon-wrap">
-                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg>
                   </div>
                   <div class="pause-online-hero-text">
-                    <div class="pause-tile-title">HOST CONVOY</div>
-                    <div class="pause-tile-sub">GENERATE CODE TO INVITE</div>
+                    <div class="pause-tile-title">CREATE CONVOY</div>
                   </div>
                 </div>
                 <div class="pause-online-controls">
                   <div id="online-host-code-box" class="pause-online-code-box">
-                    <span class="pause-online-code-label">SESSION CODE</span>
+                    <span class="pause-online-code-label">CODE</span>
                     <span id="online-host-code-value" class="pause-online-code-value">---- ----</span>
                   </div>
-                  <button id="online-create-btn" class="pause-online-btn pause-online-btn-primary" type="button">CREATE SESSION</button>
+                  <button id="online-create-btn" class="pause-online-btn pause-online-btn-primary" type="button">CREATE</button>
                 </div>
               </div>
             </div>
@@ -3378,10 +3397,10 @@
               <div class="pause-glass-tile pause-online-tile pause-online-panel-players">
                 <div class="pause-tile-tag">
                   <span class="pause-tag-dot"></span>
-                  <span>SESSION PLAYERS</span>
+                  <span>PLAYERS</span>
                 </div>
                 <div class="pause-online-players-list" id="online-players-list">
-                  <div class="pause-online-empty">No session active.</div>
+                  <div class="pause-online-empty">No active convoy</div>
                 </div>
               </div>
             </div>
@@ -3391,20 +3410,19 @@
               <div class="pause-glass-tile pause-online-tile pause-online-panel-join">
                 <div class="pause-tile-tag">
                   <span class="pause-tag-dot"></span>
-                  <span>JOIN SESSION</span>
+                  <span>JOIN</span>
                 </div>
                 <div class="pause-online-panel-hero">
                   <div class="pause-online-icon-wrap">
-                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
                   </div>
                   <div class="pause-online-hero-text">
                     <div class="pause-tile-title">JOIN CONVOY</div>
-                    <div class="pause-tile-sub">ENTER CODE TO CONNECT</div>
                   </div>
                 </div>
                 <div class="pause-online-controls">
                   <label class="pause-online-input-box" for="online-join-code-input">
-                    <span class="pause-online-input-label">ENTER SESSION CODE</span>
+                    <span class="pause-online-input-label">CODE</span>
                     <input
                       id="online-join-code-input"
                       class="pause-online-input"
@@ -3415,7 +3433,7 @@
                       spellcheck="false"
                     />
                   </label>
-                  <button id="online-join-btn" class="pause-online-btn" type="button">JOIN SESSION</button>
+                  <button id="online-join-btn" class="pause-online-btn" type="button">JOIN</button>
                 </div>
               </div>
             </div>
@@ -3427,12 +3445,11 @@
             <div class="pause-footer-prompts" id="pause-footer-prompts">
               <div class="pause-footer-item"><span class="pause-key-badge">ENTER</span> SELECT</div>
               <div class="pause-footer-item"><span class="pause-key-badge">ESC</span> RESUME</div>
-              <div class="pause-footer-item"><span class="pause-key-badge">WASD / ARROWS</span> NAVIGATE</div>
-              <div class="pause-footer-item"><span class="pause-key-badge">R</span> RESET POSITION</div>
-              <div class="pause-footer-item"><span class="pause-key-badge">M</span> WORLD MAP</div>
+              <div class="pause-footer-item"><span class="pause-key-badge">R</span> RESET</div>
+              <div class="pause-footer-item"><span class="pause-key-badge">M</span> MAP</div>
             </div>
             <button type="button" class="pause-feedback-btn" id="pause-feedback-btn">
-              <span>BUG / FEEDBACK</span>
+              <span>FEEDBACK</span>
             </button>
           </footer>
         </div>
@@ -3518,7 +3535,7 @@
           <!-- Pannable & Zoomable World Plane (2048x1920) -->
           <div class="map-plane" id="map-plane">
             <!-- 1. Top-Down Satellite Photographic Base -->
-            <img class="map-satellite-img" src="/assets/satellite_world_map.png?v=45" alt="Satellite World Map" draggable="false" />
+            <img class="map-satellite-img" src="/assets/satellite_world_map.png?v=47" alt="Satellite World Map" draggable="false" />
 
             <!-- 2. Layered SVG Vector Road Lines -->
             <svg class="map-routes-svg" id="map-routes-svg" viewBox="0 0 2048 1920" xmlns="http://www.w3.org/2000/svg">

@@ -7,7 +7,6 @@
       "**/.DS_Store",
       "**/node_modules/**",
       "assets/*.glb",
-      "assets/satellite_world_map.png",
       "assets/TerrainHeightRoadMap.png",
       "assets/*.json"
     ],
