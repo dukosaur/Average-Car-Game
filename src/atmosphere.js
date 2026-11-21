@@ -770,26 +770,7 @@ export class AtmosphereSystem {
         this._airborneTime = 0;
       }
 
-      // (b) High-Speed Aerodynamic Wingtip & Mirror Slipstream Vapor Trails (> 52 MPH / 84 km/h)
-      if (speedKmh > 84.0 && carPos && carForward && carRight) {
-        const speedNorm = Math.min(1.0, (speedKmh - 84.0) / 110.0);
-        this._slipstreamAcc += dt * (18.0 + speedNorm * 34.0);
-        const vaporCol = new THREE.Color(0xf4f9ff);
-        while (this._slipstreamAcc >= 1.0) {
-          this._slipstreamAcc -= 1.0;
-          for (const side of [-0.82, 0.82]) {
-            const wx = carPos.x - carForward.x * 1.92 + carRight.x * side;
-            const wy = carPos.y + 0.90 + (Math.random() - 0.5) * 0.05;
-            const wz = carPos.z - carForward.z * 1.92 + carRight.z * side;
-            const vx = -carForward.x * (2.5 + speedNorm * 3.5) + carRight.x * side * 0.35;
-            const vy = 0.15 + (Math.random() - 0.5) * 0.25;
-            const vz = -carForward.z * (2.5 + speedNorm * 3.5) + carRight.z * side * 0.35;
-            this._spawnDustPuff(wx, wy, wz, vx, vy, vz, 0.18 + speedNorm * 0.12, vaporCol, 1.0);
-          }
-        }
-      }
-
-      // (c) Biome-Matched Tire Wake Leaf / Petal / Ember / Snow Kick-Up while driving fast (> 32 MPH / 52 km/h)
+      // (b) Biome-Matched Tire Wake Leaf / Petal / Ember / Snow Kick-Up while driving fast (> 32 MPH / 52 km/h)
       if (groundedCount > 0 && speedKmh > 52.0 && carForward) {
         const wakeRate = Math.min(24.0, (speedKmh - 52.0) * 0.22);
         this._offroadAcc += dt * wakeRate;
