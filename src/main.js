@@ -14,6 +14,7 @@ import { createStuntRamps } from './stuntRamps.js';
 import { assetUrl } from './assetUrl.js';
 import {
   PIXEL_THEME_ENABLED,
+  PIXEL_LIGHTING_UNIFORMS,
   isPixelBillboardKey,
   isSlopeHuggingBillboardKey,
   isPixelRockKey,
@@ -40,6 +41,7 @@ import {
   createBridgeGuardrails,
   createPixel3DLandmarks,
   createExpandedScatterWorld,
+  createRoadsideStreetlamps,
   bakePixelWorldMap,
 } from './pixelAssets.js';
 
@@ -1741,6 +1743,16 @@ async function buildTestGround(scene, world, maxAnisotropy = 8, sun) {
               child.renderOrder = 1;
               child.castShadow = false;
               child.receiveShadow = true;
+              if (child.geometry) {
+                child.geometry.computeBoundingBox();
+                if (child.geometry.boundingBox) {
+                  child.updateWorldMatrix(true, false);
+                  const worldY = child.geometry.boundingBox.max.y + child.matrixWorld.elements[13];
+                  if (Number.isFinite(worldY)) {
+                    PIXEL_LIGHTING_UNIFORMS.uWaterLevel.value = worldY;
+                  }
+                }
+              }
               return;
             }
 
@@ -1933,18 +1945,20 @@ async function buildTestGround(scene, world, maxAnisotropy = 8, sun) {
         // Spawn 3D pixel bridge guardrail fences, spinning 3D windmills, village wells/stalls,
         // desert water towers, volcanic rune obelisks, and expanded 8-tile biome scatter!
         let landmarks3D = null;
+        let streetlamps = null;
         if (PIXEL_THEME_ENABLED) {
           createBridgeGuardrails(scene, terrainSampler, mapRoutesData, obstacles, roadCorridors, RAPIER, world);
           landmarks3D = createPixel3DLandmarks(scene, terrainSampler, roadCorridors, natureInstances);
           createExpandedScatterWorld(scene, terrainSampler, roadCorridors);
+          streetlamps = createRoadsideStreetlamps(scene, terrainSampler, mapRoutesData, roadCorridors, obstacles);
         }
 
-        resolve({ grassField, natureField, waterMat, livingWorld, landmarks3D, obstacles });
+        resolve({ grassField, natureField, waterMat, livingWorld, landmarks3D, streetlamps, obstacles });
       },
       undefined,
       (err) => {
         console.warn('Could not load circuit_track.glb:', err);
-        resolve({ grassField: null, natureField: null, waterMat: null, livingWorld: null, landmarks3D: null, obstacles: [] });
+        resolve({ grassField: null, natureField: null, waterMat: null, livingWorld: null, landmarks3D: null, streetlamps: null, obstacles: [] });
       }
     );
   });
@@ -2287,15 +2301,52 @@ async function init() {
   fillLight.position.set(-sun.x * 80, 45, -sun.z * 80);
   scene.add(fillLight);
 
-  const atmosphere = new AtmosphereSystem(scene, { skyMat, dirLight, hemiLight });
+  const atmosphere = new AtmosphereSystem(scene, { skyMat, dirLight, hemiLight, sunVec: sun });
   window.__atmosphere = atmosphere;
+
+  // Dynamic working car headlights (automatically illuminates the road at Sunset & Night!)
+  const headlightSpot = new THREE.SpotLight(0xfff1d6, 0, 48, Math.PI * 0.28, 0.58, 1.35);
+  headlightSpot.castShadow = false;
+  const headlightTarget = new THREE.Object3D();
+  scene.add(headlightSpot);
+  scene.add(headlightTarget);
+  headlightSpot.target = headlightTarget;
+
+  // Subtle grounded contact-shadow oval directly beneath the player car
+  const contactShadowMesh = (() => {
+    const c = document.createElement('canvas');
+    c.width = 64;
+    c.height = 64;
+    const ctx = c.getContext('2d');
+    const g = ctx.createRadialGradient(32, 32, 6, 32, 32, 30);
+    g.addColorStop(0.0, 'rgba(6, 9, 15, 0.54)');
+    g.addColorStop(0.55, 'rgba(6, 9, 15, 0.30)');
+    g.addColorStop(1.0, 'rgba(6, 9, 15, 0.0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 64, 64);
+    const tex = new THREE.CanvasTexture(c);
+    const mat = new THREE.MeshBasicMaterial({
+      map: tex,
+      transparent: true,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+    });
+    const geo = new THREE.PlaneGeometry(2.35, 4.85);
+    geo.rotateX(-Math.PI * 0.5);
+    const m = new THREE.Mesh(geo, mat);
+    m.renderOrder = 3;
+    scene.add(m);
+    return m;
+  })();
 
   const gravity = { x: 0.0, y: -9.81, z: 0.0 };
   const world = new RAPIER.World(gravity);
 
   if (isTitleScreenOpen) setTitleLoadingProgress(40, 'LOADING WORLD & BIOMES...');
   const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
-  const { grassField, natureField, waterMat, livingWorld, landmarks3D, obstacles } = await buildTestGround(scene, world, maxAnisotropy, sun);
+  const { grassField, natureField, waterMat, livingWorld, landmarks3D, streetlamps, obstacles } = await buildTestGround(scene, world, maxAnisotropy, sun);
 
   if (isTitleScreenOpen) setTitleLoadingProgress(75, 'PREPARING VEHICLES...');
   const { parts, bounds } = await loadRiggedCar(CAR_ROSTER[0].url);
@@ -2489,6 +2540,10 @@ async function init() {
       if (pixelPipeline) pixelPipeline.setOutlinesEnabled(enabled);
     },
     getOutlinesEnabledFn: () => (pixelPipeline ? pixelPipeline.outlinesEnabled : true),
+    setTimeOfDayFn: (mode) => {
+      if (atmosphere) atmosphere.setTimeOfDay(mode);
+    },
+    getTimeOfDayFn: () => (atmosphere ? atmosphere.getTimeOfDay() : 'noon'),
     resetVehicleFn: resetVehicleToClosestRoad
   });
   window.__pauseMenu = pauseMenu;
@@ -3386,6 +3441,20 @@ async function init() {
     }
     if (waterMat) {
       waterMat.uniforms.uTime.value = now * 0.001;
+      if (waterMat.uniforms.uSunPosition) {
+        waterMat.uniforms.uSunPosition.value.copy(sun);
+      }
+      if (skyMat && skyMat.uniforms) {
+        if (waterMat.uniforms.uSkyHorizon && skyMat.uniforms.uHorizonColor) {
+          waterMat.uniforms.uSkyHorizon.value.copy(skyMat.uniforms.uHorizonColor.value);
+        }
+        if (waterMat.uniforms.uSkyMid && skyMat.uniforms.uMidSkyColor) {
+          waterMat.uniforms.uSkyMid.value.copy(skyMat.uniforms.uMidSkyColor.value);
+        }
+        if (waterMat.uniforms.uSkyZenith && skyMat.uniforms.uZenithColor) {
+          waterMat.uniforms.uSkyZenith.value.copy(skyMat.uniforms.uZenithColor.value);
+        }
+      }
     }
 
     // 2. Tightly anchor directional sunlight frustum over the active vehicle / freecam / title showcase
@@ -3402,12 +3471,49 @@ async function init() {
     if (landmarks3D) {
       landmarks3D.update(now * 0.001);
     }
+    if (streetlamps && atmosphere) {
+      streetlamps.update(shadowCenter, atmosphere.curNightFactor);
+    }
     dirLight.position.set(
       shadowCenter.x + sun.x * 65,
       shadowCenter.y + sun.y * 65,
       shadowCenter.z + sun.z * 65
     );
     dirLight.target.position.copy(shadowCenter);
+
+    // Sync opposite fill light, dynamic night/sunset car headlights, and grounded under-car contact shadow
+    if (atmosphere) {
+      const nf = atmosphere.curNightFactor || 0;
+      fillLight.intensity = 0.38 * (1.0 - nf * 0.65);
+      headlightSpot.intensity = nf > 0.04 ? nf * nf * 135.0 + nf * 22.0 : 0.0;
+      if (headlightSpot.intensity > 0.01) {
+        headlightSpot.position.set(
+          chassisWorldPos.x + carForward.x * 1.95,
+          chassisWorldPos.y + 0.78,
+          chassisWorldPos.z + carForward.z * 1.95
+        );
+        headlightTarget.position.set(
+          chassisWorldPos.x + carForward.x * 20.0,
+          chassisWorldPos.y - 0.55,
+          chassisWorldPos.z + carForward.z * 20.0
+        );
+      }
+    }
+    if (contactShadowMesh && vehicle && vehicle.wheels && vehicle.wheels.length >= 4) {
+      let minWheelY = Infinity;
+      let anyGrounded = false;
+      for (const wh of vehicle.wheels) {
+        if (wh.grounded && wh.hitPoint) {
+          anyGrounded = true;
+          if (wh.hitPoint.y < minWheelY) minWheelY = wh.hitPoint.y;
+        }
+      }
+      contactShadowMesh.visible = anyGrounded;
+      if (anyGrounded) {
+        contactShadowMesh.position.set(chassisWorldPos.x, minWheelY + 0.045, chassisWorldPos.z);
+        contactShadowMesh.rotation.set(0, Math.atan2(carForward.x, carForward.z), 0);
+      }
+    }
 
     frameCount++;
     if (now - lastFpsTime >= 500) {

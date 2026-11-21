@@ -35,6 +35,8 @@ export class PauseMenuController {
     getPixelScaleFn,
     setOutlinesEnabledFn,
     getOutlinesEnabledFn,
+    setTimeOfDayFn,
+    getTimeOfDayFn,
     resetVehicleFn
   }) {
     this.vehicle = vehicle;
@@ -52,6 +54,8 @@ export class PauseMenuController {
     this.getPixelScaleFn = getPixelScaleFn;
     this.setOutlinesEnabledFn = setOutlinesEnabledFn;
     this.getOutlinesEnabledFn = getOutlinesEnabledFn;
+    this.setTimeOfDayFn = setTimeOfDayFn;
+    this.getTimeOfDayFn = getTimeOfDayFn;
     this.resetVehicleFn = resetVehicleFn;
 
     this.isOpen = false;
@@ -153,6 +157,7 @@ export class PauseMenuController {
     this.grassOptionBtns = document.querySelectorAll('.pause-grass-opt-btn');
     this.pixelScaleBtns = document.querySelectorAll('.pause-pixel-scale-btn');
     this.inkOptionBtns = document.querySelectorAll('.pause-ink-opt-btn');
+    this.todOptionBtns = document.querySelectorAll('.pause-tod-opt-btn');
 
     // Minimalist HUD Pause Prompt (Top-Left) & Circular Mini-Map (Bottom-Left)
     this.hudPausePromptEl = document.getElementById('hud-pause-prompt');
@@ -423,6 +428,19 @@ export class PauseMenuController {
       });
     }
 
+    // Time of Day Presets (Noon / Sunset / Night)
+    if (this.todOptionBtns) {
+      this.todOptionBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          const mode = btn.dataset.tod;
+          if (mode && this.setTimeOfDayFn) {
+            this.setTimeOfDayFn(mode);
+          }
+          this.updatePixelStyleButtons();
+        });
+      });
+    }
+
     // Clicking outside modal content / on overlay backdrop resumes
     if (this.overlayEl) {
       this.overlayEl.addEventListener('click', (e) => {
@@ -625,6 +643,12 @@ export class PauseMenuController {
     if (this.inkOptionBtns) {
       this.inkOptionBtns.forEach(btn => {
         btn.classList.toggle('active', (btn.dataset.ink === 'on') === inkOn);
+      });
+    }
+    const activeTod = this.getTimeOfDayFn ? this.getTimeOfDayFn() : 'noon';
+    if (this.todOptionBtns) {
+      this.todOptionBtns.forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tod === activeTod);
       });
     }
   }

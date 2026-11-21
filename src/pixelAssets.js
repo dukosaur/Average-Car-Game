@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import {
   PixelCanvas,
+  PIXEL_LIGHTING_UNIFORMS,
   getBiomeIdAt,
   patchWorldPropMaterialForPixelTheme,
 } from './pixelTheme.js';
@@ -706,6 +707,77 @@ export function buildArchitecturalTextureCanvases() {
 }
 
 let cachedArchMaterials = null;
+const bridgeEmitterMaterials = [];
+
+/**
+ * Generates an HDR window-pane emissive mask from a building front PixelCanvas:
+ * detects painted glass window panes (sky-blue / warm amber glass) while keeping
+ * plaster, stone, timber, and doors completely dark — so at Sunset & Night, ONLY
+ * the house windows light up warmly!
+ */
+function buildWindowEmissiveTex(pc) {
+  const c = document.createElement('canvas');
+  c.width = pc.w;
+  c.height = pc.h;
+  const ctx = c.getContext('2d');
+  const out = ctx.createImageData(pc.w, pc.h);
+  const src = pc.data;
+  const dst = out.data;
+  for (let i = 0; i < src.length; i += 4) {
+    const r = src[i], g = src[i + 1], b = src[i + 2];
+    // Detect both sky-blue glass panes (town/adobe) and bright golden hearth glass (chalet)
+    // while keeping cream plaster, sand adobe stucco, timber, and stone completely unlit
+    const isBlueGlass = (b > r + 22 && b > 115 && g > 95);
+    const isHearthGlass = (r >= 240 && g >= 175 && (r - b) >= 65);
+    const isTealGlass = (b > r + 14 && g > r + 10 && b > 85 && r < 115);
+    if (isBlueGlass || isHearthGlass || isTealGlass) {
+      dst[i] = 255;
+      dst[i + 1] = 204;
+      dst[i + 2] = 112;
+      dst[i + 3] = 255;
+    } else {
+      dst[i] = 0;
+      dst[i + 1] = 0;
+      dst[i + 2] = 0;
+      dst[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(out, 0, 0);
+  const tex = new THREE.CanvasTexture(c);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.generateMipmaps = true;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+export function setArchTimeOfDayLighting(nightFactor) {
+  const nf = Math.max(0.0, Math.min(1.0, nightFactor || 0.0));
+  if (cachedArchMaterials) {
+    for (const key of [
+      'townFrontA', 'townWallA',
+      'townFrontB', 'townWallB',
+      'chaletFront', 'chaletWall',
+      'adobeFront', 'adobeWall',
+    ]) {
+      const m = cachedArchMaterials[key];
+      if (m) m.emissiveIntensity = nf * 2.15;
+    }
+    if (cachedArchMaterials.volcanoRune) {
+      cachedArchMaterials.volcanoRune.emissiveIntensity = 0.65 + nf * 1.35;
+    }
+    if (cachedArchMaterials.beaconGlow) {
+      const boost = 1.15 + nf * 0.85;
+      cachedArchMaterials.beaconGlow.color.setRGB(1.0 * boost, 0.94 * boost, 0.62 * boost);
+    }
+  }
+  for (let i = 0; i < bridgeEmitterMaterials.length; i++) {
+    bridgeEmitterMaterials[i].emissiveIntensity = 1.2 + nf * 2.2;
+  }
+}
 
 function getArchMaterials() {
   if (cachedArchMaterials) return cachedArchMaterials;
@@ -715,12 +787,13 @@ function getArchMaterials() {
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.RepeatWrapping;
     if (opts.repeat) tex.repeat.set(opts.repeat[0], opts.repeat[1]);
+    const emissiveTex = opts.windowGlow ? buildWindowEmissiveTex(pc) : (opts.emissiveMap ? tex : null);
     const mat = new THREE.MeshStandardMaterial({
       map: tex,
       roughness: opts.roughness ?? 0.88,
       metalness: opts.metalness ?? 0.04,
-      emissive: opts.emissive ? new THREE.Color(opts.emissive) : new THREE.Color(0x000000),
-      emissiveMap: opts.emissiveMap ? tex : null,
+      emissive: (opts.emissive || opts.windowGlow) ? new THREE.Color(opts.emissive || 0xffcc70) : new THREE.Color(0x000000),
+      emissiveMap: emissiveTex,
       emissiveIntensity: opts.emissiveIntensity ?? 0.0,
       side: opts.side ?? THREE.FrontSide,
     });
@@ -729,17 +802,17 @@ function getArchMaterials() {
   };
 
   cachedArchMaterials = {
-    townWallA:      makeMat(canvases.townWallA),
-    townFrontA:     makeMat(canvases.townFrontA),
+    townWallA:      makeMat(canvases.townWallA, { windowGlow: true }),
+    townFrontA:     makeMat(canvases.townFrontA, { windowGlow: true }),
     terracottaRoof: makeMat(canvases.terracottaRoof, { side: THREE.DoubleSide }),
-    townWallB:      makeMat(canvases.townWallB),
-    townFrontB:     makeMat(canvases.townFrontB),
+    townWallB:      makeMat(canvases.townWallB, { windowGlow: true }),
+    townFrontB:     makeMat(canvases.townFrontB, { windowGlow: true }),
     slateRoof:      makeMat(canvases.slateRoof, { side: THREE.DoubleSide }),
-    chaletWall:     makeMat(canvases.chaletWall),
-    chaletFront:    makeMat(canvases.chaletFront),
+    chaletWall:     makeMat(canvases.chaletWall, { windowGlow: true }),
+    chaletFront:    makeMat(canvases.chaletFront, { windowGlow: true }),
     snowRoof:       makeMat(canvases.snowRoof, { side: THREE.DoubleSide }),
-    adobeWall:      makeMat(canvases.adobeWall),
-    adobeFront:     makeMat(canvases.adobeFront),
+    adobeWall:      makeMat(canvases.adobeWall, { windowGlow: true }),
+    adobeFront:     makeMat(canvases.adobeFront, { windowGlow: true }),
     adobeRoof:      makeMat(canvases.adobeRoof, { side: THREE.DoubleSide }),
     lighthouseBody: makeMat(canvases.lighthouseBody),
     paddockCanopy:  makeMat(canvases.paddockCanopy, { side: THREE.DoubleSide }),
@@ -1118,8 +1191,9 @@ export function patchBridgeSceneryMaterial(m, isEmitter = false) {
   if (!m) return;
   if (isEmitter) {
     m.emissive = new THREE.Color(0xffe08a);
-    m.emissiveIntensity = 1.6;
+    m.emissiveIntensity = 1.4;
     m.needsUpdate = true;
+    bridgeEmitterMaterials.push(m);
     return;
   }
   const M = getArchMaterials();
@@ -1144,8 +1218,7 @@ export function patchBridgeSceneryMaterial(m, isEmitter = false) {
            vec2 triUv = (abs(vBrNorm.y) > 0.72)
              ? vBrPos.xz * 0.25
              : ((abs(vBrNorm.x) > abs(vBrNorm.z)) ? vBrPos.zy * 0.25 : vBrPos.xy * 0.25);
-           vec2 snapped = (floor(fract(triUv) * 64.0) + 0.5) / 64.0;
-           vec4 sampledDiffuseColor = texture2D(map, snapped);
+           vec4 sampledDiffuseColor = texture2D(map, triUv);
            diffuseColor *= sampledDiffuseColor;
            // Subtle crimson-steel bridge tower accent on high towers (y > 8m)
            if (vBrPos.y > 10.0) {
@@ -2081,7 +2154,12 @@ export function createExpandedScatterWorld(scene, terrainSampler, roadCorridors)
   const dummy = new THREE.Object3D();
 
   const mat = new THREE.ShaderMaterial({
-    uniforms: { ...THREE.UniformsLib.fog, uMap: { value: atlasTex } },
+    uniforms: {
+      ...THREE.UniformsLib.fog,
+      uMap: { value: atlasTex },
+      uNightFactor: PIXEL_LIGHTING_UNIFORMS.uNightFactor,
+      uSunsetFactor: PIXEL_LIGHTING_UNIFORMS.uSunsetFactor,
+    },
     vertexShader: /* glsl */ `
       #include <common>
       #include <fog_pars_vertex>
@@ -2116,14 +2194,19 @@ export function createExpandedScatterWorld(scene, terrainSampler, roadCorridors)
       #include <common>
       #include <fog_pars_fragment>
       uniform sampler2D uMap;
+      uniform float uNightFactor;
+      uniform float uSunsetFactor;
       varying vec2 vUv;
       varying float vTile;
       void main() {
         vec4 t = texture2D(uMap, vUv);
         if (t.a < 0.5) discard;
-        // Subtle glow lift on amethyst crystals (5) & alpine lanterns (6)
+        // Subtle glow lift on amethyst crystals (5) & alpine lanterns (6) — blooms brightly at Sunset/Night!
         float isGlow = (abs(vTile - 5.0) < 0.2 || abs(vTile - 6.0) < 0.2) ? 1.0 : 0.0;
-        vec3 col = t.rgb * mix(1.0, 1.24, isGlow * step(0.45, max(t.r, t.b)));
+        float glowMask = isGlow * step(0.42, max(t.r, t.b));
+        vec3 todTint = mix(vec3(1.0), vec3(1.06, 0.84, 0.68), uSunsetFactor * 0.72);
+        todTint = mix(todTint, vec3(0.25, 0.33, 0.53), uNightFactor * 0.90);
+        vec3 col = t.rgb * mix(todTint, vec3(1.25 + uNightFactor * 0.65), glowMask);
         gl_FragColor = vec4(col, 1.0);
         #include <fog_fragment>
         #include <tonemapping_fragment>
@@ -2153,6 +2236,315 @@ export function createExpandedScatterWorld(scene, terrainSampler, roadCorridors)
   mesh.frustumCulled = false;
   scene.add(mesh);
   return mesh;
+}
+
+/**
+ * Grounded, Inward-Facing 3D Roadside Streetlamp Network (60 FPS Instanced + 4 Pooled PointLights!):
+ * - Spaced cleanly every ~46m along highways & secondary roads, alternating left & right
+ * - Deep -1.8m anchor base so ZERO streetlamps ever float on slopes or bridge curbs
+ * - Overhanging cobra-head arm ALWAYS faces inward over the road lane
+ * - At Sunset & Night: HDR warm-amber glowing lamp heads (triggers Selective Pixel Bloom),
+ *   soft golden additive light pools on the asphalt beneath every lamp, AND 4 dynamic
+ *   PointLights that smoothly snap to the 4 nearest lamps around the car!
+ */
+export function createRoadsideStreetlamps(scene, terrainSampler, mapRoutesData, roadCorridors = [], obstacles = []) {
+  if (!mapRoutesData || !mapRoutesData.routes) return null;
+
+  const RCELL = 14.0;
+  const roadGrid = new Map();
+  if (roadCorridors && roadCorridors.length) {
+    for (let i = 0; i < roadCorridors.length; i++) {
+      const r = roadCorridors[i];
+      const rx = r[0], rz = -r[1], ry = r[2] || 0, rw = r[3] || 7.5;
+      const gx = Math.floor(rx / RCELL), gz = Math.floor(rz / RCELL);
+      const key = `${gx}_${gz}`;
+      if (!roadGrid.has(key)) roadGrid.set(key, []);
+      roadGrid.get(key).push({ x: rx, y: ry, z: rz, w: rw });
+    }
+  }
+  const isOnRoadAsphalt = (x, y, z) => {
+    const gx = Math.floor(x / RCELL), gz = Math.floor(z / RCELL);
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dz = -1; dz <= 1; dz++) {
+        const pts = roadGrid.get(`${gx + dx}_${gz + dz}`);
+        if (!pts) continue;
+        for (let i = 0; i < pts.length; i++) {
+          if (Math.abs(y - pts[i].y) > 3.0) continue;
+          if (Math.hypot(x - pts[i].x, z - pts[i].z) < pts[i].w - 0.15) return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  const LCELL = 28.0;
+  const placedGrid = new Map();
+  const isNearExistingLamp = (x, z) => {
+    const gx = Math.floor(x / LCELL), gz = Math.floor(z / LCELL);
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dz = -1; dz <= 1; dz++) {
+        const arr = placedGrid.get(`${gx + dx}_${gz + dz}`);
+        if (!arr) continue;
+        for (let i = 0; i < arr.length; i++) {
+          if (Math.hypot(x - arr[i].x, z - arr[i].z) < 28.0) return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  const halfWidthByType = { highway: 8.90, secondary: 6.70 };
+  const lamps = [];
+  const up = new THREE.Vector3(0, 1, 0);
+  const tmpDir = new THREE.Vector3();
+  const tmpRight = new THREE.Vector3();
+
+  for (const route of mapRoutesData.routes) {
+    if (route.type !== 'highway' && route.type !== 'secondary') continue;
+    if (route.id && route.id.startsWith('overpass_bridge_')) continue;
+    const pts = route.points;
+    if (!pts || pts.length < 6) continue;
+    const hw = halfWidthByType[route.type] || 6.70;
+
+    let distAcc = 18.0;
+    let sideToggle = 1;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[i], p1 = pts[i + 1];
+      const seg = Math.hypot(p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]);
+      if (seg < 0.1 || seg > 25.0) continue;
+      distAcc += seg;
+      if (distAcc < 46.0) continue;
+      distAcc = 0;
+
+      tmpDir.set(p1[0] - p0[0], 0, p1[2] - p0[2]);
+      if (tmpDir.lengthSq() < 1e-4) continue;
+      tmpDir.normalize();
+      tmpRight.crossVectors(tmpDir, up).normalize();
+
+      sideToggle = -sideToggle;
+      const sx = tmpRight.x * sideToggle;
+      const sz = tmpRight.z * sideToggle;
+      const px = p0[0] + sx * (hw + 0.55);
+      const pz = p0[2] + sz * (hw + 0.55);
+      const py = p0[1];
+
+      if (isOnRoadAsphalt(px, py, pz) || isNearExistingLamp(px, pz)) continue;
+
+      // Always face inward toward the road centerline!
+      const rotY = Math.atan2(-sx, -sz);
+      const bulbX = px - sx * 1.75;
+      const bulbY = py + 6.45;
+      const bulbZ = pz - sz * 1.75;
+      const poolX = px - sx * 2.25;
+      const poolY = py + 0.06;
+      const poolZ = pz - sz * 2.25;
+
+      const gx = Math.floor(px / LCELL), gz = Math.floor(pz / LCELL);
+      const key = `${gx}_${gz}`;
+      if (!placedGrid.has(key)) placedGrid.set(key, []);
+      placedGrid.get(key).push({ x: px, z: pz });
+
+      lamps.push({ px, py, pz, rotY, bulbX, bulbY, bulbZ, poolX, poolY, poolZ });
+    }
+  }
+
+  if (!lamps.length) return null;
+
+  const M = getArchMaterials();
+  // 1. Grounded 3D Dark-Iron Streetlamp Pole + Overhanging Arm (base extends -1.8m so ZERO floating!)
+  const poleGeo = mergeSafe([
+    boxGeo(0.42, 2.35, 0.42, 0, -0.62, 0),     // Heavy anchor plinth (-1.8m to +0.55m)
+    boxGeo(0.20, 6.75, 0.20, 0,  3.35, 0),     // Main vertical pole
+    boxGeo(0.16, 0.16, 1.95, 0,  6.68, 0.90),  // Overhanging arm pointing +Z (inward over road!)
+    boxGeo(0.56, 0.16, 0.92, 0,  6.58, 1.80),  // Sleek lamp housing hood
+  ]);
+  const bulbGeo = boxGeo(0.44, 0.14, 0.72, 0, 6.46, 1.80);
+
+  const bulbMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xfff1c4) });
+
+  const poleIM = new THREE.InstancedMesh(poleGeo, M.darkMetal, lamps.length);
+  const bulbIM = new THREE.InstancedMesh(bulbGeo, bulbMat, lamps.length);
+  poleIM.frustumCulled = false;
+  bulbIM.frustumCulled = false;
+
+  // 2. Subtle Volumetric 3D Hanging Light Cone Under Every Streetlamp Hood (never clips sloped roads!)
+  const coneCanvas = document.createElement('canvas');
+  coneCanvas.width = 16;
+  coneCanvas.height = 64;
+  const cctx = coneCanvas.getContext('2d');
+  const cgrad = cctx.createLinearGradient(0, 0, 0, 64);
+  cgrad.addColorStop(0.0, 'rgba(255, 226, 152, 0.85)');
+  cgrad.addColorStop(0.28, 'rgba(255, 198, 108, 0.34)');
+  cgrad.addColorStop(0.75, 'rgba(255, 176, 82, 0.08)');
+  cgrad.addColorStop(1.0, 'rgba(255, 160, 64, 0.0)');
+  cctx.fillStyle = cgrad;
+  cctx.fillRect(0, 0, 16, 64);
+  const coneTex = new THREE.CanvasTexture(coneCanvas);
+  const coneGeo = new THREE.CylinderGeometry(0.22, 2.75, 5.4, 10, 1, true);
+  coneGeo.translate(0, 3.70, 1.80);
+  const coneMat = new THREE.MeshBasicMaterial({
+    map: coneTex,
+    transparent: true,
+    opacity: 0.0,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  const coneIM = new THREE.InstancedMesh(coneGeo, coneMat, lamps.length);
+  coneIM.frustumCulled = false;
+  coneIM.renderOrder = 4;
+
+  const dummy = new THREE.Object3D();
+  for (let i = 0; i < lamps.length; i++) {
+    const l = lamps[i];
+    dummy.position.set(l.px, l.py, l.pz);
+    dummy.rotation.set(0, l.rotY, 0);
+    dummy.scale.set(1, 1, 1);
+    dummy.updateMatrix();
+    poleIM.setMatrixAt(i, dummy.matrix);
+    bulbIM.setMatrixAt(i, dummy.matrix);
+    coneIM.setMatrixAt(i, dummy.matrix);
+  }
+  poleIM.instanceMatrix.needsUpdate = true;
+  bulbIM.instanceMatrix.needsUpdate = true;
+  coneIM.instanceMatrix.needsUpdate = true;
+
+  scene.add(poleIM);
+  scene.add(bulbIM);
+  scene.add(coneIM);
+
+  // 3. 5 Dynamic Pooled PointLights that smoothly illuminate sloped roads, curbs & cars under nearest lamps!
+  const POOL_LIGHTS = 5;
+  const pointLights = [];
+  for (let i = 0; i < POOL_LIGHTS; i++) {
+    const pl = new THREE.PointLight(0xffca7a, 0.0, 38.0, 1.4);
+    pl.position.set(0, -100, 0);
+    scene.add(pl);
+    pointLights.push(pl);
+  }
+
+  // 4. 2 Dynamic Pooled Warm Porch/Window PointLights for nearest Village Houses at Sunset & Night!
+  const housePositions = [];
+  if (obstacles && obstacles.length) {
+    for (let i = 0; i < obstacles.length; i++) {
+      const obs = obstacles[i];
+      if (obs.type !== 'building') continue;
+      const hx = obs.x;
+      const hz = -obs.y;
+      const surf = terrainSampler ? terrainSampler.sample(hx, hz) : null;
+      const hy = (surf ? surf.y : (obs.z || 0)) + 3.4;
+      housePositions.push({ x: hx, y: hy, z: hz });
+    }
+  }
+  const HOUSE_POOL_LIGHTS = 2;
+  const houseLights = [];
+  for (let i = 0; i < HOUSE_POOL_LIGHTS; i++) {
+    const hl = new THREE.PointLight(0xffb65c, 0.0, 30.0, 1.45);
+    hl.position.set(0, -100, 0);
+    scene.add(hl);
+    houseLights.push(hl);
+  }
+
+  // Pre-allocated zero-GC scratch arrays for nearest-light selection (no per-frame object allocations or sort!)
+  const bestLampIdx = new Int32Array(POOL_LIGHTS);
+  const bestLampD2 = new Float32Array(POOL_LIGHTS);
+  const bestHouseIdx = new Int32Array(HOUSE_POOL_LIGHTS);
+  const bestHouseD2 = new Float32Array(HOUSE_POOL_LIGHTS);
+  let frameTick = 0;
+
+  return {
+    count: lamps.length,
+    update(focusPos, nightFactor) {
+      const nf = Math.max(0.0, Math.min(1.0, nightFactor || 0.0));
+      // HDR warm bulb glow triggers Selective Pixel Bloom cleanly at Sunset & Night!
+      const bBoost = 0.55 + nf * 1.45;
+      bulbMat.color.setRGB(1.0 * bBoost, 0.88 * bBoost, 0.56 * bBoost);
+      coneMat.opacity = nf * 0.24;
+      coneIM.visible = nf > 0.03;
+
+      if (nf < 0.04 || !focusPos) {
+        for (let i = 0; i < POOL_LIGHTS; i++) pointLights[i].intensity = 0.0;
+        for (let i = 0; i < HOUSE_POOL_LIGHTS; i++) houseLights[i].intensity = 0.0;
+        return;
+      }
+
+      // Lamps & buildings are static: refresh nearest-index assignments every 4th frame (zero stutter!)
+      frameTick++;
+      const doRefresh = (frameTick & 3) === 1;
+      const fx = focusPos.x;
+      const fz = focusPos.z;
+
+      if (doRefresh) {
+        bestLampIdx.fill(-1);
+        bestLampD2.fill(7225.0); // 85m^2
+        for (let i = 0; i < lamps.length; i++) {
+          const l = lamps[i];
+          const dx = l.bulbX - fx;
+          const dz = l.bulbZ - fz;
+          const d2 = dx * dx + dz * dz;
+          if (d2 >= bestLampD2[POOL_LIGHTS - 1]) continue;
+          let slot = POOL_LIGHTS - 1;
+          while (slot > 0 && d2 < bestLampD2[slot - 1]) {
+            bestLampD2[slot] = bestLampD2[slot - 1];
+            bestLampIdx[slot] = bestLampIdx[slot - 1];
+            slot--;
+          }
+          bestLampD2[slot] = d2;
+          bestLampIdx[slot] = i;
+        }
+      }
+
+      const maxInt = nf * 44.0;
+      for (let i = 0; i < POOL_LIGHTS; i++) {
+        const idx = bestLampIdx[i];
+        if (idx >= 0) {
+          const l = lamps[idx];
+          const dist = Math.hypot(l.bulbX - fx, l.bulbZ - fz);
+          const fade = Math.max(0.0, 1.0 - dist / 85.0);
+          pointLights[i].position.set(l.bulbX, l.bulbY - 0.55, l.bulbZ);
+          pointLights[i].intensity = maxInt * (0.35 + 0.65 * fade);
+        } else {
+          pointLights[i].intensity = 0.0;
+        }
+      }
+
+      // Find the 2 nearest village houses for warm golden spill light on nearby streets/yards
+      if (housePositions.length > 0) {
+        if (doRefresh) {
+          bestHouseIdx.fill(-1);
+          bestHouseD2.fill(4900.0); // 70m^2
+          for (let i = 0; i < housePositions.length; i++) {
+            const h = housePositions[i];
+            const dx = h.x - fx;
+            const dz = h.z - fz;
+            const d2 = dx * dx + dz * dz;
+            if (d2 >= bestHouseD2[HOUSE_POOL_LIGHTS - 1]) continue;
+            let slot = HOUSE_POOL_LIGHTS - 1;
+            while (slot > 0 && d2 < bestHouseD2[slot - 1]) {
+              bestHouseD2[slot] = bestHouseD2[slot - 1];
+              bestHouseIdx[slot] = bestHouseIdx[slot - 1];
+              slot--;
+            }
+            bestHouseD2[slot] = d2;
+            bestHouseIdx[slot] = i;
+          }
+        }
+        const maxHouseInt = nf * 26.0;
+        for (let i = 0; i < HOUSE_POOL_LIGHTS; i++) {
+          const idx = bestHouseIdx[i];
+          if (idx >= 0) {
+            const h = housePositions[idx];
+            const dist = Math.hypot(h.x - fx, h.z - fz);
+            const fade = Math.max(0.0, 1.0 - dist / 70.0);
+            houseLights[i].position.set(h.x, h.y, h.z);
+            houseLights[i].intensity = maxHouseInt * fade;
+          } else {
+            houseLights[i].intensity = 0.0;
+          }
+        }
+      }
+    },
+  };
 }
 
 /**

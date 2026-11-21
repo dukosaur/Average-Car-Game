@@ -3334,15 +3334,28 @@
                   </div>
                 </div>
               </div>
-              <!-- Grass Density Controls -->
-              <div class="pause-setting-section">
-                <div class="pause-setting-header">
-                  <div class="pause-setting-name">GRASS DENSITY</div>
+              <!-- Time of Day & Grass Density Controls -->
+              <div class="pause-setting-section pause-setting-visual-row" style="grid-template-columns: 1.35fr 1fr;">
+                <div class="pause-setting-col">
+                  <div class="pause-setting-header">
+                    <div class="pause-setting-name">TIME OF DAY</div>
+                  </div>
+                  <div class="pause-seg-row" id="pause-tod-row">
+                    <button class="pause-seg-btn pause-tod-opt-btn active" data-tod="dynamic" type="button">DYNAMIC</button>
+                    <button class="pause-seg-btn pause-tod-opt-btn" data-tod="noon" type="button">NOON</button>
+                    <button class="pause-seg-btn pause-tod-opt-btn" data-tod="sunset" type="button">SUNSET</button>
+                    <button class="pause-seg-btn pause-tod-opt-btn" data-tod="night" type="button">NIGHT</button>
+                  </div>
                 </div>
-                <div class="pause-grass-opt-row">
-                  <button class="pause-grass-opt-btn active" data-density="high" type="button">LUSH</button>
-                  <button class="pause-grass-opt-btn" data-density="medium" type="button">BALANCED</button>
-                  <button class="pause-grass-opt-btn" data-density="off" type="button">OFF</button>
+                <div class="pause-setting-col">
+                  <div class="pause-setting-header">
+                    <div class="pause-setting-name">GRASS DENSITY</div>
+                  </div>
+                  <div class="pause-grass-opt-row">
+                    <button class="pause-grass-opt-btn active" data-density="high" type="button">LUSH</button>
+                    <button class="pause-grass-opt-btn" data-density="medium" type="button">BALANCED</button>
+                    <button class="pause-grass-opt-btn" data-density="off" type="button">OFF</button>
+                  </div>
                 </div>
               </div>
               <!-- Keybinds Grid -->

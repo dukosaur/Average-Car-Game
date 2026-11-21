@@ -1,5 +1,54 @@
 import * as THREE from 'three';
-import { PIXEL_THEME_ENABLED } from './pixelTheme.js';
+import { PIXEL_THEME_ENABLED, PIXEL_LIGHTING_UNIFORMS } from './pixelTheme.js';
+import { setArchTimeOfDayLighting } from './pixelAssets.js';
+
+const TIME_OF_DAY_PRESETS = {
+  noon: {
+    elevation: 34,
+    azimuth: 212,
+    nightFactor: 0.0,
+    sunsetFactor: 0.0,
+    cloudShadow: 1.0,
+    sunColor: null, // uses pure biome daylight
+    sunIntScale: 1.0,
+    hemiSky: null,
+    hemiGround: null,
+    hemiIntScale: 1.0,
+    fogTint: null,
+    zenithTint: null,
+    midSkyTint: null,
+  },
+  sunset: {
+    elevation: 11.0,
+    azimuth: 248,
+    nightFactor: 0.45,
+    sunsetFactor: 1.0,
+    cloudShadow: 0.50,
+    sunColor: new THREE.Color(0xffaa66),
+    sunIntScale: 0.96,
+    hemiSky: new THREE.Color(0xe2b29a),
+    hemiGround: new THREE.Color(0x664d42),
+    hemiIntScale: 1.18,
+    fogTint: new THREE.Color(0xe69c74),
+    zenithTint: new THREE.Color(0x2d2c5e),
+    midSkyTint: new THREE.Color(0xc96560),
+  },
+  night: {
+    elevation: 44,
+    azimuth: 142,
+    nightFactor: 1.0,
+    sunsetFactor: 0.0,
+    cloudShadow: 0.14,
+    sunColor: new THREE.Color(0x9ab8e6),
+    sunIntScale: 0.44,
+    hemiSky: new THREE.Color(0x465a7c),
+    hemiGround: new THREE.Color(0x262e3e),
+    hemiIntScale: 0.92,
+    fogTint: new THREE.Color(0x162138),
+    zenithTint: new THREE.Color(0x060a18),
+    midSkyTint: new THREE.Color(0x101c38),
+  },
+};
 
 const smoothstep = (e0, e1, x) => {
   const t = Math.max(0.0, Math.min(1.0, (x - e0) / (e1 - e0)));
@@ -129,42 +178,43 @@ const BIOME_PRESETS = {
  */
 function evalBiomeWeights(wx, wz) {
   const wy = -wz;
-  const wyBioW = wy + 26.0 * Math.sin(wx * 0.014 + 0.5);
-  const wxBioE = wx + 28.0 * Math.cos(wy * 0.013 - 0.4);
-  const wyBioN = wy + 26.0 * Math.sin(wx * 0.012 + 1.1);
+  const wyBioW = wy + 34.0 * Math.sin(wx * 0.011 + 0.5);
+  const wxBioE = wx + 36.0 * Math.cos(wy * 0.010 - 0.4);
+  const wyBioN = wy + 32.0 * Math.sin(wx * 0.010 + 1.1);
 
+  // Wider gradual biome falloffs matching terrain shader so sky/fog/lighting shift smoothly
   const dVolc = Math.hypot((wxBioE - 1140.0) / 1.18, (wyBioW - 75.0) / 1.12);
-  const wVolcano = 1.0 - smoothstep(320.0, 560.0, dVolc);
+  const wVolcano = 1.0 - smoothstep(260.0, 620.0, dVolc);
 
-  const canyonNorthFar = 330.0 + 330.0 * (1.0 - smoothstep(-1150.0, -800.0, wxBioE));
+  const canyonNorthFar = 330.0 + 330.0 * (1.0 - smoothstep(-1200.0, -760.0, wxBioE));
   const wDesert =
-    (1.0 - smoothstep(-340.0, -85.0, wxBioE)) *
-    smoothstep(-940.0, -680.0, wyBioW) *
-    (1.0 - smoothstep(canyonNorthFar, canyonNorthFar + 160.0, wyBioW)) *
+    (1.0 - smoothstep(-400.0, -35.0, wxBioE)) *
+    smoothstep(-980.0, -640.0, wyBioW) *
+    (1.0 - smoothstep(canyonNorthFar - 40.0, canyonNorthFar + 220.0, wyBioW)) *
     (1.0 - wVolcano);
 
   const inNorthGlacier =
-    smoothstep(700.0, 960.0, wyBioN) *
-    (1.0 - smoothstep(140.0, 380.0, wxBioE)) *
-    smoothstep(-1380.0, -1020.0, wxBioE);
+    smoothstep(640.0, 1020.0, wyBioN) *
+    (1.0 - smoothstep(100.0, 440.0, wxBioE)) *
+    smoothstep(-1420.0, -980.0, wxBioE);
   const inTouge =
-    smoothstep(110.0, 290.0, wyBioN) *
-    (1.0 - smoothstep(800.0, 1060.0, wyBioN)) *
-    smoothstep(-620.0, -400.0, wxBioE) *
-    (1.0 - smoothstep(90.0, 280.0, wxBioE));
+    smoothstep(70.0, 340.0, wyBioN) *
+    (1.0 - smoothstep(760.0, 1100.0, wyBioN)) *
+    smoothstep(-660.0, -360.0, wxBioE) *
+    (1.0 - smoothstep(50.0, 320.0, wxBioE));
   const wCold = Math.max(inNorthGlacier, inTouge) * (1.0 - wDesert) * (1.0 - wVolcano);
 
   const wAutumn =
-    smoothstep(85.0, 320.0, wxBioE) *
-    smoothstep(55.0, 275.0, wyBioN) *
+    smoothstep(45.0, 360.0, wxBioE) *
+    smoothstep(20.0, 315.0, wyBioN) *
     (1.0 - wVolcano) *
     (1.0 - wCold * 0.85);
 
-  const wCoast = (1.0 - smoothstep(-620.0, -470.0, wy)) * (1.0 - wDesert * 0.9) * (1.0 - wVolcano);
+  const wCoast = (1.0 - smoothstep(-660.0, -410.0, wy)) * (1.0 - wDesert * 0.88) * (1.0 - wVolcano);
 
-  const sumSpecial = Math.min(1.0, wVolcano + wDesert + wCold + wAutumn + wCoast);
+  const sumSpecial = wVolcano + wDesert + wCold + wAutumn + wCoast;
   const wValley = Math.max(0.0, 1.0 - sumSpecial);
-  const total = wValley + wAutumn + wDesert + wVolcano + wCold + wCoast || 1.0;
+  const total = sumSpecial + wValley || 1.0;
 
   return {
     valley: wValley / total,
@@ -177,11 +227,22 @@ function evalBiomeWeights(wx, wz) {
 }
 
 export class AtmosphereSystem {
-  constructor(scene, { skyMat, dirLight, hemiLight }) {
+  constructor(scene, { skyMat, dirLight, hemiLight, sunVec = null }) {
     this.scene = scene;
     this.skyMat = skyMat;
     this.dirLight = dirLight;
     this.hemiLight = hemiLight;
+    this.sunVec = sunVec;
+
+    this.timeOfDay = 'dynamic';
+    this._dynamicCycleT = 0.08; // [0, 1) continuous day-night cycle clock (starts at bright midday)
+    this._dynamicCycleDurationSec = 180.0; // 3-minute full day-night cycle
+    this._dynScratchColor = new THREE.Color();
+    this.curElevation = 34;
+    this.curAzimuth = 212;
+    this.curNightFactor = 0.0;
+    this.curSunsetFactor = 0.0;
+    this.curCloudShadow = 1.0;
 
     // Smoothed atmospheric state
     this.curFogColor = BIOME_PRESETS.valley.fogColor.clone();
@@ -213,6 +274,26 @@ export class AtmosphereSystem {
     this._slipstreamAcc = 0;
     this._offroadAcc = 0;
     this._airborneTime = 0;
+    this._windTime = 0;
+    this._smoothSpeedFactor = 0;
+  }
+
+  setTimeOfDay(mode) {
+    if (mode === 'dynamic') {
+      if (this.timeOfDay !== 'dynamic') {
+        // Seed cycle from current preset so switching to Dynamic has zero jarring jump
+        if (this.timeOfDay === 'sunset') this._dynamicCycleT = 0.48;
+        else if (this.timeOfDay === 'night') this._dynamicCycleT = 0.72;
+        else this._dynamicCycleT = 0.14;
+      }
+      this.timeOfDay = 'dynamic';
+    } else if (TIME_OF_DAY_PRESETS[mode]) {
+      this.timeOfDay = mode;
+    }
+  }
+
+  getTimeOfDay() {
+    return this.timeOfDay;
   }
 
   _initAmbientParticles(scene) {
@@ -379,7 +460,7 @@ export class AtmosphereSystem {
     geo.setAttribute('aRibbonSeed', new THREE.Float32BufferAttribute(seeds, 4));
 
     this.windUniforms = {
-      uTime: { value: 0 },
+      uWindTime: { value: 0 },
       uCamPos: { value: new THREE.Vector3() },
       uSpeedFactor: { value: 0 },
     };
@@ -388,7 +469,7 @@ export class AtmosphereSystem {
       uniforms: this.windUniforms,
       vertexShader: /* glsl */ `
         attribute vec4 aRibbonSeed;
-        uniform float uTime;
+        uniform float uWindTime;
         uniform vec3 uCamPos;
         uniform float uSpeedFactor;
         varying vec2 vUv;
@@ -400,18 +481,18 @@ export class AtmosphereSystem {
           float phase = aRibbonSeed.w;
           vPhase = phase;
           vec3 box = vec3(88.0, 14.0, 88.0);
-          float speedBoost = 1.0 + uSpeedFactor * 1.45;
-          vec3 windFlow = vec3(uTime * 11.5 * speedBoost, sin(uTime * 1.2 + phase * 6.28) * 0.9, uTime * 4.8 * speedBoost);
+          // Smoothly integrated uWindTime (NEVER multiply raw uTime by uSpeedFactor!)
+          vec3 windFlow = vec3(uWindTime * 5.2, sin(uWindTime * 0.9 + phase * 6.28) * 0.75, uWindTime * 2.2);
 
           vec3 anchor = mod(aRibbonSeed.xyz + windFlow - uCamPos + box * 0.5, box) - box * 0.5;
           anchor.y = mod(aRibbonSeed.y + windFlow.y, 11.5) + 1.8;
 
           vec3 localOffset = position - aRibbonSeed.xyz;
           // Graceful 3D S-curve curl along the wind gust ribbon
-          float wave = sin(uv.x * 5.2 - uTime * 4.5 + phase * 6.28318);
-          float loopCurl = cos(uv.x * 3.14159 - uTime * 3.2 + phase * 6.28318);
-          localOffset.y += wave * 0.55;
-          localOffset.z += loopCurl * 1.15;
+          float wave = sin(uv.x * 5.2 - uWindTime * 2.6 + phase * 6.28318);
+          float loopCurl = cos(uv.x * 3.14159 - uWindTime * 1.9 + phase * 6.28318);
+          localOffset.y += wave * 0.50;
+          localOffset.z += loopCurl * 1.05;
 
           vec3 worldPos = uCamPos + anchor + localOffset;
           vec3 normDist = abs(vec3(anchor.x, anchor.y - 7.5, anchor.z)) / (box * 0.5);
@@ -424,7 +505,7 @@ export class AtmosphereSystem {
         }
       `,
       fragmentShader: /* glsl */ `
-        uniform float uTime;
+        uniform float uWindTime;
         uniform float uSpeedFactor;
         varying vec2 vUv;
         varying float vVis;
@@ -432,18 +513,17 @@ export class AtmosphereSystem {
 
         void main() {
           if (vVis < 0.05) discard;
-          // Traveling gust pulse along the curved 3D ribbon
-          float cycle = fract(uTime * (0.48 + uSpeedFactor * 0.35) + vPhase);
-          // Only show ~45% of ribbons at any given moment so gusts feel natural & airy
-          if (cycle > 0.52) discard;
-          float head = cycle / 0.52; // 0..1 traveling from u=0 to u=1
+          // Traveling gust pulse using smoothly integrated uWindTime (ZERO jumping when tapping W/S!)
+          float cycle = fract(uWindTime * 0.34 + vPhase);
+          // Only show ~42% of ribbons at any given moment so gusts feel natural & airy
+          if (cycle > 0.48) discard;
+          float head = cycle / 0.48; // 0..1 traveling from u=0 to u=1
           float distAlong = vUv.x - head;
-          // Tapered comet-like wind streak tail (length ~0.42 of ribbon)
+          // Tapered comet-like wind streak tail
           if (distAlong > 0.04 || distAlong < -0.44) discard;
           float lengthMask = smoothstep(-0.44, -0.06, distAlong) * (1.0 - smoothstep(-0.02, 0.04, distAlong));
-          // Quantize to crisp pixel segments along the wind ribbon
           float pxSeg = step(0.18, fract(vUv.x * 18.0));
-          float alpha = lengthMask * (0.28 + uSpeedFactor * 0.24) * vVis * mix(0.75, 1.0, pxSeg);
+          float alpha = lengthMask * (0.24 + uSpeedFactor * 0.16) * vVis * mix(0.75, 1.0, pxSeg);
           if (alpha < 0.06) discard;
           gl_FragColor = vec4(0.95, 0.98, 1.0, alpha);
         }
@@ -658,7 +738,120 @@ export class AtmosphereSystem {
       tPartOp += p.particleOpacity * weight;
     }
 
-    const alpha = 1.0 - Math.exp(-1.9 * dt);
+    // Apply Time-of-Day override blending (Noon / Sunset / Night / Dynamic cycle)
+    const todAlpha = 1.0 - Math.exp(-3.2 * dt);
+    if (this.timeOfDay === 'dynamic') {
+      this._dynamicCycleT = (this._dynamicCycleT + dt / this._dynamicCycleDurationSec) % 1.0;
+      const t = this._dynamicCycleT;
+      const P_NOON = TIME_OF_DAY_PRESETS.noon;
+      const P_SUNSET = TIME_OF_DAY_PRESETS.sunset;
+      const P_NIGHT = TIME_OF_DAY_PRESETS.night;
+
+      // Smoothly compute weights for Noon, Sunset/Sunrise, and Night across [0, 1)
+      let wSunset = 0.0;
+      let wNight = 0.0;
+      let targetElev = 34.0;
+      let targetAzim = 212.0;
+
+      if (t < 0.35) {
+        // Daytime: gentle sun drift across midday sky
+        const u = t / 0.35;
+        targetElev = 26.0 + Math.sin(u * Math.PI) * 14.0;
+        targetAzim = 175.0 + u * 52.0;
+      } else if (t < 0.52) {
+        // Noon -> Sunset
+        const u = smoothstep(0.35, 0.52, t);
+        wSunset = u;
+        targetElev = THREE.MathUtils.lerp(26.0, P_SUNSET.elevation, u);
+        targetAzim = THREE.MathUtils.lerp(227.0, P_SUNSET.azimuth, u);
+      } else if (t < 0.65) {
+        // Sunset -> Night
+        const u = smoothstep(0.52, 0.65, t);
+        wSunset = 1.0 - u;
+        wNight = u;
+        targetElev = THREE.MathUtils.lerp(P_SUNSET.elevation, P_NIGHT.elevation, u);
+        targetAzim = THREE.MathUtils.lerp(P_SUNSET.azimuth, P_NIGHT.azimuth, u);
+      } else if (t < 0.84) {
+        // Night: slow moon drift
+        const u = (t - 0.65) / 0.19;
+        wNight = 1.0;
+        targetElev = 38.0 + Math.sin(u * Math.PI) * 10.0;
+        targetAzim = 142.0 - u * 26.0;
+      } else if (t < 0.93) {
+        // Night -> Sunrise
+        const u = smoothstep(0.84, 0.93, t);
+        wNight = 1.0 - u;
+        wSunset = u;
+        targetElev = THREE.MathUtils.lerp(38.0, P_SUNSET.elevation, u);
+        targetAzim = THREE.MathUtils.lerp(116.0, 110.0, u);
+      } else {
+        // Sunrise -> Noon
+        const u = smoothstep(0.93, 1.0, t);
+        wSunset = 1.0 - u;
+        targetElev = THREE.MathUtils.lerp(P_SUNSET.elevation, 26.0, u);
+        targetAzim = THREE.MathUtils.lerp(110.0, 175.0, u);
+      }
+
+      const wNoon = Math.max(0.0, 1.0 - wSunset - wNight);
+      const targetNightF = wSunset * P_SUNSET.nightFactor + wNight * P_NIGHT.nightFactor;
+      const targetSunsetF = wSunset * P_SUNSET.sunsetFactor;
+      const targetCloudSh = wNoon * P_NOON.cloudShadow + wSunset * P_SUNSET.cloudShadow + wNight * P_NIGHT.cloudShadow;
+
+      this.curElevation += (targetElev - this.curElevation) * todAlpha;
+      this.curAzimuth += (targetAzim - this.curAzimuth) * todAlpha;
+      this.curNightFactor += (targetNightF - this.curNightFactor) * todAlpha;
+      this.curSunsetFactor += (targetSunsetF - this.curSunsetFactor) * todAlpha;
+      this.curCloudShadow += (targetCloudSh - this.curCloudShadow) * todAlpha;
+
+      const blendTint = (dst, sunsetCol, nightCol, sunsetStrength, nightStrength) => {
+        if (wSunset > 0.001) dst.lerp(sunsetCol, wSunset * sunsetStrength);
+        if (wNight > 0.001) dst.lerp(nightCol, wNight * nightStrength);
+      };
+      blendTint(this.targetFogColor, P_SUNSET.fogTint, P_NIGHT.fogTint, 0.78, 0.92);
+      blendTint(this.targetSunColor, P_SUNSET.sunColor, P_NIGHT.sunColor, 0.90, 0.90);
+      blendTint(this.targetHemiSky, P_SUNSET.hemiSky, P_NIGHT.hemiSky, 0.88, 0.88);
+      blendTint(this.targetHemiGround, P_SUNSET.hemiGround, P_NIGHT.hemiGround, 0.88, 0.88);
+      blendTint(this.targetZenith, P_SUNSET.zenithTint, P_NIGHT.zenithTint, 0.94, 0.94);
+      blendTint(this.targetMidSky, P_SUNSET.midSkyTint, P_NIGHT.midSkyTint, 0.92, 0.92);
+
+      tSunInt *= (wNoon * P_NOON.sunIntScale + wSunset * P_SUNSET.sunIntScale + wNight * P_NIGHT.sunIntScale);
+      tHemiInt *= (wNoon * P_NOON.hemiIntScale + wSunset * P_SUNSET.hemiIntScale + wNight * P_NIGHT.hemiIntScale);
+    } else {
+      const tod = TIME_OF_DAY_PRESETS[this.timeOfDay] || TIME_OF_DAY_PRESETS.noon;
+      this.curElevation += (tod.elevation - this.curElevation) * todAlpha;
+      this.curAzimuth += (tod.azimuth - this.curAzimuth) * todAlpha;
+      this.curNightFactor += (tod.nightFactor - this.curNightFactor) * todAlpha;
+      this.curSunsetFactor += (tod.sunsetFactor - this.curSunsetFactor) * todAlpha;
+      this.curCloudShadow += (tod.cloudShadow - this.curCloudShadow) * todAlpha;
+
+      if (tod.fogTint) this.targetFogColor.lerp(tod.fogTint, this.timeOfDay === 'night' ? 0.92 : 0.78);
+      if (tod.sunColor) this.targetSunColor.lerp(tod.sunColor, 0.90);
+      if (tod.hemiSky) this.targetHemiSky.lerp(tod.hemiSky, 0.88);
+      if (tod.hemiGround) this.targetHemiGround.lerp(tod.hemiGround, 0.88);
+      if (tod.zenithTint) this.targetZenith.lerp(tod.zenithTint, 0.94);
+      if (tod.midSkyTint) this.targetMidSky.lerp(tod.midSkyTint, 0.92);
+      tSunInt *= tod.sunIntScale;
+      tHemiInt *= tod.hemiIntScale;
+    }
+
+    if (this.sunVec) {
+      const phi = THREE.MathUtils.degToRad(90 - this.curElevation);
+      const theta = THREE.MathUtils.degToRad(this.curAzimuth);
+      this.sunVec.setFromSphericalCoords(1, phi, theta);
+      if (this.skyMat && this.skyMat.uniforms && this.skyMat.uniforms.uSunPosition) {
+        this.skyMat.uniforms.uSunPosition.value.copy(this.sunVec);
+      }
+    }
+
+    // Update shared pixel lighting uniforms (moving cloud shadows + skybox + glowing night windows)
+    PIXEL_LIGHTING_UNIFORMS.uCloudTime.value = elapsedSec;
+    PIXEL_LIGHTING_UNIFORMS.uCloudShadowStrength.value = this.curCloudShadow;
+    PIXEL_LIGHTING_UNIFORMS.uNightFactor.value = this.curNightFactor;
+    PIXEL_LIGHTING_UNIFORMS.uSunsetFactor.value = this.curSunsetFactor;
+    setArchTimeOfDayLighting(this.curNightFactor);
+
+    // Gradual temporal smoothing (~2.5-3.5s) so crossing biome borders feels natural, never snappy!
+    const alpha = 1.0 - Math.exp(-0.85 * dt);
     this.curFogColor.lerp(this.targetFogColor, alpha);
     this.curFogNear += (tFogNear - this.curFogNear) * alpha;
     this.curFogFar += (tFogFar - this.curFogFar) * alpha;
@@ -716,9 +909,12 @@ export class AtmosphereSystem {
     this.ambientUniforms.uOpacity.value += (tPartOp - this.ambientUniforms.uOpacity.value) * alpha;
 
     if (this.windUniforms) {
-      this.windUniforms.uTime.value = elapsedSec;
+      const targetSpd = Math.min(1.0, Math.max(0.0, (speedKmh || 0) / 185.0));
+      this._smoothSpeedFactor += (targetSpd - this._smoothSpeedFactor) * (1.0 - Math.exp(-3.0 * dt));
+      this._windTime += dt * (1.0 + this._smoothSpeedFactor * 0.45);
+      this.windUniforms.uWindTime.value = this._windTime;
       this.windUniforms.uCamPos.value.copy(cameraPos);
-      this.windUniforms.uSpeedFactor.value = Math.min(1.0, Math.max(0.0, (speedKmh || 0) / 175.0));
+      this.windUniforms.uSpeedFactor.value = this._smoothSpeedFactor;
     }
 
     // 3. Reactive Vehicle Gameplay Juice:

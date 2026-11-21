@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { RaycastVehicleController } from './vehicleController.js';
+import { PIXEL_LIGHTING_UNIFORMS } from './pixelTheme.js';
 
 /**
  * AI Everyday Traffic Fleet Definitions (using the 3 extracted low-poly cars)
@@ -156,6 +157,23 @@ export class TrafficSystem {
     this._remoteJitterMs = 0;
     this._remoteLastSenderTs = null;
     this._remoteLastRecvMs = null;
+
+    // Pooled real SpotLights matching the player car's headlight beam spec (2 nearest traffic cars)
+    this._headlightPool = [];
+    this._hlBestD2 = [0, 0];
+    this._hlBestPos = [null, null];
+    this._hlBestRot = [null, null];
+    if (this.scene) {
+      for (let i = 0; i < 2; i++) {
+        const spot = new THREE.SpotLight(0xfff1d6, 0, 48, Math.PI * 0.28, 0.58, 1.35);
+        spot.castShadow = false;
+        const target = new THREE.Object3D();
+        this.scene.add(spot);
+        this.scene.add(target);
+        spot.target = target;
+        this._headlightPool.push({ spot, target });
+      }
+    }
   }
 
   /**
@@ -1516,7 +1534,10 @@ export class TrafficSystem {
 
   updateFrame(dt, playerVehicle, isPaused = false, camera = null, isFreeCam = false) {
     if (this.remoteSyncMode) {
-      this._updateRemoteFrame(dt);
+      const focusPos = (isFreeCam && camera)
+        ? camera.position
+        : (playerVehicle && playerVehicle.rigidBody ? playerVehicle.rigidBody.translation() : (camera ? camera.position : null));
+      this._updateRemoteFrame(dt, focusPos);
       return;
     }
     if (!this.isReady || !playerVehicle || !playerVehicle.rigidBody) return;
@@ -1579,6 +1600,93 @@ export class TrafficSystem {
     for (const a of this.agents) {
       a.vehicle.syncVisuals();
       a.brakeUniform.value += (a.targetBrakeLight - a.brakeUniform.value) * brakeLerp;
+    }
+    this._updateTrafficHeadlightSpots((isFreeCam && camera) ? camera.position : playerPos, false);
+  }
+
+  _updateTrafficHeadlightSpots(focusPos, isRemote) {
+    if (!this._headlightPool || this._headlightPool.length === 0) return;
+    const nf = Math.max(0.0, Math.min(1.0, PIXEL_LIGHTING_UNIFORMS.uNightFactor.value || 0.0));
+    const baseInt = nf > 0.04 ? (nf * nf * 135.0 + nf * 22.0) : 0.0;
+    if (baseInt <= 0.01 || !focusPos) {
+      for (let i = 0; i < this._headlightPool.length; i++) {
+        this._headlightPool[i].spot.intensity = 0.0;
+      }
+      return;
+    }
+
+    const poolSize = this._headlightPool.length;
+    const bestD2 = this._hlBestD2;
+    const bestPos = this._hlBestPos;
+    const bestRot = this._hlBestRot;
+    const maxDistSq = 12100.0; // 110m^2
+    for (let i = 0; i < poolSize; i++) {
+      bestD2[i] = maxDistSq;
+      bestPos[i] = null;
+      bestRot[i] = null;
+    }
+
+    const fx = focusPos.x;
+    const fz = focusPos.z;
+    const consider = (pos, rot) => {
+      const dx = pos.x - fx;
+      const dz = pos.z - fz;
+      const d2 = dx * dx + dz * dz;
+      if (d2 >= bestD2[poolSize - 1]) return;
+      let slot = poolSize - 1;
+      while (slot > 0 && d2 < bestD2[slot - 1]) {
+        bestD2[slot] = bestD2[slot - 1];
+        bestPos[slot] = bestPos[slot - 1];
+        bestRot[slot] = bestRot[slot - 1];
+        slot--;
+      }
+      bestD2[slot] = d2;
+      bestPos[slot] = pos;
+      bestRot[slot] = rot;
+    };
+
+    if (isRemote) {
+      for (const proxy of this.remoteAgents.values()) {
+        if (!proxy.rootGroup) continue;
+        const pos = proxy.rigidBody ? proxy.rigidBody.translation() : proxy.pose;
+        const rot = proxy.rigidBody ? proxy.rigidBody.rotation() : proxy.pose;
+        consider(
+          pos.x !== undefined ? pos : { x: pos.px, y: pos.py, z: pos.pz },
+          rot.x !== undefined ? rot : { x: rot.qx, y: rot.qy, z: rot.qz, w: rot.qw }
+        );
+      }
+    } else {
+      for (let i = 0; i < this.agents.length; i++) {
+        const body = this.agents[i].vehicle && this.agents[i].vehicle.rigidBody;
+        if (!body) continue;
+        consider(body.translation(), body.rotation());
+      }
+    }
+
+    for (let i = 0; i < poolSize; i++) {
+      const slot = this._headlightPool[i];
+      const pos = bestPos[i];
+      const rot = bestRot[i];
+      if (pos && rot) {
+        this._quat.set(rot.x, rot.y, rot.z, rot.w);
+        this._vFwd.set(0, 0, 1).applyQuaternion(this._quat).normalize();
+        const dist = Math.sqrt(bestD2[i]);
+        const fade = dist < 80.0 ? 1.0 : Math.max(0.0, 1.0 - (dist - 80.0) / 30.0);
+
+        slot.spot.position.set(
+          pos.x + this._vFwd.x * 1.95,
+          pos.y + 0.78,
+          pos.z + this._vFwd.z * 1.95
+        );
+        slot.target.position.set(
+          pos.x + this._vFwd.x * 20.0,
+          pos.y - 0.55,
+          pos.z + this._vFwd.z * 20.0
+        );
+        slot.spot.intensity = baseInt * fade;
+      } else {
+        slot.spot.intensity = 0.0;
+      }
     }
   }
 
@@ -2116,11 +2224,12 @@ export class TrafficSystem {
     }
   }
 
-  _updateRemoteFrame(dt) {
+  _updateRemoteFrame(dt, focusPos = null) {
     const brakeLerp = 1 - Math.exp(-20.0 * dt);
     for (const proxy of this.remoteAgents.values()) {
       this._applyRemoteProxyVisuals(proxy);
       proxy.brakeUniform.value += (proxy.targetBrakeLight - proxy.brakeUniform.value) * brakeLerp;
     }
+    this._updateTrafficHeadlightSpots(focusPos, true);
   }
 }

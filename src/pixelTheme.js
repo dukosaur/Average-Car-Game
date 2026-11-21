@@ -23,6 +23,15 @@ import * as THREE from 'three';
 
 export const PIXEL_THEME_ENABLED = true;
 
+// Shared reactive lighting uniforms synchronized across Skybox, Terrain, Roads, Buildings & Post-FX!
+export const PIXEL_LIGHTING_UNIFORMS = {
+  uCloudTime: { value: 0.0 },
+  uCloudShadowStrength: { value: 1.0 },
+  uNightFactor: { value: 0.0 },
+  uSunsetFactor: { value: 0.0 },
+  uWaterLevel: { value: -3.2 },
+};
+
 const PIXEL_BILLBOARD_KEYS = new Set([
   'pine1', 'pine2',
   'birch1', 'common1', 'common2', 'willow1',
@@ -514,8 +523,9 @@ export class PixelCanvas {
 
     const tex = new THREE.CanvasTexture(canvas);
     tex.magFilter = THREE.NearestFilter;
-    tex.minFilter = THREE.NearestFilter;
-    tex.generateMipmaps = false;
+    tex.minFilter = THREE.LinearMipmapLinearFilter;
+    tex.generateMipmaps = true;
+    tex.anisotropy = 8;
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.needsUpdate = true;
     return tex;
@@ -1013,6 +1023,8 @@ export function createPixelBillboardPart(key, measuredWidth, measuredHeight, sun
       uSunPosition: { value: sun ? sun.clone() : new THREE.Vector3(0.4, 0.7, 0.5) },
       uTint: { value: new THREE.Color(0xffffff) },
       uSlopeTilt: { value: hugsSlope ? 0.55 : 0.0 },
+      uNightFactor: PIXEL_LIGHTING_UNIFORMS.uNightFactor,
+      uSunsetFactor: PIXEL_LIGHTING_UNIFORMS.uSunsetFactor,
     },
     vertexShader: /* glsl */ `
       #include <common>
@@ -1077,6 +1089,8 @@ export function createPixelBillboardPart(key, measuredWidth, measuredHeight, sun
 
       uniform sampler2D uMap;
       uniform vec3 uTint;
+      uniform float uNightFactor;
+      uniform float uSunsetFactor;
 
       varying vec2 vUv;
       varying float vIsShadow;
@@ -1100,8 +1114,13 @@ export function createPixelBillboardPart(key, measuredWidth, measuredHeight, sun
 
         float luma = dot(texel.rgb, vec3(0.299, 0.587, 0.114));
         float isInk = 1.0 - smoothstep(0.03, 0.10, luma);
+        float isEmber = step(0.65, texel.r) * step(texel.b, 0.25);
         float brightVar = mix(0.93, 1.10, vVar);
         vec3 col = texel.rgb * uTint * mix(brightVar, 1.0, isInk);
+        // Apply Sunset golden warmth & Night moonlit dimming (keeping volcanic lava embers glowing!)
+        vec3 todTint = mix(vec3(1.0), vec3(1.08, 0.84, 0.68), uSunsetFactor * 0.72);
+        todTint = mix(todTint, vec3(0.25, 0.33, 0.53), uNightFactor * 0.90);
+        col *= mix(todTint, vec3(1.55, 1.18, 0.85), isEmber * uNightFactor);
 
         gl_FragColor = vec4(col, 1.0);
         #include <fog_fragment>
@@ -1256,8 +1275,9 @@ export function createPixelGrassAtlasTexture() {
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.magFilter = THREE.NearestFilter;
-  tex.minFilter = THREE.NearestFilter;
-  tex.generateMipmaps = false;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.generateMipmaps = true;
+  tex.anisotropy = 8;
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.needsUpdate = true;
   return tex;
@@ -1295,6 +1315,8 @@ export function createPixelGrassMaterial(sun) {
       uSunColor: { value: new THREE.Color(0xfff6e3) },
       uHemiSky: { value: new THREE.Color(0x8ec3f8) },
       uHemiGround: { value: new THREE.Color(0x485838) },
+      uNightFactor: PIXEL_LIGHTING_UNIFORMS.uNightFactor,
+      uSunsetFactor: PIXEL_LIGHTING_UNIFORMS.uSunsetFactor,
     },
     vertexShader: /* glsl */ `
       #include <common>
@@ -1361,6 +1383,8 @@ export function createPixelGrassMaterial(sun) {
       #include <fog_pars_fragment>
 
       uniform sampler2D uAtlas;
+      uniform float uNightFactor;
+      uniform float uSunsetFactor;
 
       varying vec2 vUv;
       varying vec3 vTint;
@@ -1374,6 +1398,9 @@ export function createPixelGrassMaterial(sun) {
         float isInk = 1.0 - smoothstep(0.03, 0.10, luma);
         vec3 biomeLift = clamp(vTint * 2.35 + vec3(0.16), vec3(0.65), vec3(1.22));
         vec3 col = mix(texel.rgb * biomeLift, texel.rgb * 1.05, max(isInk, vNativeColor));
+        vec3 todTint = mix(vec3(1.0), vec3(1.06, 0.82, 0.66), uSunsetFactor * 0.72);
+        todTint = mix(todTint, vec3(0.24, 0.32, 0.52), uNightFactor * 0.90);
+        col *= todTint;
 
         gl_FragColor = vec4(col, 1.0);
         #include <fog_fragment>
@@ -1824,8 +1851,9 @@ export function createPixelGroundAtlasTexture() {
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.magFilter = THREE.NearestFilter;
-  tex.minFilter = THREE.NearestFilter;
-  tex.generateMipmaps = false;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.generateMipmaps = true;
+  tex.anisotropy = 8;
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.needsUpdate = true;
   cachedGroundAtlasTex = tex;
@@ -1872,11 +1900,10 @@ const PIXEL_HASH_GLSL = /* glsl */ `
 const TOON_LIGHT_SNIPPET_GLSL = /* glsl */ `
   #include <lights_fragment_end>
   {
-    float dLuma = max(0.0001, dot(reflectedLight.directDiffuse, vec3(0.299, 0.587, 0.114)));
-    float band = (dLuma < 0.14) ? 0.09 : ((dLuma < 0.42) ? 0.37 : ((dLuma < 0.78) ? 0.74 : 1.08));
-    reflectedLight.directDiffuse *= mix(1.0, band / dLuma, 0.74);
-    float sLuma = dot(reflectedLight.directSpecular, vec3(0.299, 0.587, 0.114));
-    reflectedLight.directSpecular *= smoothstep(0.16, 0.24, sLuma) * 1.18;
+    // Smooth, crisp daylight/night shading (NO harsh band/dLuma quantization that causes
+    // blotchy blue shadow steps or ruins streetlamp light pools!) + gentle ambient floor
+    // so shadowed road embankments & hillsides stay richly readable instead of blacking out.
+    reflectedLight.indirectDiffuse += diffuseColor.rgb * vec3(0.055, 0.058, 0.068);
   }
 `;
 
@@ -1891,9 +1918,12 @@ export function patchTerrainMaterialForPixelTheme(m) {
   }
   const groundAtlasTex = createPixelGroundAtlasTexture();
 
-  m.customProgramCacheKey = () => 'pixel_theme_terrain_v4_atlas';
+  m.customProgramCacheKey = () => 'pixel_theme_terrain_v6_wetshore';
   m.onBeforeCompile = (shader) => {
     shader.uniforms.uGroundAtlas = { value: groundAtlasTex };
+    shader.uniforms.uCloudTime = PIXEL_LIGHTING_UNIFORMS.uCloudTime;
+    shader.uniforms.uCloudShadowStrength = PIXEL_LIGHTING_UNIFORMS.uCloudShadowStrength;
+    shader.uniforms.uWaterLevel = PIXEL_LIGHTING_UNIFORMS.uWaterLevel;
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vPxWorldPos;\nvarying vec3 vPxWorldNorm;')
       .replace(
@@ -1907,148 +1937,187 @@ export function patchTerrainMaterialForPixelTheme(m) {
         '#include <common>',
         `#include <common>
          uniform sampler2D uGroundAtlas;
+         uniform float uCloudTime;
+         uniform float uCloudShadowStrength;
+         uniform float uWaterLevel;
          varying vec3 vPxWorldPos;
          varying vec3 vPxWorldNorm;
          ${PIXEL_HASH_GLSL}
 
-         // Bleed-free exact-texel-center sampler for the 4x3 64x64 pixel ground atlas!
-         // Note: Canvas row 0 is at v=1.0 in WebGL (flipY=true), so rowIdx 0 -> rowY = 2.0.
+         // Seam-free & flicker-free HD-2D sampler for the 4x3 64x64 pixel ground atlas!
+         // Uses continuous derivatives (dFdx/dFdy BEFORE fract) with textureGrad so wrapping
+         // across tile edges NEVER spikes the mip level or bleeds green neighbor-atlas pixels!
          vec3 sampleGroundTile(vec2 worldXZ, float tileMeters, float colIdx, float rowIdx, float rotQuarter) {
-           vec2 uv = fract(worldXZ / tileMeters);
-           // Anti-repetition macro 90-degree orientation variation
+           vec2 rawUv = worldXZ / tileMeters;
+           vec2 uv = fract(rawUv);
            if (rotQuarter > 2.5) uv = vec2(1.0 - uv.y, uv.x);
            else if (rotQuarter > 1.5) uv = vec2(1.0 - uv.x, 1.0 - uv.y);
            else if (rotQuarter > 0.5) uv = vec2(uv.y, 1.0 - uv.x);
-           // Snap strictly to texel center inside 64x64 tile (ZERO atlas bleed!)
-           vec2 snapped = (floor(uv * 64.0) + 0.5) / 64.0;
+
            float webglRow = 2.0 - rowIdx;
-           vec2 atlasUv = vec2((colIdx + snapped.x) / 4.0, (webglRow + snapped.y) / 3.0);
-           return texture2D(uGroundAtlas, atlasUv).rgb;
+           vec2 tileBase = vec2(colIdx / 4.0, webglRow / 3.0);
+           vec2 tileSize = vec2(1.0 / 4.0, 1.0 / 3.0);
+
+           // Continuous derivatives (ZERO fract-wrap spike!) capped to stay strictly inside one 64x64 tile
+           vec2 maxGrad = tileSize * 0.06;
+           vec2 ddx = clamp(dFdx(rawUv) * tileSize, -maxGrad, maxGrad);
+           vec2 ddy = clamp(dFdy(rawUv) * tileSize, -maxGrad, maxGrad);
+
+           // Crisp pixel-art texel center up close (< 16m)
+           vec2 snapped = (floor(uv * 64.0) + 0.5) / 64.0;
+           float camDist = length(vPxWorldPos - cameraPosition);
+           float farMix = smoothstep(16.0, 56.0, camDist);
+
+           vec2 nearUv = tileBase + snapped * tileSize;
+           vec3 cNear = textureGrad(uGroundAtlas, nearUv, vec2(0.0), vec2(0.0)).rgb;
+           if (farMix < 0.01) return cNear;
+
+           // Smooth mipmapped mid-range + bleed-free 4-tap interior tile average at far range
+           vec2 safeUv = clamp(uv, 1.5 / 64.0, 62.5 / 64.0);
+           vec3 cMid = textureGrad(uGroundAtlas, tileBase + safeUv * tileSize, ddx, ddy).rgb;
+
+           vec2 p0 = tileBase + vec2(0.25, 0.25) * tileSize;
+           vec2 p1 = tileBase + vec2(0.75, 0.25) * tileSize;
+           vec2 p2 = tileBase + vec2(0.25, 0.75) * tileSize;
+           vec2 p3 = tileBase + vec2(0.75, 0.75) * tileSize;
+           vec3 cSmooth = (
+             textureGrad(uGroundAtlas, p0, vec2(0.0), vec2(0.0)).rgb +
+             textureGrad(uGroundAtlas, p1, vec2(0.0), vec2(0.0)).rgb +
+             textureGrad(uGroundAtlas, p2, vec2(0.0), vec2(0.0)).rgb +
+             textureGrad(uGroundAtlas, p3, vec2(0.0), vec2(0.0)).rgb
+           ) * 0.25;
+           vec3 cStable = mix(cMid, cSmooth, smoothstep(28.0, 82.0, camDist) * 0.65);
+           return mix(cNear, cStable, farMix);
          }`
       )
       .replace(
         '#include <map_fragment>',
         `#include <map_fragment>
-         // 1. Evaluate exact world-space biome weights matching the map & atmosphere!
+         // 1. Wide, gradual organic biome weights (domain-warped with low-freq FBM — ZERO stipple flicker!)
          float wx = vPxWorldPos.x;
          float wy = -vPxWorldPos.z;
          float wzH = vPxWorldPos.y;
-         float wyBioW = wy + 26.0 * sin(wx * 0.014 + 0.5);
-         float wxBioE = wx + 28.0 * cos(wy * 0.013 - 0.4);
-         float wyBioN = wy + 26.0 * sin(wx * 0.012 + 1.1);
+         vec2 wp = vPxWorldPos.xz;
 
+         // Smooth multi-scale organic domain warp (breaks straight lines without any 1px aliasing!)
+         float warpX = pxFbm(wp * 0.014 + vec2(3.1, 7.4));
+         float warpZ = pxFbm(wp * 0.014 + vec2(19.7, 2.3));
+         vec2 warpedP = wp + vec2(warpX - 0.5, warpZ - 0.5) * 34.0;
+         float macroPatch = pxFbm(warpedP * 0.024);       // Broad ~42m natural clearings / sub-zones
+         float midVein    = pxFbm(warpedP * 0.068 + 4.1); // Winding ~15m soil/clover/magma/ice veins
+
+         float wyBioW = wy + 36.0 * sin(wx * 0.011 + 0.5) + (warpZ - 0.5) * 58.0;
+         float wxBioE = wx + 38.0 * cos(wy * 0.010 - 0.4) + (warpX - 0.5) * 58.0;
+         float wyBioN = wy + 34.0 * sin(wx * 0.010 + 1.1) + (macroPatch - 0.5) * 52.0;
+
+         // Wider, smoother biome falloffs so transitions feel gradual & natural across the island
          float dVolc = length(vec2((wxBioE - 1140.0) / 1.18, (wyBioW - 75.0) / 1.12));
-         float wVolcano = 1.0 - smoothstep(320.0, 560.0, dVolc);
+         float wVolcano = 1.0 - smoothstep(260.0, 620.0, dVolc);
 
-         float canyonNorthFar = 330.0 + 330.0 * (1.0 - smoothstep(-1150.0, -800.0, wxBioE));
-         float wDesert = (1.0 - smoothstep(-340.0, -85.0, wxBioE))
-           * smoothstep(-940.0, -680.0, wyBioW)
-           * (1.0 - smoothstep(canyonNorthFar, canyonNorthFar + 160.0, wyBioW))
+         float canyonNorthFar = 330.0 + 330.0 * (1.0 - smoothstep(-1200.0, -760.0, wxBioE));
+         float wDesert = (1.0 - smoothstep(-400.0, -35.0, wxBioE))
+           * smoothstep(-980.0, -640.0, wyBioW)
+           * (1.0 - smoothstep(canyonNorthFar - 40.0, canyonNorthFar + 220.0, wyBioW))
            * (1.0 - wVolcano);
 
-         float inNorthGlacier = smoothstep(700.0, 960.0, wyBioN)
-           * (1.0 - smoothstep(140.0, 380.0, wxBioE))
-           * smoothstep(-1380.0, -1020.0, wxBioE);
-         float inTouge = smoothstep(110.0, 290.0, wyBioN)
-           * (1.0 - smoothstep(800.0, 1060.0, wyBioN))
-           * smoothstep(-620.0, -400.0, wxBioE)
-           * (1.0 - smoothstep(90.0, 280.0, wxBioE));
+         float inNorthGlacier = smoothstep(640.0, 1020.0, wyBioN)
+           * (1.0 - smoothstep(100.0, 440.0, wxBioE))
+           * smoothstep(-1420.0, -980.0, wxBioE);
+         float inTouge = smoothstep(70.0, 340.0, wyBioN)
+           * (1.0 - smoothstep(760.0, 1100.0, wyBioN))
+           * smoothstep(-660.0, -360.0, wxBioE)
+           * (1.0 - smoothstep(50.0, 320.0, wxBioE));
          float wSnow = max(inNorthGlacier, inTouge) * (1.0 - wDesert) * (1.0 - wVolcano);
 
-         float wAutumn = smoothstep(85.0, 320.0, wxBioE) * smoothstep(55.0, 275.0, wyBioN)
+         float wAutumn = smoothstep(45.0, 360.0, wxBioE) * smoothstep(20.0, 315.0, wyBioN)
            * (1.0 - wVolcano) * (1.0 - wSnow * 0.85);
-         float wCoast = (1.0 - smoothstep(-580.0, -455.0, wy)) * (1.0 - wDesert * 0.88) * (1.0 - wVolcano);
 
-         // 2. Domain-warped organic multi-scale noise fields + pixel Bayer dither (ZERO repetitive grid!)
-         vec2 wp = vPxWorldPos.xz;
-         float warpX = pxFbm(wp * 0.022 + vec2(3.1, 7.4));
-         float warpZ = pxFbm(wp * 0.022 + vec2(19.7, 2.3));
-         vec2 warpedP = wp + vec2(warpX - 0.5, warpZ - 0.5) * 18.0;
+         // Smooth coastal beach sand: both southern coast region AND gentle low-elevation island shores!
+         float wSouthCoast = (1.0 - smoothstep(-640.0, -410.0, wyBioW)) * (1.0 - wDesert * 0.85) * (1.0 - wVolcano);
+         float shoreElevUndul = (macroPatch - 0.5) * 2.2 + (midVein - 0.5) * 1.1;
+         float wShoreSand = smoothstep(2.5, -0.55, wzH + shoreElevUndul) * (1.0 - wVolcano * 0.65) * (1.0 - wSnow * 0.75);
+         float wCoast = clamp(max(wSouthCoast, wShoreSand), 0.0, 1.0);
 
-         float macroPatch = pxFbm(warpedP * 0.032);       // Broad ~32m natural clearings / sub-zones
-         float midVein    = pxFbm(warpedP * 0.088 + 4.1); // Winding ~12m soil/clover/magma/ice veins
-         // Organic jagged pixel-edge dither (eliminates mechanical 2x2 brown checkerboard stripes!)
-         float edgeJitter = (pxHash21(floor(wp * 5.2)) - 0.5) * 0.055 + pxBayer2(floor(wp * 6.5)) * 0.025;
+         // Normalize all 6 biome weights, then sharpen with organic height-aware masks so
+         // biome borders sweep in big natural curves with a tight ~2m anti-aliased edge
+         // (100% CRISP pixel art — ZERO mushy 50/50 texture blur, ZERO 1px stipple flicker, ZERO straight lines!)
+         float sumSpecial = wVolcano + wDesert + wSnow + wAutumn + wCoast;
+         float wMeadow = max(0.0, 1.0 - sumSpecial);
+         float wNorm = max(sumSpecial + wMeadow, 1e-4);
+         wVolcano /= wNorm;
+         wDesert  /= wNorm;
+         wSnow    /= wNorm;
+         wAutumn  /= wNorm;
+         wCoast   /= wNorm;
+         wMeadow  /= wNorm;
 
-         // Anti-repetition macro tile rotation (breaks any repeating pattern across 1km highways!)
-         vec2 macroCell = floor(warpedP / 16.0);
-         float rotQ = floor(pxHash21(macroCell) * 4.0);
-         float tileMeters = 5.4; // Crisp ~8.4cm hand-painted pixel-art texels!
+         // Organic macro contour perturbation (large 15-40m sweeping islands, NEVER 1px noise!)
+         float orgMask = (macroPatch - 0.5) * 0.28 + (midVein - 0.5) * 0.14;
+         float bVolc = smoothstep(0.42, 0.52, wVolcano + orgMask);
+         float bDes  = smoothstep(0.42, 0.52, wDesert  + orgMask) * (1.0 - bVolc);
+         float bSnow = smoothstep(0.42, 0.52, wSnow    + orgMask) * (1.0 - bVolc) * (1.0 - bDes);
+         float bAut  = smoothstep(0.42, 0.52, wAutumn  + orgMask) * (1.0 - bVolc) * (1.0 - bDes) * (1.0 - bSnow);
+         float bCst  = smoothstep(0.42, 0.52, wCoast   + orgMask) * (1.0 - bVolc) * (1.0 - bDes) * (1.0 - bSnow) * (1.0 - bAut);
+         float bMdw  = max(0.0, 1.0 - (bVolc + bDes + bSnow + bAut + bCst));
 
-         // Pick dominant biome with crisp organic pixel-art edge transitions!
-         float bioDither = edgeJitter * 0.75;
-         float mA = macroPatch + edgeJitter;
-         float mB = midVein + edgeJitter;
+         // 2. Crisp pixel-art tiles with tight organic contour edges (ZERO mushy wide alpha-blends!)
+         float tileMeters = 5.4;
+         vec3 groundCol = vec3(0.0);
 
-         vec3 groundCol;
-         float isVolcanoZone = 0.0;
-         float isGreenZone = 0.0;
-         float isDesertZone = 0.0;
-         float isSnowZone = 0.0;
-
-         if (wVolcano + bioDither > 0.48) {
-           isVolcanoZone = 1.0;
-           // Volcano Crater: Scoria Ash + Occasional Glowing Magma Veins + Scorched Clay
-           if (mB > 0.72) {
-             groundCol = sampleGroundTile(wp, tileMeters * 0.92, 1.0, 2.0, rotQ);
-           } else if (mA < 0.34) {
-             groundCol = sampleGroundTile(wp, tileMeters, 3.0, 1.0, rotQ) * vec3(0.56, 0.44, 0.40);
-           } else {
-             groundCol = sampleGroundTile(wp, tileMeters, 0.0, 2.0, rotQ);
-           }
-         } else if (wDesert + bioDither > 0.46) {
-           isDesertZone = 1.0;
-           // Desert Mesa: Natural Sun-Baked Sand + Soft Cracked Clay + Red Gravel Beds (with rotQ!)
-           if (mB > 0.62) {
-             groundCol = sampleGroundTile(wp, tileMeters, 3.0, 1.0, rotQ);
-           } else if (mA < 0.28) {
-             groundCol = sampleGroundTile(wp, tileMeters * 0.9, 2.0, 0.0, rotQ) * vec3(1.18, 0.90, 0.72);
-           } else {
-             groundCol = sampleGroundTile(wp, tileMeters * 1.1, 2.0, 1.0, rotQ);
-           }
-         } else if (wSnow + bioDither > 0.46) {
-           isSnowZone = 1.0;
-           // Alpine Snow & Glacier: Soft Snow Drifts + Frosted Glacier Slate + Dark Alpine Rock
-           if (mB > 0.60 || wzH < 18.0 && mA < 0.46) {
-             groundCol = sampleGroundTile(wp, tileMeters, 3.0, 2.0, rotQ);
-           } else if (mA < 0.24) {
-             groundCol = sampleGroundTile(wp, tileMeters, 0.0, 2.0, rotQ) * vec3(0.95, 1.08, 1.24);
-           } else {
-             groundCol = sampleGroundTile(wp, tileMeters * 1.1, 2.0, 2.0, rotQ);
-           }
-         } else if (wAutumn + bioDither > 0.46) {
-           // Autumn Forest: Cozy Golden Turf + Fallen Leaf Carpet + Woodland Earth/Pebbles
-           if (mA > 0.50 || mB > 0.64) {
-             groundCol = sampleGroundTile(wp, tileMeters * 0.92, 1.0, 1.0, rotQ);
-           } else if (mA < 0.28) {
-             groundCol = sampleGroundTile(wp, tileMeters, 2.0, 0.0, rotQ);
-           } else {
-             groundCol = sampleGroundTile(wp, tileMeters, 0.0, 1.0, rotQ);
-           }
-         } else if (wCoast + bioDither > 0.44 || wzH < -0.25) {
-           // Tropical Coast & Beach: Soft Golden Sand & Shells + Damp Pebble Shore + Coastal Dunes
-           if (wzH > 2.4 && mA > 0.54) {
-             isGreenZone = 1.0;
-             groundCol = sampleGroundTile(wp, tileMeters, 1.0, 0.0, rotQ);
-           } else if (mB > 0.68) {
-             groundCol = sampleGroundTile(wp, tileMeters, 2.0, 0.0, rotQ) * vec3(1.18, 1.12, 0.94);
-           } else {
-             groundCol = sampleGroundTile(wp, tileMeters * 1.1, 3.0, 0.0, rotQ);
-           }
-         } else {
-           isGreenZone = 1.0;
-           // Lush Meadow / Valley: 3 interlocking hand-painted pixel grounds!
-           //   - Lush Emerald Pixel Grass Turf (main)
-           //   - Sunlit Clover & Micro-Wildflower Meadow clearings
-           //   - Warm Woodland Earth, Pebbles & Mossy Dirt patches (breaks up green monotony!)
-           if (mA < 0.27 && mB > 0.44) {
-             groundCol = sampleGroundTile(wp, tileMeters * 0.95, 2.0, 0.0, rotQ); // Rich earth, pebbles & moss clearing!
-           } else if (mA > 0.57 || mB > 0.68) {
-             groundCol = sampleGroundTile(wp, tileMeters, 1.0, 0.0, rotQ); // Sunlit clover & wildflower meadow!
-           } else {
-             groundCol = sampleGroundTile(wp, tileMeters, 0.0, 0.0, rotQ); // Lush emerald hand-painted grass turf!
-           }
+         if (bVolc > 0.005) {
+           vec3 vBase  = sampleGroundTile(wp, tileMeters, 0.0, 2.0, 0.0);
+           vec3 vMagma = sampleGroundTile(wp, tileMeters * 0.92, 1.0, 2.0, 0.0);
+           vec3 vAsh   = sampleGroundTile(wp, tileMeters, 3.0, 1.0, 0.0) * vec3(0.56, 0.44, 0.40);
+           vec3 vCol   = mix(vBase, vAsh, smoothstep(0.34, 0.29, macroPatch));
+           vCol        = mix(vCol, vMagma, smoothstep(0.70, 0.75, midVein));
+           groundCol  += vCol * bVolc;
          }
+         if (bDes > 0.005) {
+           vec3 dSand  = sampleGroundTile(wp, tileMeters * 1.1, 2.0, 1.0, 0.0);
+           vec3 dClay  = sampleGroundTile(wp, tileMeters, 3.0, 1.0, 0.0);
+           vec3 dGrav  = sampleGroundTile(wp, tileMeters * 0.9, 2.0, 0.0, 0.0) * vec3(1.18, 0.90, 0.72);
+           vec3 dCol   = mix(dSand, dGrav, smoothstep(0.30, 0.25, macroPatch));
+           dCol        = mix(dCol, dClay, smoothstep(0.60, 0.65, midVein));
+           groundCol  += dCol * bDes;
+         }
+         if (bSnow > 0.005) {
+           vec3 sDrift = sampleGroundTile(wp, tileMeters * 1.1, 2.0, 2.0, 0.0);
+           vec3 sSlate = sampleGroundTile(wp, tileMeters, 3.0, 2.0, 0.0);
+           float slateW = max(smoothstep(0.60, 0.65, midVein), smoothstep(18.0, 14.0, wzH) * smoothstep(0.46, 0.41, macroPatch));
+           vec3 sCol   = mix(sDrift, sSlate, clamp(slateW, 0.0, 1.0));
+           groundCol  += sCol * bSnow;
+         }
+         if (bAut > 0.005) {
+           vec3 aTurf  = sampleGroundTile(wp, tileMeters, 0.0, 1.0, 0.0);
+           vec3 aLeaf  = sampleGroundTile(wp, tileMeters * 0.92, 1.0, 1.0, 0.0);
+           vec3 aEarth = sampleGroundTile(wp, tileMeters, 2.0, 0.0, 0.0);
+           vec3 aCol   = mix(aTurf, aEarth, smoothstep(0.30, 0.25, macroPatch));
+           aCol        = mix(aCol, aLeaf, max(smoothstep(0.51, 0.56, macroPatch), smoothstep(0.64, 0.69, midVein)));
+           groundCol  += aCol * bAut;
+         }
+         if (bCst > 0.005) {
+           vec3 cSand  = sampleGroundTile(wp, tileMeters * 1.1, 3.0, 0.0, 0.0);
+           vec3 cPeb   = sampleGroundTile(wp, tileMeters, 2.0, 0.0, 0.0) * vec3(1.16, 1.10, 0.94);
+           vec3 cDune  = sampleGroundTile(wp, tileMeters, 1.0, 0.0, 0.0);
+           vec3 cCol   = mix(cSand, cPeb, smoothstep(0.66, 0.71, midVein));
+           float duneGrassW = smoothstep(2.2, 2.9, wzH) * smoothstep(0.53, 0.58, macroPatch);
+           cCol        = mix(cCol, cDune, duneGrassW);
+           groundCol  += cCol * bCst;
+         }
+         if (bMdw > 0.005) {
+           vec3 mGrass  = sampleGroundTile(wp, tileMeters, 0.0, 0.0, 0.0);
+           vec3 mClover = sampleGroundTile(wp, tileMeters, 1.0, 0.0, 0.0);
+           vec3 mEarth  = sampleGroundTile(wp, tileMeters * 0.95, 2.0, 0.0, 0.0);
+           vec3 mCol    = mix(mGrass, mClover, max(smoothstep(0.56, 0.61, macroPatch), smoothstep(0.67, 0.72, midVein)));
+           float earthW = smoothstep(0.28, 0.23, macroPatch) * smoothstep(0.44, 0.49, midVein);
+           mCol         = mix(mCol, mEarth, earthW);
+           groundCol   += mCol * bMdw;
+         }
+
+         float isVolcanoZone = bVolc;
+         float isDesertZone  = bDes;
+         float isSnowZone    = bSnow;
+         float isGreenZone   = clamp(bMdw + bCst * smoothstep(2.2, 2.9, wzH), 0.0, 1.0);
 
          // Subtle broad dappled sunlit patches + gentle terrain height relief (so hills & valleys feel 3D!)
          float cloudDapple = 0.90 + pxValueNoise(wp * 0.018) * 0.22;
@@ -2059,9 +2128,9 @@ export function patchTerrainMaterialForPixelTheme(m) {
          groundCol *= cloudDapple * elevRelief * subtleMapAO;
 
          // 3. POKEBONK SIGNATURE CLIFFS: vertical columnar basalt grooves + horizontal terraces +
-         //    jagged overhanging grass/snow lips + volcanic magma fissures on steep slopes!
+         //    overhanging grass/snow lips + volcanic magma fissures on steep slopes!
          float upDot = clamp(abs(vPxWorldNorm.y), 0.0, 1.0);
-         float slopeMask = smoothstep(0.88, 0.68, upDot);
+         float slopeMask = smoothstep(0.89, 0.64, upDot + (midVein - 0.5) * 0.06);
          if (slopeMask > 0.01) {
            float tierH = 2.6;
            float yScaled = vPxWorldPos.y / tierH;
@@ -2072,11 +2141,11 @@ export function patchTerrainMaterialForPixelTheme(m) {
            float colId = floor(cliffU * 0.85);
            float colFrac = fract(cliffU * 0.85);
            float colRand = pxHash21(vec2(colId, yStrata));
-           float vertCrack = step(0.86, colFrac);
+           float vertCrack = smoothstep(0.82, 0.92, colFrac);
 
-           vec2 cliffCell = floor(vec2(cliffU, vPxWorldPos.y) * 3.5);
+           vec2 cliffCell = floor(vec2(cliffU, vPxWorldPos.y) * 2.5);
            float nCliff = pxHash21(cliffCell);
-           float horizSeam = step(0.90, yFrac);
+           float horizSeam = smoothstep(0.86, 0.95, yFrac);
 
            vec3 basaltDark = vec3(0.055, 0.068, 0.098);
            vec3 basaltHi   = vec3(0.185, 0.215, 0.275);
@@ -2086,26 +2155,45 @@ export function patchTerrainMaterialForPixelTheme(m) {
            vec3 rockCol = mix(basaltDark, basaltHi, clamp(0.25 + colRand * 0.65, 0.0, 1.0));
            rockCol = mix(rockCol, desertRock * (0.72 + 0.40 * colRand), isDesertZone * 0.85);
            rockCol = mix(rockCol, snowRock * (0.78 + 0.30 * colRand), isSnowZone * 0.78);
-           rockCol *= (0.86 + nCliff * 0.26);
-           rockCol = mix(rockCol, vec3(0.018, 0.022, 0.036), max(vertCrack * 0.78, horizSeam * 0.86));
+           rockCol *= (0.88 + nCliff * 0.22);
+           rockCol = mix(rockCol, vec3(0.018, 0.022, 0.036), max(vertCrack * 0.72, horizSeam * 0.80));
 
-           // Glowing magma cracks inside volcanic cliffs (matching new PokeBonk Crater screenshot!)
-           if (isVolcanoZone > 0.5 && (vertCrack > 0.5 || horizSeam > 0.5) && colRand > 0.58 && yFrac > 0.12 && yFrac < 0.82) {
-             rockCol = mix(vec3(0.95, 0.34, 0.06), vec3(1.0, 0.82, 0.22), step(0.80, colRand));
+           // Glowing magma cracks inside volcanic cliffs
+           float magmaMask = isVolcanoZone * max(vertCrack, horizSeam) * smoothstep(0.56, 0.72, colRand)
+                           * smoothstep(0.10, 0.20, yFrac) * (1.0 - smoothstep(0.76, 0.86, yFrac));
+           if (magmaMask > 0.02) {
+             vec3 magmaCol = mix(vec3(0.95, 0.34, 0.06), vec3(1.0, 0.82, 0.22), smoothstep(0.72, 0.88, colRand));
+             rockCol = mix(rockCol, magmaCol, magmaMask);
            }
 
-           // Jagged overhanging emerald grass lip along meadow/autumn cliff ledges (or white snow lip in snow!)
-           float lipDepth = 0.13 + pxHash21(vec2(floor(cliffU * 2.6), yStrata + 9.0)) * 0.12;
-           float isLip = step(1.0 - lipDepth, yFrac);
-           if (isGreenZone > 0.5) {
-             vec3 lipGrass = mix(vec3(0.16, 0.64, 0.14), vec3(0.48, 0.90, 0.18), step(1.0 - lipDepth * 0.45, yFrac));
-             rockCol = mix(rockCol, lipGrass, isLip * 0.92);
-           } else if (isSnowZone > 0.5) {
-             rockCol = mix(rockCol, vec3(0.92, 0.97, 1.0), isLip * 0.90);
+           // Overhanging emerald grass / white snow lip along cliff ledges
+           float lipDepth = 0.13 + pxHash21(vec2(floor(cliffU * 2.2), yStrata + 9.0)) * 0.10;
+           float isLip = smoothstep(1.0 - lipDepth - 0.04, 1.0 - lipDepth + 0.02, yFrac);
+           if (isGreenZone > 0.05) {
+             vec3 lipGrass = mix(vec3(0.16, 0.64, 0.14), vec3(0.48, 0.90, 0.18), smoothstep(1.0 - lipDepth * 0.55, 1.0 - lipDepth * 0.25, yFrac));
+             rockCol = mix(rockCol, lipGrass, isLip * isGreenZone * 0.88);
+           }
+           if (isSnowZone > 0.05) {
+             rockCol = mix(rockCol, vec3(0.92, 0.97, 1.0), isLip * isSnowZone * 0.88);
            }
 
            groundCol = mix(groundCol, rockCol, slopeMask);
          }
+
+         // 4. Wet Shoreline Tide-Line: damp darkened sand & coastal cliff rock where waves lap the shore!
+         float tideWave = sin(vPxWorldPos.x * 0.14 + vPxWorldPos.z * 0.11 + uCloudTime * 1.6) * 0.18;
+         float hAboveWater = vPxWorldPos.y - (uWaterLevel + tideWave);
+         float wetMask = 1.0 - smoothstep(-0.15, 1.45, hAboveWater + (midVein - 0.5) * 0.35);
+         if (wetMask > 0.01) {
+           // Smooth damp sand/stone darkening (ZERO flickering pixel noise!)
+           groundCol = mix(groundCol, groundCol * vec3(0.64, 0.68, 0.74), wetMask * 0.76);
+         }
+
+         // 5. Real Moving Cloud Shadows drifting gently across meadows, hills, cliffs & beaches!
+         vec2 cloudP = vPxWorldPos.xz * 0.0044 + vec2(uCloudTime * 0.016, uCloudTime * 0.007);
+         float cMask = pxValueNoise(cloudP) * 0.62 + pxValueNoise(cloudP * 2.15 + vec2(11.3, 4.7)) * 0.38;
+         float cloudShade = smoothstep(0.50, 0.72, cMask) * uCloudShadowStrength;
+         groundCol *= mix(vec3(1.0), vec3(0.76, 0.80, 0.88), cloudShade * 0.82);
 
          diffuseColor.rgb = groundCol;`
       )
@@ -2119,12 +2207,15 @@ export function patchRoadMaterialForPixelTheme(m) {
   m.metalness = 0.02;
   if (m.map) {
     m.map.magFilter = THREE.NearestFilter;
-    m.map.minFilter = THREE.NearestFilter;
-    m.map.generateMipmaps = false;
+    m.map.minFilter = THREE.LinearMipmapLinearFilter;
+    m.map.generateMipmaps = true;
+    m.map.anisotropy = 8;
     m.map.needsUpdate = true;
   }
-  m.customProgramCacheKey = () => 'pixel_theme_road_v5';
+  m.customProgramCacheKey = () => 'pixel_theme_road_v7_cloudshadows';
   m.onBeforeCompile = (shader) => {
+    shader.uniforms.uCloudTime = PIXEL_LIGHTING_UNIFORMS.uCloudTime;
+    shader.uniforms.uCloudShadowStrength = PIXEL_LIGHTING_UNIFORMS.uCloudShadowStrength;
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vPxRoadPos;\nvarying vec3 vPxRoadNorm;')
       .replace(
@@ -2134,13 +2225,24 @@ export function patchRoadMaterialForPixelTheme(m) {
          vPxRoadNorm = normalize(mat3(modelMatrix) * objectNormal);`
       );
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying vec3 vPxRoadPos;\nvarying vec3 vPxRoadNorm;\n${PIXEL_HASH_GLSL}`)
+      .replace(
+        '#include <common>',
+        `#include <common>
+         uniform float uCloudTime;
+         uniform float uCloudShadowStrength;
+         varying vec3 vPxRoadPos;
+         varying vec3 vPxRoadNorm;
+         ${PIXEL_HASH_GLSL}`
+      )
       .replace(
         '#include <map_fragment>',
         `#include <map_fragment>
+         float roadCamDist = length(vPxRoadPos - cameraPosition);
+         float fineFade = 1.0 - smoothstep(10.0, 32.0, roadCamDist);
+         float midFade  = 1.0 - smoothstep(24.0, 72.0, roadCamDist);
          if (abs(vPxRoadNorm.y) < 0.58) {
            // Vertical road side-skirt / bridge deck retaining wall:
-           // Replace stretched top-down asphalt UVs with crisp world-space pixel stone-block masonry!
+           // Crisp world-space pixel stone-block masonry (anti-aliased at distance to prevent flicker!)
            float wallH = (abs(vPxRoadNorm.x) > abs(vPxRoadNorm.z)) ? vPxRoadPos.z : vPxRoadPos.x;
            vec2 wp = floor(vec2(wallH, vPxRoadPos.y) * 5.0);
            float rowIdx = floor(wp.y / 4.0);
@@ -2149,43 +2251,46 @@ export function patchRoadMaterialForPixelTheme(m) {
            float colIdx = floor((wp.x + stagger) / 10.0);
            float localX = mod(wp.x + stagger, 10.0);
 
-           float isMortar = (localY < 0.5 || localX < 0.5) ? 1.0 : 0.0;
-           float isTopBevel = (localY >= 3.0 && isMortar < 0.5) ? 1.0 : 0.0;
-           float isBotShade = (localY >= 1.0 && localY < 1.5 && isMortar < 0.5) ? 1.0 : 0.0;
+           float isMortar = ((localY < 0.5 || localX < 0.5) ? 1.0 : 0.0) * midFade;
+           float isTopBevel = ((localY >= 3.0 && isMortar < 0.5) ? 1.0 : 0.0) * fineFade;
+           float isBotShade = ((localY >= 1.0 && localY < 1.5 && isMortar < 0.5) ? 1.0 : 0.0) * fineFade;
 
            float blkRand = pxHash21(vec2(colIdx, rowIdx));
            float pxGrain = pxHash21(wp);
 
-           // Cool weathered concrete-stone masonry matching the bridge piers & steel guardrails
-           vec3 baseStone = mix(vec3(0.39, 0.44, 0.51), vec3(0.51, 0.56, 0.63), blkRand);
-           baseStone *= (pxGrain > 0.80) ? 1.10 : ((pxGrain < 0.18) ? 0.88 : 1.0);
-           baseStone = mix(baseStone, baseStone * 1.16, isTopBevel * 0.75);
-           baseStone = mix(baseStone, baseStone * 0.84, isBotShade * 0.65);
-           // Crisp dark pixel mortar lines between courses
-           vec3 mortarCol = vec3(0.21, 0.24, 0.30);
-           diffuseColor.rgb = mix(baseStone, mortarCol, isMortar);
+           vec3 baseStone = mix(vec3(0.41, 0.46, 0.53), vec3(0.50, 0.55, 0.62), mix(0.5, blkRand, midFade));
+           float grainMul = (pxGrain > 0.80) ? 1.08 : ((pxGrain < 0.18) ? 0.90 : 1.0);
+           baseStone *= mix(1.0, grainMul, fineFade);
+           baseStone = mix(baseStone, baseStone * 1.14, isTopBevel * 0.70);
+           baseStone = mix(baseStone, baseStone * 0.86, isBotShade * 0.60);
+           vec3 mortarCol = vec3(0.24, 0.27, 0.33);
+           diffuseColor.rgb = mix(baseStone, mortarCol, isMortar * 0.85);
          } else {
-           // Detailed weathered pixel-art asphalt: aggregate grain, dark tar cracks & subtle repair patches!
+           // Weathered pixel-art asphalt with distance-faded fine grain (ZERO high-speed road shimmer!)
            vec2 rFine = floor(vPxRoadPos.xz * 6.0);
            vec2 rMed  = floor(vPxRoadPos.xz * 1.4);
            vec2 rMacro = floor(vPxRoadPos.xz * 0.18);
            float rn = pxHash21(rFine);
            float rm = pxHash21(rMed);
            float rPatch = pxHash21(rMacro);
-           float pxCheck = mod(rFine.x + rFine.y, 2.0) * 2.0 - 1.0;
 
-           // Crisp aggregate pixel gravel
-           float speck = (rn > 0.83) ? 1.22 : ((rn < 0.16) ? 0.78 : (1.0 + pxCheck * 0.036));
-           // Occasional darker weathered asphalt repair patches so long highways have real character!
-           float tarmacPatch = (rPatch > 0.74) ? 0.87 : ((rPatch < 0.20) ? 1.09 : 1.0);
-           float midWear = 0.94 + rm * 0.12;
+           float rawSpeck = (rn > 0.84) ? 1.14 : ((rn < 0.16) ? 0.86 : 1.0);
+           float speck = mix(1.0, rawSpeck, fineFade);
+           float tarmacPatch = mix(1.0, (rPatch > 0.74) ? 0.90 : ((rPatch < 0.20) ? 1.07 : 1.0), midFade);
+           float midWear = mix(1.0, 0.95 + rm * 0.10, midFade);
 
-           // Subtle meandering pixel tar cracks across weathered stretches
            float crackWave = abs(fract(pxFbm(vPxRoadPos.xz * 0.24) * 3.5) - 0.5);
-           float tarCrack = step(crackWave, 0.018) * step(0.52, pxValueNoise(vPxRoadPos.xz * 0.06));
+           float tarCrack = step(crackWave, 0.018) * step(0.52, pxValueNoise(vPxRoadPos.xz * 0.06)) * fineFade;
 
            vec3 roadCol = diffuseColor.rgb * vec3(0.86, 0.92, 1.06) * speck * tarmacPatch * midWear;
-           roadCol = mix(roadCol, roadCol * 0.42, tarCrack * 0.72);
+           roadCol = mix(roadCol, roadCol * 0.48, tarCrack * 0.65);
+
+           // Synchronized moving cloud shadows rolling smoothly across highways & bridges!
+           vec2 rCloudP = vPxRoadPos.xz * 0.0044 + vec2(uCloudTime * 0.016, uCloudTime * 0.007);
+           float rCMask = pxValueNoise(rCloudP) * 0.62 + pxValueNoise(rCloudP * 2.15 + vec2(11.3, 4.7)) * 0.38;
+           float rCloudShade = smoothstep(0.50, 0.72, rCMask) * uCloudShadowStrength;
+           roadCol *= mix(vec3(1.0), vec3(0.76, 0.80, 0.88), rCloudShade * 0.78);
+
            diffuseColor.rgb = roadCol;
          }`
       )
@@ -2268,15 +2373,28 @@ export function createPixelWaterMaterial(sun) {
       ...THREE.UniformsLib.fog,
       uTime: { value: 0.0 },
       uSunPosition: { value: new THREE.Vector3().copy(sun) },
+      uSkyHorizon: { value: new THREE.Color(0xbce8ff) },
+      uSkyMid: { value: new THREE.Color(0x45a9fa) },
+      uSkyZenith: { value: new THREE.Color(0x1b6fe0) },
+      uCloudTime: PIXEL_LIGHTING_UNIFORMS.uCloudTime,
+      uCloudShadowStrength: PIXEL_LIGHTING_UNIFORMS.uCloudShadowStrength,
+      uNightFactor: PIXEL_LIGHTING_UNIFORMS.uNightFactor,
+      uSunsetFactor: PIXEL_LIGHTING_UNIFORMS.uSunsetFactor,
     },
     vertexShader: /* glsl */ `
       #include <common>
       #include <fog_pars_vertex>
+      uniform float uTime;
       varying vec2 vUv;
       varying vec3 vWorldPos;
       void main() {
         vUv = uv;
         vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+        // Gentle open-water swell (masked to 0 near beaches & piers so it never clips shores!)
+        float swellMask = smoothstep(0.14, 0.45, uv.x);
+        float swell = (sin(worldPosition.x * 0.085 + uTime * 1.4) * 0.14
+                     + cos(worldPosition.z * 0.105 - uTime * 1.15) * 0.11) * swellMask;
+        worldPosition.y += swell;
         vWorldPos = worldPosition.xyz;
         vec4 mvPosition = viewMatrix * worldPosition;
         gl_Position = projectionMatrix * mvPosition;
@@ -2291,35 +2409,129 @@ export function createPixelWaterMaterial(sun) {
       varying vec2 vUv;
       varying vec3 vWorldPos;
       uniform float uTime;
+      uniform vec3 uSunPosition;
+      uniform vec3 uSkyHorizon;
+      uniform vec3 uSkyMid;
+      uniform vec3 uSkyZenith;
+      uniform float uCloudTime;
+      uniform float uCloudShadowStrength;
+      uniform float uNightFactor;
+      uniform float uSunsetFactor;
 
       void main() {
         float depthFactor = clamp(vUv.x, 0.0, 1.0);
-        if (depthFactor < 0.025) discard;
+        if (depthFactor < 0.020) discard;
 
-        vec2 wp = floor(vWorldPos.xz * 1.8);
-        float tStep = floor(uTime * 3.5);
+        // Crisp world-space pixel grid (0.48m texels) with smooth distant fade to prevent shimmer
+        float camDist = length(vWorldPos - cameraPosition);
+        float pxScale = mix(2.1, 0.85, smoothstep(45.0, 260.0, camDist));
+        vec2 wp = floor(vWorldPos.xz * pxScale) / pxScale;
+        float bayer = pxBayer2(floor(gl_FragCoord.xy / 1.5)) * 0.045;
+        float tStep = floor(uTime * 5.0) * 0.2;
 
-        vec3 shallowCol = vec3(0.18, 0.72, 0.90);
-        vec3 midCol     = vec3(0.09, 0.48, 0.80);
-        vec3 deepCol    = vec3(0.05, 0.32, 0.64);
-        vec3 waterCol   = (depthFactor < 0.24) ? shallowCol : ((depthFactor < 0.60) ? midCol : deepCol);
+        // 1. 4-Zone Bayer-Dithered Coastal-to-Deep Ocean Palette
+        vec3 shallowCol = vec3(0.20, 0.80, 0.84); // Crystal turquoise shallows
+        vec3 lagoonCol  = vec3(0.10, 0.60, 0.82); // Vibrant coastal lagoon
+        vec3 midCol     = vec3(0.06, 0.42, 0.74); // Mediterranean azure
+        vec3 deepCol    = vec3(0.03, 0.24, 0.54); // Deep royal cobalt
 
-        float tileNoise = pxHash21(wp);
-        if (tileNoise > 0.78) waterCol *= 1.12;
-        else if (tileNoise < 0.22) waterCol *= 0.90;
+        float dBand = depthFactor + bayer;
+        vec3 waterCol = (dBand < 0.16) ? shallowCol
+                      : ((dBand < 0.36) ? lagoonCol
+                      : ((dBand < 0.66) ? midCol : deepCol));
 
-        vec2 dashCell = vec2(floor((wp.x + tStep * 0.65) * 0.25), wp.y);
+        // 2. Animated Underwater Pixel Caustics in Crystal Shallows & Lagoons
+        if (depthFactor < 0.44) {
+          float caustFade = (1.0 - smoothstep(0.10, 0.44, depthFactor)) * (1.0 - uNightFactor * 0.80);
+          vec2 cUv1 = wp * 0.28 + vec2(uTime * 0.16, uTime * 0.11);
+          vec2 cUv2 = wp * 0.34 - vec2(uTime * 0.13, -uTime * 0.15) + vec2(7.3, 4.1);
+          float c1 = abs(pxValueNoise(cUv1) * 2.0 - 1.0);
+          float c2 = abs(pxValueNoise(cUv2) * 2.0 - 1.0);
+          float caustNet = step(max(c1, c2), 0.18) + step(min(c1, c2), 0.08) * 0.55;
+          vec3 caustCol = mix(vec3(0.68, 0.98, 0.96), vec3(1.0, 0.84, 0.58), uSunsetFactor * 0.65);
+          waterCol += caustCol * caustNet * caustFade * 0.32;
+        }
+
+        // 3. Stylized World-Space Perturbed Wave Normal (for Fresnel Sky Reflections & Sun Glitter)
+        float w1 = sin(wp.x * 0.42 + wp.y * 0.22 + uTime * 1.9);
+        float w2 = cos(wp.x * 0.26 - wp.y * 0.48 + uTime * 1.5);
+        float w3 = (pxValueNoise(wp * 0.35 + vec2(uTime * 0.22, -uTime * 0.16)) - 0.5) * 1.6;
+        vec3 N = normalize(vec3((w1 + w3) * 0.13, 1.0, (w2 - w3) * 0.13));
+        vec3 V = normalize(cameraPosition - vWorldPos);
+        vec3 sunDir = normalize(uSunPosition);
+
+        // 4. Fresnel Live Sky & Drifting Cloud Reflections!
+        float ndv = max(dot(N, V), 0.0);
+        float fresnel = clamp(0.06 + 0.72 * pow(1.0 - ndv, 3.4), 0.0, 0.78);
+        vec3 reflDir = reflect(-V, N);
+        float reflY = clamp(reflDir.y, 0.0, 1.0);
+        vec3 reflSky = mix(uSkyHorizon, uSkyMid, smoothstep(0.0, 0.28, reflY));
+        reflSky = mix(reflSky, uSkyZenith, smoothstep(0.24, 0.72, reflY));
+
+        // Reflected drifting sky clouds on water surface
+        vec2 rCloudUv = (vWorldPos.xz + reflDir.xz * 42.0) * 0.0055 + vec2(uCloudTime * 0.020, uCloudTime * 0.009);
+        float rCloud = smoothstep(0.56, 0.74, pxValueNoise(rCloudUv) * 0.65 + pxValueNoise(rCloudUv * 2.1 + 5.2) * 0.35);
+        vec3 rCloudCol = mix(vec3(0.95, 0.98, 1.0), vec3(1.0, 0.74, 0.56), uSunsetFactor * 0.85);
+        rCloudCol = mix(rCloudCol, vec3(0.24, 0.32, 0.52), uNightFactor * 0.88);
+        reflSky = mix(reflSky, rCloudCol, rCloud * 0.36);
+
+        // Subtle pixel water shimmer texture
+        float tileNoise = pxHash21(floor(wp * 1.4));
+        waterCol *= (0.94 + tileNoise * 0.13);
+
+        // Time-of-day base water tint before sky reflection
+        vec3 wTod = mix(vec3(1.0), vec3(1.08, 0.76, 0.66), uSunsetFactor * 0.72);
+        wTod = mix(wTod, vec3(0.22, 0.30, 0.52), uNightFactor * 0.86);
+        waterCol *= wTod;
+
+        // Blend water body with live sky reflection via Fresnel
+        waterCol = mix(waterCol, reflSky, fresnel * mix(0.68, 0.82, uSunsetFactor));
+
+        // 5. Sparkling Pixelated HDR Sun / Moon Glitter Path (triggers Selective Pixel Bloom!)
+        float sunSpecRaw = max(0.0, dot(reflDir, sunDir));
+        float glitterBroad = pow(sunSpecRaw, 22.0);
+        float glitterTight = pow(sunSpecRaw, 120.0);
+        float crestNoise = pxHash21(floor(vWorldPos.xz * 1.45 + vec2(tStep * 1.8, -tStep * 0.9)));
+        float sparkleMask = step(0.42, glitterBroad * (0.45 + crestNoise * 0.95)) * 0.65
+                          + step(0.32, glitterTight * (0.65 + crestNoise * 0.85)) * 1.15;
+
+        vec3 glintCol = mix(vec3(1.22, 1.18, 0.98), vec3(1.42, 0.88, 0.48), uSunsetFactor);
+        glintCol = mix(glintCol, vec3(0.86, 0.98, 1.28), uNightFactor);
+        waterCol += glintCol * sparkleMask * mix(0.62, 0.95, max(uSunsetFactor, uNightFactor * 0.75));
+
+        // 6. Wind Waker Open-Water Whitecap Wave Dashes
+        vec2 dashGrid = floor(vWorldPos.xz * 1.65);
+        vec2 dashCell = vec2(floor((dashGrid.x + tStep * 2.2) * 0.24), dashGrid.y);
         float dashRng = pxHash21(dashCell);
-        float inDashRow = step(0.91, dashRng);
-        float dashPhase = fract((wp.x + tStep * 0.65) * 0.25);
-        float waveDash = inDashRow * step(0.15, dashPhase) * step(dashPhase, 0.78);
+        float dashPhase = fract((dashGrid.x + tStep * 2.2) * 0.24);
+        float waveDash = step(0.925, dashRng) * step(0.16, dashPhase) * step(dashPhase, 0.76) * smoothstep(0.18, 0.35, depthFactor);
 
-        float shoreWave = sin(wp.x * 0.35 + wp.y * 0.25 + tStep * 0.6) * 0.04;
-        float shoreFoam = step(depthFactor + shoreWave, 0.15);
+        // 7. Animated Double-Ring Rolling Shoreline Surf & Lapping Foam!
+        float surfNoise = pxValueNoise(wp * 0.32 + vec2(uTime * 0.12, -uTime * 0.08));
+        float surfPulse = sin(uTime * 1.85 + surfNoise * 4.5) * 0.032;
+        float primarySurf = step(depthFactor + surfPulse + (surfNoise - 0.5) * 0.045, 0.115);
 
-        waterCol = mix(waterCol, vec3(0.86, 0.98, 1.0), max(waveDash * 0.78, shoreFoam * 0.90));
+        // Secondary curling wave ring rolling shoreward across shallows
+        float ringPhase = fract(depthFactor * 4.2 + uTime * 0.32 + surfNoise * 0.35);
+        float secondaryCurl = step(0.84, ringPhase) * step(depthFactor, 0.28) * step(0.06, depthFactor)
+                            * step(0.38, pxHash21(floor(wp * 1.8 + vec2(0.0, tStep))));
 
-        gl_FragColor = vec4(waterCol, 0.95);
+        float foamMask = max(waveDash * 0.72, max(primarySurf * 0.92, secondaryCurl * 0.78));
+        vec3 foamCol = mix(vec3(0.90, 0.98, 1.0), vec3(1.0, 0.86, 0.74), uSunsetFactor * 0.72);
+        foamCol = mix(foamCol, vec3(0.42, 0.54, 0.74), uNightFactor * 0.82);
+        waterCol = mix(waterCol, foamCol, foamMask);
+
+        // 8. Moving Cloud Shadows seamlessly continuing from land onto water!
+        vec2 cloudP = vWorldPos.xz * 0.0044 + vec2(uCloudTime * 0.016, uCloudTime * 0.007);
+        float cMask = pxValueNoise(cloudP) * 0.62 + pxValueNoise(cloudP * 2.15 + vec2(11.3, 4.7)) * 0.38;
+        float cloudShade = smoothstep(0.50, 0.72, cMask) * uCloudShadowStrength;
+        waterCol *= mix(vec3(1.0), vec3(0.76, 0.82, 0.92), cloudShade * 0.68);
+
+        // Crystal-clear shallow edge alpha ramping to rich opaque ocean depth
+        float alpha = mix(0.60, 0.97, smoothstep(0.020, 0.24, depthFactor));
+        alpha = max(alpha, foamMask * 0.94);
+
+        gl_FragColor = vec4(waterCol, alpha);
         #include <fog_fragment>
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
@@ -2350,6 +2562,8 @@ export function createPixelSkyDome(scene, sun) {
       uHorizonColor: { value: new THREE.Color(0xbce8ff) },
       uMidSkyColor: { value: new THREE.Color(0x45a9fa) },
       uZenithColor: { value: new THREE.Color(0x1b6fe0) },
+      uNightFactor: PIXEL_LIGHTING_UNIFORMS.uNightFactor,
+      uSunsetFactor: PIXEL_LIGHTING_UNIFORMS.uSunsetFactor,
     },
     vertexShader: /* glsl */ `
       varying vec3 vWorldPosition;
@@ -2367,6 +2581,8 @@ export function createPixelSkyDome(scene, sun) {
       uniform vec3 uHorizonColor;
       uniform vec3 uMidSkyColor;
       uniform vec3 uZenithColor;
+      uniform float uNightFactor;
+      uniform float uSunsetFactor;
 
       // Multi-octave billowy cumulus density field with time-evolving lobes
       float skyCloudDensity(vec2 p, float t) {
@@ -2398,23 +2614,34 @@ export function createPixelSkyDome(scene, sun) {
         skyCol = mix(skyCol, uZenithColor, smoothstep(0.35, 0.78, yBand));
 
         float sunHorizGlow = pow(max(0.0, dot(normalize(vec3(viewDir.x, 0.0, viewDir.z)), normalize(vec3(sunDir.x, 0.0, sunDir.z)))), 3.0)
-                           * (1.0 - smoothstep(0.0, 0.42, y));
-        skyCol += vec3(0.16, 0.11, 0.05) * sunHorizGlow;
+                           * (1.0 - smoothstep(0.0, 0.48, y));
+        vec3 horizTint = mix(vec3(0.16, 0.11, 0.05), vec3(0.42, 0.16, 0.06), uSunsetFactor);
+        skyCol += horizTint * sunHorizGlow * (1.0 - uNightFactor * 0.85);
 
         if (viewDir.y > -0.02) {
-          // 2. Radiant Atmospheric Solar Bloom + Pixel Starburst Lens Rays (NO flat bullseye circles!)
+          // 1b. Twinkling Pixel Starfield & Crisp Lunar Disk at Night / Dusk!
+          if (uNightFactor > 0.05 && y > 0.04) {
+            float azS = atan(viewDir.z, viewDir.x);
+            vec2 starGrid = floor(vec2(azS * 95.0, asin(clamp(viewDir.y, 0.0, 1.0)) * 125.0));
+            float starSeed = pxHash21(starGrid);
+            if (starSeed > 0.968) {
+              float twinkle = 0.55 + 0.45 * sin(uTime * (2.2 + starSeed * 4.0) + starSeed * 62.8);
+              vec3 starTint = mix(vec3(0.84, 0.92, 1.0), vec3(1.0, 0.92, 0.76), fract(starSeed * 37.0));
+              float starVis = smoothstep(0.05, 0.25, y) * smoothstep(0.12, 0.78, uNightFactor);
+              skyCol += starTint * twinkle * starVis * (starSeed > 0.990 ? 1.35 : 0.85);
+            }
+          }
+
+          // 2. Radiant Atmospheric Solar Bloom + Pixel Starburst Lens Rays (transitions to Silvery Moon at Night!)
           vec3 sunRight = normalize(cross(vec3(0.0, 1.0, 0.0), sunDir));
           vec3 sunUp    = cross(sunDir, sunRight);
-          // Quantize solar tangent plane to a crisp pixel grid for authentic HD-2D sun rays
           vec2 sunPlane = floor(vec2(dot(viewDir, sunRight), dot(viewDir, sunUp)) * 180.0) / 180.0;
           float sDist = length(sunPlane);
 
-          // Soft Bayer-dithered atmospheric solar bloom (melts organically into the sky, zero hard rings!)
           float wideGlare = pow(sunDot, 10.0);
           float midBloom  = floor((pow(sunDot, 48.0) + bayer * 0.45) * 6.0) / 6.0;
           float coreGlow  = smoothstep(0.042, 0.004, sDist + bayer * 0.008);
 
-          // Animated 4-point + diagonal pixel starburst shimmer rays
           float breathe = 0.92 + 0.14 * sin(uTime * 1.9);
           float rayH = exp(-abs(sunPlane.y) * 145.0) * exp(-abs(sunPlane.x) * 11.5 * breathe);
           float rayV = exp(-abs(sunPlane.x) * 145.0) * exp(-abs(sunPlane.y) * 13.5 * breathe);
@@ -2422,18 +2649,24 @@ export function createPixelSkyDome(scene, sun) {
           float rayD = (exp(-abs(diagPlane.y) * 175.0) * exp(-abs(diagPlane.x) * 20.0)
                       + exp(-abs(diagPlane.x) * 175.0) * exp(-abs(diagPlane.y) * 20.0)) * 0.65;
           float starBurst = clamp(floor(((rayH + rayV + rayD) + bayer * 0.25) * 5.0) / 5.0, 0.0, 1.0)
-                          * step(0.84, sunDot);
+                          * step(0.84, sunDot) * (1.0 - uNightFactor * 0.82);
 
-          // Subtle crepuscular god-ray shafts radiating downward toward the horizon
           float sunAngle = atan(viewDir.y - sunDir.y, dot(viewDir.xz - sunDir.xz, vec2(1.0, 0.7)));
           float rayWave = sin(sunAngle * 11.0 + uTime * 0.35) * 0.5 + 0.5;
           float godRay = smoothstep(0.74, 0.995, sunDot) * smoothstep(0.52, 0.86, rayWave) * (1.0 - smoothstep(0.0, 0.55, y));
 
-          skyCol += vec3(0.24, 0.18, 0.09) * wideGlare * 0.65;
-          skyCol += vec3(0.20, 0.17, 0.10) * godRay * 0.52;
-          skyCol = mix(skyCol, vec3(1.12, 1.00, 0.76), midBloom * 0.68);
-          skyCol += vec3(1.15, 1.02, 0.74) * starBurst * 0.78;
-          skyCol = mix(skyCol, vec3(1.55, 1.48, 1.22), coreGlow);
+          vec3 glareCol = mix(vec3(0.24, 0.18, 0.09), vec3(0.45, 0.18, 0.06), uSunsetFactor);
+          glareCol = mix(glareCol, vec3(0.10, 0.16, 0.28), uNightFactor);
+          vec3 bloomCol = mix(vec3(1.12, 1.00, 0.76), vec3(1.32, 0.76, 0.42), uSunsetFactor);
+          bloomCol = mix(bloomCol, vec3(0.78, 0.88, 1.08), uNightFactor);
+          vec3 coreCol  = mix(vec3(1.55, 1.48, 1.22), vec3(1.70, 1.16, 0.68), uSunsetFactor);
+          coreCol  = mix(coreCol, vec3(1.22, 1.32, 1.52), uNightFactor);
+
+          skyCol += glareCol * wideGlare * 0.65;
+          skyCol += glareCol * godRay * 0.52 * (1.0 - uNightFactor * 0.75);
+          skyCol = mix(skyCol, bloomCol, midBloom * mix(0.68, 0.45, uNightFactor));
+          skyCol += bloomCol * starBurst * 0.78;
+          skyCol = mix(skyCol, coreCol, coreGlow);
 
           // 3. LAYER A — High-Altitude Wispy Pixel Cirrus Ribbons (y > 0.14)
           if (y > 0.10) {
@@ -2469,6 +2702,13 @@ export function createPixelSkyDome(scene, sun) {
               vec3 hTopCol  = mix(vec3(1.04, 1.03, 1.00), vec3(1.12, 1.06, 0.94), pow(sunDot, 2.5));
               vec3 hMidCol  = vec3(0.90, 0.96, 1.02);
               vec3 hBaseCol = mix(uHorizonColor * 0.92, vec3(0.68, 0.84, 0.98), 0.72);
+              // Tint horizon cumulus clouds warmly at Sunset & silvery-indigo at Night!
+              hTopCol  = mix(hTopCol,  vec3(1.20, 0.78, 0.50), uSunsetFactor * 0.88);
+              hMidCol  = mix(hMidCol,  vec3(0.84, 0.50, 0.54), uSunsetFactor * 0.82);
+              hBaseCol = mix(hBaseCol, vec3(0.42, 0.28, 0.44), uSunsetFactor * 0.85);
+              hTopCol  = mix(hTopCol,  vec3(0.16, 0.22, 0.34), uNightFactor * 0.95);
+              hMidCol  = mix(hMidCol,  vec3(0.09, 0.13, 0.23), uNightFactor * 0.96);
+              hBaseCol = mix(hBaseCol, vec3(0.05, 0.07, 0.14), uNightFactor * 0.97);
 
               // Stepped 3-band pixel cumulus shading (bright top crest -> crisp mid -> cool blue base shelf)
               vec3 hCloudCol = (rimFactor < 0.024)
@@ -2504,6 +2744,15 @@ export function createPixelSkyDome(scene, sun) {
               vec3 cMidBody  = vec3(0.92, 0.97, 1.03);
               vec3 cShadow   = vec3(0.71, 0.85, 0.98);
               vec3 cDeepBase = vec3(0.58, 0.76, 0.94);
+              // Sunset coral-gold & Night moonlit-silver cloud lighting!
+              cSunTop   = mix(cSunTop,   vec3(1.26, 0.82, 0.48), uSunsetFactor * 0.90);
+              cMidBody  = mix(cMidBody,  vec3(0.88, 0.54, 0.56), uSunsetFactor * 0.84);
+              cShadow   = mix(cShadow,   vec3(0.52, 0.34, 0.48), uSunsetFactor * 0.86);
+              cDeepBase = mix(cDeepBase, vec3(0.32, 0.22, 0.38), uSunsetFactor * 0.88);
+              cSunTop   = mix(cSunTop,   vec3(0.18, 0.24, 0.38), uNightFactor * 0.94);
+              cMidBody  = mix(cMidBody,  vec3(0.10, 0.14, 0.25), uNightFactor * 0.96);
+              cShadow   = mix(cShadow,   vec3(0.06, 0.09, 0.17), uNightFactor * 0.97);
+              cDeepBase = mix(cDeepBase, vec3(0.04, 0.06, 0.12), uNightFactor * 0.98);
 
               // Crisp 4-tone pixel-art cumulus palette: silver-lining rim + sunlit puff + mid shelf + cool base
               vec3 cloudCol = cMidBody;
@@ -3285,6 +3534,26 @@ export class PixelRenderPipeline {
 
           vec3 col = texture2D(tDiffuse, sampleUv).rgb;
 
+          // 1. Subtle Depth-Based Screen-Space Contact AO (grounds buildings, piers, curbs & car arches!)
+          //    4-tap cross-diagonal kernel gives identical contact grounding at half the depth bandwidth
+          if (zC < 44.0) {
+            float aoFade = 1.0 - smoothstep(20.0, 44.0, zC);
+            vec2 aoS1 = uTexelSize * 2.2;
+            vec2 aoS2 = uTexelSize * 4.5;
+            float d1 = zC - getLinearDepth(uv + vec2( aoS1.x,  aoS1.y));
+            float d2 = zC - getLinearDepth(uv + vec2(-aoS1.x, -aoS1.y));
+            float d3 = zC - getLinearDepth(uv + vec2( aoS2.x, -aoS2.y));
+            float d4 = zC - getLinearDepth(uv + vec2(-aoS2.x,  aoS2.y));
+            float range = 0.14 + zC * 0.022;
+            float occ = 0.0;
+            occ += smoothstep(0.02, range, d1) * (1.0 - smoothstep(range, range * 3.5, d1));
+            occ += smoothstep(0.02, range, d2) * (1.0 - smoothstep(range, range * 3.5, d2));
+            occ += smoothstep(0.03, range * 1.4, d3) * (1.0 - smoothstep(range * 1.4, range * 4.5, d3));
+            occ += smoothstep(0.03, range * 1.4, d4) * (1.0 - smoothstep(range * 1.4, range * 4.5, d4));
+            float ao = 1.0 - clamp((occ * 0.25) * 0.42 * aoFade, 0.0, 0.24);
+            col *= ao;
+          }
+
           if (uOutlinesEnabled > 0.5 && zC < 120.0) {
             vec2 stepSz = (zC < 8.8 && uCarTexelSize.x > uTexelSize.x * 1.04) ? uCarTexelSize : uTexelSize;
             float zL = getLinearDepth(sampleUv + vec2(-stepSz.x, 0.0));
@@ -3321,6 +3590,24 @@ export class PixelRenderPipeline {
             vec3 inkColor = mix(vec3(0.012, 0.016, 0.028), col * 0.16, 0.24);
             col = mix(col, inkColor, outline * 0.92);
           }
+
+          // 2. Selective HDR Pixel Bloom (ONLY blooms bright emissives > 1.04: headlights, brake lights,
+          //    sunset/night house windows, streetlamps, lava veins, lighthouse beacon & sun core!)
+          //    8-tap rotated dual-ring kernel (identical circular halo, 33% less HalfFloat bandwidth)
+          vec3 bloomSum = vec3(0.0);
+          vec2 bR1 = uTexelSize * 2.5;
+          vec2 bR2 = uTexelSize * 4.6;
+          #define BLOOM_TAP(off, w) bloomSum += max(vec3(0.0), texture2D(tDiffuse, uv + (off)).rgb - vec3(1.04)) * (w)
+          BLOOM_TAP(vec2( bR1.x,  0.0), 0.19);
+          BLOOM_TAP(vec2(-bR1.x,  0.0), 0.19);
+          BLOOM_TAP(vec2( 0.0,  bR1.y), 0.19);
+          BLOOM_TAP(vec2( 0.0, -bR1.y), 0.19);
+          BLOOM_TAP(vec2( bR2.x,  bR2.y), 0.10);
+          BLOOM_TAP(vec2(-bR2.x,  bR2.y), 0.10);
+          BLOOM_TAP(vec2( bR2.x, -bR2.y), 0.10);
+          BLOOM_TAP(vec2(-bR2.x, -bR2.y), 0.10);
+          #undef BLOOM_TAP
+          col += bloomSum * 0.42;
 
           gl_FragColor = vec4(col, 1.0);
           #include <tonemapping_fragment>
