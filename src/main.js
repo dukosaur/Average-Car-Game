@@ -10,7 +10,8 @@ import { PauseMenuController } from './pauseMenu.js';
 import { AtmosphereSystem } from './atmosphere.js';
 import { TrafficSystem } from './trafficSystem.js';
 import { MultiplayerWorldSync } from './multiplayerSync.js';
-import { createStuntRamps } from './stuntRamps.js';
+import { RaceSystem } from './raceSystem.js';
+import { applyPaintToCarRoot } from './carPaintSystem.js';
 import { assetUrl } from './assetUrl.js';
 import {
   PIXEL_THEME_ENABLED,
@@ -61,6 +62,7 @@ const CAR_ROSTER = [
     id: 'supra',
     name: 'JDM SUPRA GT',
     fullName: 'JDM Widebody Supra GT',
+    category: 'JDM TUNER',
     thumb: '/assets/thumb_supra.png',
     url: assetUrl('/assets/player_car.glb'),
     stats: { topSpeedMph: 112, maxForwardSpeed: 50.1, maxEngineForce: 9600, mass: 1320, speedRating: 80 },
@@ -69,6 +71,7 @@ const CAR_ROSTER = [
     id: 'veneno',
     name: 'LAMBO VENENO',
     fullName: 'Lamborghini Veneno GT',
+    category: 'HYPERCAR',
     thumb: '/assets/thumb_veneno.png',
     url: assetUrl('/assets/car_veneno.glb'),
     stats: { topSpeedMph: 138, maxForwardSpeed: 61.7, maxEngineForce: 11800, mass: 1450, speedRating: 98 },
@@ -77,6 +80,7 @@ const CAR_ROSTER = [
     id: 'mustang',
     name: 'SHELBY MUSTANG',
     fullName: 'Shelby Mustang Fastback',
+    category: 'CLASSIC MUSCLE',
     thumb: '/assets/thumb_mustang.png',
     url: assetUrl('/assets/car_mustang.glb'),
     stats: { topSpeedMph: 98, maxForwardSpeed: 43.8, maxEngineForce: 8900, mass: 1520, speedRating: 70 },
@@ -85,6 +89,7 @@ const CAR_ROSTER = [
     id: 'fordgt',
     name: 'FORD GT',
     fullName: 'Ford GT Supercar',
+    category: 'SUPERCAR',
     thumb: '/assets/thumb_fordgt.png',
     url: assetUrl('/assets/car_fordgt.glb'),
     stats: { topSpeedMph: 130, maxForwardSpeed: 58.1, maxEngineForce: 11000, mass: 1385, speedRating: 92 },
@@ -93,9 +98,37 @@ const CAR_ROSTER = [
     id: 'amg',
     name: 'AMG GT COUPE',
     fullName: 'Mercedes-AMG GT Coupe',
+    category: 'GRAND TOURER',
     thumb: '/assets/thumb_amg.png',
     url: assetUrl('/assets/car_amg.glb'),
     stats: { topSpeedMph: 122, maxForwardSpeed: 54.5, maxEngineForce: 10300, mass: 1540, speedRating: 86 },
+  },
+  {
+    id: 'rs6',
+    name: 'AUDI RS6 AVANT',
+    fullName: 'Audi RS6 Sport Wagon',
+    category: 'SPORT WAGON',
+    thumb: '',
+    url: assetUrl('/assets/car_rs6.glb'),
+    stats: { topSpeedMph: 90, maxForwardSpeed: 40.2, maxEngineForce: 7900, mass: 1680, speedRating: 60 },
+  },
+  {
+    id: 'coupe',
+    name: 'SPORT COUPE',
+    fullName: 'Street Sport Coupe',
+    category: 'STREET COUPE',
+    thumb: '',
+    url: assetUrl('/assets/car_coupe.glb'),
+    stats: { topSpeedMph: 78, maxForwardSpeed: 34.9, maxEngineForce: 6800, mass: 1360, speedRating: 48 },
+  },
+  {
+    id: 'golf',
+    name: 'VW GOLF GTI',
+    fullName: 'VW Golf GTI Hatchback',
+    category: 'HOT HATCH',
+    thumb: '',
+    url: assetUrl('/assets/car_golf.glb'),
+    stats: { topSpeedMph: 70, maxForwardSpeed: 31.3, maxEngineForce: 6100, mass: 1260, speedRating: 40 },
   },
 ];
 
@@ -167,6 +200,7 @@ const input = {
 
 let currentCamIndex = 0;
 let orbitAngle = 0.6;
+let lookBackHeld = false;
 
 // Dedicated Free Cam (Drone Fly Cam) State — toggled via Button or Key F (separate from Key C)
 const freeCam = {
@@ -2357,6 +2391,7 @@ async function init() {
   });
   vehicle.setCarParts(parts, bounds);
   vehicle.applyVehicleStats(CAR_ROSTER[0].stats);
+  applyPaintToCarRoot(vehicle.rootGroup, CAR_ROSTER[0].id);
   scene.add(vehicle.rootGroup);
 
   window.__vehicle = vehicle;
@@ -2401,6 +2436,7 @@ async function init() {
     const loaded = await loadRiggedCar(item.url);
     vehicle.setCarParts(loaded.parts, loaded.bounds);
     vehicle.applyVehicleStats(item.stats);
+    applyPaintToCarRoot(vehicle.rootGroup, item.id);
     if (window.__pauseMenu && window.__pauseMenu.onlineSession) {
       window.__pauseMenu.onlineSession.updateLocalCar(item, index);
     }
@@ -2489,6 +2525,10 @@ async function init() {
 
   function resetVehicleToClosestRoad() {
     if (!vehicle || !vehicle.rigidBody) return;
+    if (typeof raceSystem !== 'undefined' && raceSystem && raceSystem.handlePlayerReset()) {
+      lastWheelSkidPos.clear();
+      return;
+    }
     const pos = vehicle.rigidBody.translation();
     const match = worldMap && typeof worldMap.getClosestRoadPoint === 'function'
       ? worldMap.getClosestRoadPoint(pos.x, pos.z)
@@ -2544,13 +2584,35 @@ async function init() {
       if (atmosphere) atmosphere.setTimeOfDay(mode);
     },
     getTimeOfDayFn: () => (atmosphere ? atmosphere.getTimeOfDay() : 'noon'),
-    resetVehicleFn: resetVehicleToClosestRoad
+    resetVehicleFn: resetVehicleToClosestRoad,
+    applyCarPaintFn: (carId, paintMap) => {
+      if (vehicle && vehicle.rootGroup) {
+        applyPaintToCarRoot(vehicle.rootGroup, carId, paintMap);
+      }
+    }
   });
   window.__pauseMenu = pauseMenu;
 
   const multiplayerSync = new MultiplayerWorldSync(RAPIER, world, scene, createAICarParts, CAR_ROSTER);
   multiplayerSync.setNameplatesContainer(document.getElementById('remote-nameplates-layer'));
   window.__multiplayerSync = multiplayerSync;
+
+  const raceSystem = new RaceSystem({
+    RAPIER,
+    world,
+    scene,
+    camera,
+    vehicle,
+    input,
+    worldMap,
+    gpsNav,
+    trafficSystem,
+    carRoster: CAR_ROSTER,
+    getActiveCarIndex: () => activeCarIndex,
+    createAICarParts,
+  });
+  raceSystem.init();
+  window.__raceSystem = raceSystem;
 
   function captureLocalKinematicState() {
     const body = vehicle.rigidBody;
@@ -2625,9 +2687,15 @@ async function init() {
     });
   }
 
-  // Mouse drag look for Free Cam
-  renderer.domElement.addEventListener('mousedown', (e) => {
+  // Mouse drag look for Free Cam (fires anywhere on gameplay viewport when no menu is open)
+  window.addEventListener('mousedown', (e) => {
     if (!freeCam.active || e.button !== 0) return;
+    if (isTitleScreenOpen) return;
+    if ((pauseMenu && pauseMenu.isOpen) || (worldMap && worldMap.isOpen)) return;
+    if (raceSystem && raceSystem.isEntryModalOpen) return;
+    if (e.target && e.target.closest && e.target.closest('button, input, textarea, select, a, #hud-pause-prompt, #hud-minimap-wrap, #hud-gps-indicator, #race-active-hud, #race-results-modal')) {
+      return;
+    }
     freeCam.dragging = true;
     freeCam.lastMouseX = e.clientX;
     freeCam.lastMouseY = e.clientY;
@@ -2645,10 +2713,9 @@ async function init() {
     freeCam.dragging = false;
   });
 
-  // Preload remaining 4 player cars + 3 AI traffic cars in the background
+  // Preload remaining player/traffic garage cars in the background
   if (isTitleScreenOpen) setTitleLoadingProgress(95, 'SPAWNING TRAFFIC...');
   CAR_ROSTER.slice(1).forEach((c) => loadRiggedCar(c.url));
-  ['car_golf.glb', 'car_rs6.glb', 'car_coupe.glb'].forEach((f) => loadRiggedCar(assetUrl(`/assets/${f}`)));
 
   function startGameFromTitle() {
     if (!isTitleScreenOpen || !isTitleReady) return;
@@ -2961,10 +3028,14 @@ async function init() {
       case 'KeyX':
         worldMap.clearGpsWaypoint();
         break;
+      case 'KeyQ':
+        lookBackHeld = true;
+        break;
     }
   });
 
   window.addEventListener('keyup', (e) => {
+    if (e.code === 'KeyQ') lookBackHeld = false;
     if (pauseMenu && pauseMenu.isOpen) return;
     if (worldMap && worldMap.isOpen) return;
     if (isGarageOpen) return;
@@ -3028,7 +3099,14 @@ async function init() {
       case 'Space':
         input.handbrake = false;
         break;
+      case 'KeyQ':
+        lookBackHeld = false;
+        break;
     }
+  });
+
+  window.addEventListener('blur', () => {
+    lookBackHeld = false;
   });
 
   window.addEventListener('resize', () => {
@@ -3116,7 +3194,6 @@ async function init() {
     }
   });
 
-  let stuntRampsInitialized = false;
   function animate(now) {
     requestAnimationFrame(animate);
     const frameStartMs = performance.now();
@@ -3134,13 +3211,6 @@ async function init() {
     if (!trafficSystem.isReady && worldMap && worldMap.routesData) {
       trafficSystem.initFromRoutesData(worldMap.routesData);
     }
-    if (!stuntRampsInitialized && worldMap && worldMap.routesData) {
-      stuntRampsInitialized = true;
-      const ramps = createStuntRamps(RAPIER, world, scene, worldMap.routesData);
-      if (typeof worldMap.setStuntRamps === 'function') {
-        worldMap.setStuntRamps(ramps);
-      }
-    }
     if (!isPaused || isOnlineActive) {
       const tPhys0 = performance.now();
       let worldStepAcc = 0;
@@ -3153,6 +3223,7 @@ async function init() {
       for (let i = 0; i < subSteps; i++) {
         vehicle.updatePhysicsStep(subDt, activeInput);
         trafficSystem.updatePhysicsStep(subDt, activeTrafficAnchor);
+        raceSystem.updatePhysicsStep(subDt);
         if (isOnlineActive) {
           multiplayerSync.updatePhysicsStep(vehicle);
         }
@@ -3161,6 +3232,7 @@ async function init() {
         worldStepAcc += performance.now() - tW0;
         if (!isTitleScreenOpen) {
           trafficSystem.postPhysicsStep(vehicle);
+          raceSystem.postPhysicsStep();
         }
         if (isOnlineActive) {
           multiplayerSync.postPhysicsStep(vehicle, (targetNetId, dvx, dvz, torqueY) => {
@@ -3182,6 +3254,7 @@ async function init() {
       camera,
       freeCam.active || isTitleScreenOpen
     );
+    raceSystem.updateFrame(smoothedDt, isPaused, isTitleScreenOpen);
     if (isOnlineActive) {
       multiplayerSync.updateFrame(smoothedDt, vehicle, camera);
       if (!onlineSession.isHost || onlineSession.hasConnectedGuests()) {
@@ -3370,23 +3443,30 @@ async function init() {
 
       const camSin = Math.sin(smoothedCamYaw);
       const camCos = Math.cos(smoothedCamYaw);
+      const viewDirSign = lookBackHeld ? -1 : 1;
 
       camera.up.set(0, 1, 0);
       camera.position.set(
-        chassisWorldPos.x - camSin * smoothedPullback,
+        chassisWorldPos.x - camSin * smoothedPullback * viewDirSign,
         smoothedCamY,
-        chassisWorldPos.z - camCos * smoothedPullback
+        chassisWorldPos.z - camCos * smoothedPullback * viewDirSign
       );
 
       camera.lookAt(
-        chassisWorldPos.x + carForward.x * camMode.lookAhead,
+        chassisWorldPos.x + carForward.x * camMode.lookAhead * viewDirSign,
         smoothedLookY,
-        chassisWorldPos.z + carForward.z * camMode.lookAhead
+        chassisWorldPos.z + carForward.z * camMode.lookAhead * viewDirSign
       );
     } else if (camMode.type === 'mounted') {
-      // Hood Cam & Bumper Cam rigidly mounted to the chassis with natural pitch/roll
-      const worldMountPos = camMode.localPos.clone().applyQuaternion(carQuat).add(chassisWorldPos);
-      const worldLookPos = camMode.localLook.clone().applyQuaternion(carQuat).add(chassisWorldPos);
+      // Hood Cam & Bumper Cam rigidly mounted to the chassis with natural pitch/roll (supports Q Look Back)
+      const localPos = lookBackHeld
+        ? new THREE.Vector3(0, 1.35, -1.65)
+        : camMode.localPos;
+      const localLook = lookBackHeld
+        ? new THREE.Vector3(0, 0.95, -12.0)
+        : camMode.localLook;
+      const worldMountPos = localPos.clone().applyQuaternion(carQuat).add(chassisWorldPos);
+      const worldLookPos = localLook.clone().applyQuaternion(carQuat).add(chassisWorldPos);
       camera.up.copy(carUp);
       camera.position.copy(worldMountPos);
       camera.lookAt(worldLookPos);

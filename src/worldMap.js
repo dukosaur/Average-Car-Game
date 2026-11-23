@@ -11,6 +11,7 @@
  */
 
 import { assetUrl } from './assetUrl.js';
+import { RaceCircuitBuilder } from './raceCircuitBuilder.js';
 
 export class WorldMapController {
   constructor(vehicle, input, gpsNav = null) {
@@ -24,6 +25,8 @@ export class WorldMapController {
     this.planeEl = document.getElementById('map-plane');
     this.roadsGroupEl = document.getElementById('map-roads-group');
     this.gpsGroupEl = document.getElementById('map-gps-group');
+    this.racePreviewGroupEl = document.getElementById('map-race-preview-group');
+    this._hoveredRacePreviewId = null;
     this.landmarksLayerEl = document.getElementById('map-landmarks-layer');
     this.playerMarkerEl = document.getElementById('map-player-marker');
     this.playerArrowEl = document.getElementById('map-player-arrow');
@@ -98,6 +101,7 @@ export class WorldMapController {
 
     this.isOpen = false;
     this.tempVec = { x: 0, z: 0 };
+    this.raceBuilder = new RaceCircuitBuilder(this);
     this.headingDir = { x: 0, z: -1 };
 
     this.routesData = null;
@@ -468,44 +472,259 @@ export class WorldMapController {
    */
   renderLandmarks(landmarks) {
     if (!this.landmarksLayerEl) return;
-    if (!this._stuntRamps || this._stuntRamps.length === 0) {
-      this.landmarksLayerEl.innerHTML = '';
-    }
-    return;
+    this._rebuildMapPins();
   }
 
   setStuntRamps(ramps) {
     this._stuntRamps = Array.isArray(ramps) ? ramps : [];
+    this._rebuildMapPins();
+  }
+
+  setRaceEvents(races, flagIconUrl = null) {
+    this._raceEvents = Array.isArray(races) ? races : [];
+    if (flagIconUrl) {
+      this._raceFlagIconUrl = flagIconUrl;
+      const img = new Image();
+      img.src = flagIconUrl;
+      img.onload = () => { this._raceFlagImg = img; };
+    }
+    this._rebuildMapPins();
+  }
+
+  _rebuildMapPins() {
     if (!this.landmarksLayerEl) return;
     this.landmarksLayerEl.innerHTML = '';
 
-    const rampIcon = `<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M3 19h18v-2H3v2zm1.5-3.5c5.5-1.4 9.8-4.5 13-9.5L21 15.5H4.5z"/></svg>`;
-
-    for (const r of this._stuntRamps) {
-      const p = this.worldToMapPx(r.x, r.z);
-      const pin = document.createElement('div');
-      pin.className = 'map-poi-pin';
-      pin.style.left = `${p.x.toFixed(1)}px`;
-      pin.style.top = `${p.y.toFixed(1)}px`;
-      pin.innerHTML = `
-        <div class="poi-disc" title="${r.name}" style="width:24px;height:24px;border-color:rgba(229,169,60,0.75);color:#e5a93c;">
-          <span class="poi-icon">${rampIcon}</span>
-        </div>
-        <div class="poi-tooltip">
-          <div class="poi-title">${r.name}</div>
-          <div class="poi-desc">STUNT RAMP</div>
-        </div>
-      `;
-      pin.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this.setGpsWaypoint(r.x, r.z, r.name, 'ramp');
-      });
-      this.landmarksLayerEl.appendChild(pin);
+    if (this._raceEvents && this._raceEvents.length > 0) {
+      for (const race of this._raceEvents) {
+        if (!race.checkpoints || !race.checkpoints.length) continue;
+        const cp0 = race.checkpoints[0];
+        const p = this.worldToMapPx(cp0.x, cp0.z);
+        const pin = document.createElement('div');
+        pin.className = 'map-poi-pin map-race-pin';
+        pin.dataset.raceId = race.id;
+        pin.style.left = `${p.x.toFixed(1)}px`;
+        pin.style.top = `${p.y.toFixed(1)}px`;
+        const subText = race.type === 'circuit'
+          ? `CIRCUIT • ${race.laps || 3} LAPS • ${race.distanceMiles} MI`
+          : `SPRINT • ${race.distanceMiles} MI`;
+        const bestSec = this._getRaceBestTimeSec(race.id);
+        const bestStr = Number.isFinite(bestSec) ? this._formatRaceBestTime(bestSec) : '--:--.--';
+        pin.dataset.raceName = race.name;
+        pin.innerHTML = `
+          <div class="poi-disc race-flag-disc">
+            <img class="race-flag-pixel-img" src="${this._raceFlagIconUrl || ''}" alt="${race.name}" draggable="false" />
+          </div>
+          <div class="poi-tooltip race-flag-tooltip">
+            <div class="poi-title">${race.name}</div>
+            <div class="poi-desc">${subText}</div>
+            <div class="race-flag-best-row">
+              <span class="race-flag-best-lbl">BEST TIME</span>
+              <span class="race-flag-best-val${Number.isFinite(bestSec) ? ' has-best' : ''}">${bestStr}</span>
+            </div>
+            <div class="race-flag-cta">SET DESTINATION</div>
+          </div>
+        `;
+        pin.addEventListener('mouseenter', () => {
+          this.showRaceHoverPreview(race);
+        });
+        pin.addEventListener('mouseleave', () => {
+          this.hideRaceHoverPreview(race.id);
+        });
+        pin.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.setGpsWaypoint(cp0.x, cp0.z, race.name, 'race');
+        });
+        this.landmarksLayerEl.appendChild(pin);
+      }
     }
 
     if (window.__pauseMenu && typeof window.__pauseMenu.syncLandmarks === 'function') {
       window.__pauseMenu.syncLandmarks();
     }
+  }
+
+  _getRaceBestTimeSec(raceId) {
+    if (!raceId) return null;
+    try {
+      const raw = localStorage.getItem('carGame_raceBestTimes_v1');
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      const v = parsed && parsed[raceId];
+      return Number.isFinite(v) && v > 0 ? v : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  _formatRaceBestTime(sec) {
+    const s = Math.max(0, sec);
+    const mins = Math.floor(s / 60);
+    const rem = s - mins * 60;
+    const whole = Math.floor(rem);
+    const hundredths = Math.floor((rem - whole) * 100);
+    return `${String(mins).padStart(2, '0')}:${String(whole).padStart(2, '0')}.${String(hundredths).padStart(2, '0')}`;
+  }
+
+  refreshRaceBestTimes() {
+    if (!this.landmarksLayerEl) return;
+    const racePins = this.landmarksLayerEl.querySelectorAll('.map-race-pin');
+    racePins.forEach((pin) => {
+      const raceId = pin.dataset.raceId;
+      const valEl = pin.querySelector('.race-flag-best-val');
+      if (!valEl) return;
+      const bestSec = this._getRaceBestTimeSec(raceId);
+      if (Number.isFinite(bestSec)) {
+        valEl.textContent = this._formatRaceBestTime(bestSec);
+        valEl.classList.add('has-best');
+      } else {
+        valEl.textContent = '--:--.--';
+        valEl.classList.remove('has-best');
+      }
+    });
+  }
+
+  /**
+   * Animated directional circuit/sprint route preview when hovering a race flag pin.
+   * Temporarily hides any active GPS route/marker so the race layout stands out cleanly.
+   */
+  showRaceHoverPreview(race) {
+    if (!race || !this.racePreviewGroupEl) return;
+    if (this._hoveredRacePreviewId === race.id) return;
+    this._hoveredRacePreviewId = race.id;
+
+    // Temporarily hide active GPS route & waypoint marker while previewing this race
+    if (this.gpsGroupEl) this.gpsGroupEl.style.opacity = '0';
+    if (this.waypointMarkerEl) this.waypointMarkerEl.style.visibility = 'hidden';
+
+    this.racePreviewGroupEl.innerHTML = '';
+
+    const pts = Array.isArray(race.path) && race.path.length >= 2
+      ? race.path
+      : (Array.isArray(race.checkpoints) ? race.checkpoints : []);
+    if (pts.length < 2) return;
+
+    const isCircuit = race.type === 'circuit';
+    let d = '';
+    let lastPxX = -1e9;
+    let lastPxY = -1e9;
+    const lastIdx = pts.length - 1;
+    let firstPx = null;
+    let lastPx = null;
+
+    for (let i = 0; i < pts.length; i++) {
+      const pt = pts[i];
+      const wx = Array.isArray(pt) ? pt[0] : pt.x;
+      const wz = Array.isArray(pt) ? (pt.length > 2 ? pt[2] : pt[1]) : pt.z;
+      const p = this.worldToMapPx(wx, wz);
+      if (i === 0) firstPx = p;
+      lastPx = p;
+      if (i > 0 && i < lastIdx) {
+        const dx = p.x - lastPxX;
+        const dy = p.y - lastPxY;
+        if (dx * dx + dy * dy < 3.2) continue;
+      }
+      lastPxX = p.x;
+      lastPxY = p.y;
+      d += (i === 0 ? `M ${p.x.toFixed(1)} ${p.y.toFixed(1)} ` : `L ${p.x.toFixed(1)} ${p.y.toFixed(1)} `);
+    }
+    if (isCircuit && firstPx) {
+      d += `L ${firstPx.x.toFixed(1)} ${firstPx.y.toFixed(1)}`;
+    }
+
+    const ns = 'http://www.w3.org/2000/svg';
+    const makeLayer = (stroke, width, opacity = '1.0') => {
+      const el = document.createElementNS(ns, 'path');
+      el.setAttribute('d', d);
+      el.setAttribute('fill', 'none');
+      el.setAttribute('stroke', stroke);
+      el.setAttribute('stroke-width', String(width));
+      el.setAttribute('stroke-linecap', 'round');
+      el.setAttribute('stroke-linejoin', 'round');
+      el.setAttribute('opacity', opacity);
+      this.racePreviewGroupEl.appendChild(el);
+      return el;
+    };
+
+    const haloEl = makeLayer('#ffd54f', 19.0, '0.28');
+    const casingEl = makeLayer('#090c12', 14.5, '0.96');
+    const coreEl = makeLayer('#ffd54f', 9.0, '1.0');
+    const hiEl = makeLayer('#fff6cc', 3.2, '0.92');
+
+    const totalLen = Math.max(1, coreEl.getTotalLength());
+    const durationMs = 560;
+
+    // Fast directional "build" sweep via CSS @keyframes (100% reliable in SVG across all browsers)
+    for (const el of [haloEl, casingEl, coreEl, hiEl]) {
+      el.setAttribute('class', 'race-preview-trace-path');
+      el.style.setProperty('--trace-len', `${totalLen.toFixed(1)}`);
+      el.style.strokeDasharray = `${totalLen.toFixed(1)}`;
+      el.style.strokeDashoffset = `${totalLen.toFixed(1)}`;
+      el.style.animationDuration = `${durationMs}ms`;
+    }
+
+    // Directional chevron arrows along the route that pop in right as the sweep passes them
+    const arrowCount = Math.max(4, Math.min(12, Math.round(totalLen / 170)));
+    for (let k = 1; k <= arrowCount; k++) {
+      const frac = k / (arrowCount + (isCircuit ? 0.5 : 0.7));
+      if (frac <= 0.05 || frac >= 0.96) continue;
+      const distAt = frac * totalLen;
+      const ptAt = coreEl.getPointAtLength(distAt);
+      const ptAhead = coreEl.getPointAtLength(Math.min(totalLen, distAt + 6));
+      const angleDeg = Math.atan2(ptAhead.y - ptAt.y, ptAhead.x - ptAt.x) * (180 / Math.PI);
+
+      const g = document.createElementNS(ns, 'g');
+      g.setAttribute('transform', `translate(${ptAt.x.toFixed(1)}, ${ptAt.y.toFixed(1)}) rotate(${angleDeg.toFixed(1)})`);
+      g.setAttribute('class', 'race-preview-chevron');
+      g.style.animationDelay = `${Math.round(frac * durationMs * 0.85)}ms`;
+
+      const arrow = document.createElementNS(ns, 'polygon');
+      arrow.setAttribute('points', '8,0 -5,-6.5 -2,0 -5,6.5');
+      arrow.setAttribute('fill', '#ffffff');
+      arrow.setAttribute('stroke', '#090c12');
+      arrow.setAttribute('stroke-width', '2.2');
+      arrow.setAttribute('stroke-linejoin', 'miter');
+      g.appendChild(arrow);
+      this.racePreviewGroupEl.appendChild(g);
+    }
+
+    // For Sprint events, show a crisp Finish Diamond at the end of the route
+    if (!isCircuit && lastPx) {
+      const fg = document.createElementNS(ns, 'g');
+      fg.setAttribute('transform', `translate(${lastPx.x.toFixed(1)}, ${lastPx.y.toFixed(1)})`);
+      fg.setAttribute('class', 'race-preview-chevron');
+      fg.style.animationDelay = `${Math.round(durationMs * 0.88)}ms`;
+
+      const outer = document.createElementNS(ns, 'rect');
+      outer.setAttribute('x', '-9');
+      outer.setAttribute('y', '-9');
+      outer.setAttribute('width', '18');
+      outer.setAttribute('height', '18');
+      outer.setAttribute('transform', 'rotate(45)');
+      outer.setAttribute('fill', '#ffd54f');
+      outer.setAttribute('stroke', '#090c12');
+      outer.setAttribute('stroke-width', '3');
+      fg.appendChild(outer);
+
+      const inner = document.createElementNS(ns, 'rect');
+      inner.setAttribute('x', '-3.5');
+      inner.setAttribute('y', '-3.5');
+      inner.setAttribute('width', '7');
+      inner.setAttribute('height', '7');
+      inner.setAttribute('transform', 'rotate(45)');
+      inner.setAttribute('fill', '#090c12');
+      fg.appendChild(inner);
+
+      this.racePreviewGroupEl.appendChild(fg);
+    }
+  }
+
+  hideRaceHoverPreview(raceId = null) {
+    if (raceId && this._hoveredRacePreviewId && this._hoveredRacePreviewId !== raceId) return;
+    this._hoveredRacePreviewId = null;
+    if (this.racePreviewGroupEl) this.racePreviewGroupEl.innerHTML = '';
+    if (this.gpsGroupEl) this.gpsGroupEl.style.opacity = '';
+    if (this.waypointMarkerEl) this.waypointMarkerEl.style.visibility = '';
   }
 
   _unusedRenderLandmarks(landmarks) {
@@ -588,10 +807,26 @@ export class WorldMapController {
     }
   }
 
+  _syncSelectedRacePins(waypoint) {
+    if (!this.landmarksLayerEl) return;
+    const activeRaceName = waypoint && waypoint.type === 'race' ? waypoint.name : null;
+    const racePins = this.landmarksLayerEl.querySelectorAll('.map-race-pin');
+    racePins.forEach((pin) => {
+      const isSelected = Boolean(activeRaceName && pin.dataset.raceName === activeRaceName);
+      pin.classList.toggle('selected', isSelected);
+      const cta = pin.querySelector('.race-flag-cta');
+      if (cta) {
+        cta.textContent = isSelected ? 'DESTINATION SET' : 'SET DESTINATION';
+      }
+    });
+  }
+
   /**
    * Called whenever the GPS pathfinder updates the active route
    */
   onGpsRouteUpdated(waypoint, path, remDist) {
+    this._syncSelectedRacePins(waypoint);
+
     if (!waypoint || !path || path.length < 2) {
       if (this.gpsGroupEl) this.gpsGroupEl.innerHTML = '';
       if (this.waypointMarkerEl) this.waypointMarkerEl.classList.add('hidden');
@@ -637,56 +872,60 @@ export class WorldMapController {
       d += (i === 0 ? `M ${p.x.toFixed(1)} ${p.y.toFixed(1)} ` : `L ${p.x.toFixed(1)} ${p.y.toFixed(1)} `);
     }
 
-    // A. Outer Luminous Halo / Glow (Motorsport Amber)
+    // A. Outer Subtle Cool Yellow Halo
     const glowPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     glowPath.setAttribute('d', d);
     glowPath.setAttribute('fill', 'none');
-    glowPath.setAttribute('stroke', '#E5A93C');
-    glowPath.setAttribute('stroke-width', '16.0');
+    glowPath.setAttribute('stroke', '#ffd54f');
+    glowPath.setAttribute('stroke-width', '17.5');
     glowPath.setAttribute('stroke-linecap', 'round');
     glowPath.setAttribute('stroke-linejoin', 'round');
-    glowPath.setAttribute('opacity', '0.45');
+    glowPath.setAttribute('opacity', '0.32');
     this.gpsGroupEl.appendChild(glowPath);
 
-    // B. Contrast Casing Border
+    // B. High-Contrast Obsidian Casing Border (pops over desert, snow, forest & volcanic)
     const casingPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     casingPath.setAttribute('d', d);
     casingPath.setAttribute('fill', 'none');
-    casingPath.setAttribute('stroke', '#1a1408');
-    casingPath.setAttribute('stroke-width', '12.5');
+    casingPath.setAttribute('stroke', '#090c12');
+    casingPath.setAttribute('stroke-width', '13.5');
     casingPath.setAttribute('stroke-linecap', 'round');
     casingPath.setAttribute('stroke-linejoin', 'round');
-    casingPath.setAttribute('opacity', '0.92');
+    casingPath.setAttribute('opacity', '0.96');
     this.gpsGroupEl.appendChild(casingPath);
 
-    // C. Clean Motorsport Amber Ribbon Core
+    // C. Vivid Cool Yellow Arcade Route Core
     const ribbonPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     ribbonPath.setAttribute('d', d);
     ribbonPath.setAttribute('fill', 'none');
-    ribbonPath.setAttribute('stroke', '#FFB74D');
-    ribbonPath.setAttribute('stroke-width', '8.8');
+    ribbonPath.setAttribute('stroke', '#ffd54f');
+    ribbonPath.setAttribute('stroke-width', '8.6');
     ribbonPath.setAttribute('stroke-linecap', 'round');
     ribbonPath.setAttribute('stroke-linejoin', 'round');
     ribbonPath.setAttribute('opacity', '1.0');
     this.gpsGroupEl.appendChild(ribbonPath);
 
-    // D. White Bright Centerline Stripe
+    // D. Smooth Bright Yellow-White Centerline Highlight (non-animated, zero jitter)
     const centerPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     centerPath.setAttribute('d', d);
     centerPath.setAttribute('fill', 'none');
-    centerPath.setAttribute('stroke', '#ffffff');
-    centerPath.setAttribute('stroke-width', '3.8');
+    centerPath.setAttribute('stroke', '#fff6cc');
+    centerPath.setAttribute('stroke-width', '3.2');
     centerPath.setAttribute('stroke-linecap', 'round');
     centerPath.setAttribute('stroke-linejoin', 'round');
-    centerPath.setAttribute('opacity', '0.96');
+    centerPath.setAttribute('opacity', '0.92');
     this.gpsGroupEl.appendChild(centerPath);
 
-    // 2. Position Waypoint Marker on Map (FH6 Minimalist Glowing Target Dot - NO TEXT TAG)
+    // 2. Position Waypoint Marker on Map (hidden for race pins since the race icon itself is selected)
     const pWp = this.worldToMapPx(waypoint.x, waypoint.z);
     if (this.waypointMarkerEl) {
-      this.waypointMarkerEl.style.left = `${pWp.x.toFixed(1)}px`;
-      this.waypointMarkerEl.style.top = `${pWp.y.toFixed(1)}px`;
-      this.waypointMarkerEl.classList.remove('hidden');
+      if (waypoint.type === 'race') {
+        this.waypointMarkerEl.classList.add('hidden');
+      } else {
+        this.waypointMarkerEl.style.left = `${pWp.x.toFixed(1)}px`;
+        this.waypointMarkerEl.style.top = `${pWp.y.toFixed(1)}px`;
+        this.waypointMarkerEl.classList.remove('hidden');
+      }
     }
 
     // 3. Update Map Top Bar GPS HUD
@@ -790,8 +1029,14 @@ export class WorldMapController {
           return;
         }
 
-        // Road Hover Check (Only when map is open and routes are loaded)
+        // Road Hover Check (Only when map is open and routes are loaded; skip when hovering a race pin)
         if (!this.isOpen || !this.routesData) return;
+        if (e.target && e.target.closest && e.target.closest('.map-poi-pin')) {
+          this.hoveredRoad = null;
+          if (this.roadHoverDotEl) this.roadHoverDotEl.classList.add('hidden');
+          this.viewportEl.style.cursor = 'pointer';
+          return;
+        }
         const rect = this.viewportEl.getBoundingClientRect();
         const mapPxX = (e.clientX - rect.left - this.panX) / this.scale;
         const mapPxY = (e.clientY - rect.top - this.panY) / this.scale;
@@ -808,8 +1053,11 @@ export class WorldMapController {
             this.roadHoverDotEl.classList.remove('hidden');
           }
           if (this.roadHoverLabelEl) {
-            const routeName = this.getRouteDisplayName(roadMatch.route.id);
-            this.roadHoverLabelEl.textContent = `SET DESTINATION • ${routeName}`;
+            if (this.raceBuilder && this.raceBuilder.isActive) {
+              this.roadHoverLabelEl.textContent = this.raceBuilder.getHoverLabel(roadMatch);
+            } else {
+              this.roadHoverLabelEl.textContent = 'SET DESTINATION';
+            }
           }
           this.viewportEl.style.cursor = 'crosshair';
         } else {
@@ -833,13 +1081,15 @@ export class WorldMapController {
           this.viewportEl.releasePointerCapture(e.pointerId);
         } catch (_) {}
 
-        // Road Click to Waypoint: Set waypoint when clicking on any road across the map
+        // Road Click: Add Race Builder anchor when Circuit Builder is active, otherwise set GPS waypoint
         if (this.pointerDist < 9 &&
             !e.target.closest('.map-poi-pin') &&
             !e.target.closest('.poi-track-btn') &&
             !e.target.closest('.map-actions-group') &&
             !e.target.closest('.map-waypoint-marker') &&
-            !e.target.closest('.map-gps-hud')) {
+            !e.target.closest('.map-gps-hud') &&
+            !e.target.closest('#race-builder-panel') &&
+            !e.target.closest('#map-race-builder-btn')) {
           const maxSnapDist = Math.max(12.5, 16.0 / Math.sqrt(Math.max(0.35, this.scale)));
           let match = this.hoveredRoad;
           if (!match || match.dist > maxSnapDist) {
@@ -850,9 +1100,13 @@ export class WorldMapController {
             match = this.getClosestRoadPoint(world.x, world.z);
           }
           if (match && match.dist <= maxSnapDist) {
-            const pt = match.point;
-            const routeName = this.getRouteDisplayName(match.route.id);
-            this.setGpsWaypoint(pt.x, pt.z, routeName, 'road');
+            if (this.raceBuilder && this.raceBuilder.isActive) {
+              this.raceBuilder.handleRoadClick(match);
+            } else {
+              const pt = match.point;
+              const routeName = this.getRouteDisplayName(match.route.id);
+              this.setGpsWaypoint(pt.x, pt.z, routeName, 'road');
+            }
           }
         }
       };
@@ -965,6 +1219,9 @@ export class WorldMapController {
   setOpen(open) {
     if (this.isOpen === open) return;
     this.isOpen = open;
+    if (!open) {
+      this.hideRaceHoverPreview();
+    }
 
     if (this.overlayEl) {
       this.overlayEl.classList.toggle('hidden', !open);
@@ -1324,12 +1581,13 @@ export class WorldMapController {
       }
     }
 
-    // PASS 4: Active GPS Route Ribbon in Forza Cyan (#18e4ff) with lightweight outer glow stroke
+    // PASS 4: Active GPS Route Ribbon in Cool Yellow (#ffd54f) matching World Map & Arcade UI
     const gpsPath = this.gpsNav && this.gpsNav.activePath;
     if (gpsPath && gpsPath.length >= 2) {
-      drawPerspectivePolyline(gpsPath, 22.0, 'rgba(24, 228, 255, 0.28)', false, 'round', 2);
-      drawPerspectivePolyline(gpsPath, 19.0, 'rgba(7, 30, 40, 0.94)', false, 'round', 2);
-      drawPerspectivePolyline(gpsPath, 14.0, '#18e4ff', false, 'round', 2);
+      drawPerspectivePolyline(gpsPath, 22.0, 'rgba(255, 213, 79, 0.30)', false, 'round', 2);
+      drawPerspectivePolyline(gpsPath, 19.0, 'rgba(9, 12, 18, 0.95)', false, 'round', 2);
+      drawPerspectivePolyline(gpsPath, 13.5, '#ffd54f', false, 'round', 2);
+      drawPerspectivePolyline(gpsPath, 4.5, '#fff6cc', false, 'round', 2);
     }
 
     // PASS 5: Soft radial edge feather mask so roads fade smoothly before touching the outer white bezel ring
@@ -1344,7 +1602,36 @@ export class WorldMapController {
     ctx.fill();
     ctx.globalCompositeOperation = 'source-over';
 
-    // Active GPS Destination bullseye (clamped to radar rim if far away)
+    // Nearby Race Event standalone pixel flag icons on the circular radar mini-map
+    // Only render when the road at that race start is actually within the rendered mini-map area
+    if (this._raceEvents && this._raceEvents.length > 0 && this._raceFlagImg) {
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.78)';
+      ctx.shadowBlur = 6;
+      ctx.shadowOffsetY = 2;
+      const maxFlagR2 = (R * 0.78) * (R * 0.78);
+      for (const race of this._raceEvents) {
+        if (!race.checkpoints || !race.checkpoints.length) continue;
+        const cp0 = race.checkpoints[0];
+        if (cp0.x < cullMinX || cp0.x > cullMaxX || cp0.z < cullMinZ || cp0.z > cullMaxZ) continue;
+        const rdx = cp0.x - carPos.x;
+        const rdz = cp0.z - carPos.z;
+        const lf = rdx * fwdX + rdz * fwdZ;
+        const lr = rdx * rightX + rdz * rightZ;
+        if (lf < -95.0 || lf > 480.0 || Math.abs(lr) > 310.0) continue;
+
+        const p = projectPt(cp0.x, cp0.z);
+        const dx = p.x - R;
+        const dy = p.y - R;
+        if (dx * dx + dy * dy <= maxFlagR2) {
+          ctx.drawImage(this._raceFlagImg, p.x - 23, p.y - 23, 46, 46);
+        }
+      }
+      ctx.restore();
+    }
+
+    // Active GPS Destination diamond (clamped to radar rim if far away; skipped on-radar if race flag itself is shown)
     if (this.gpsNav && this.gpsNav.activeWaypoint) {
       const wp = this.gpsNav.activeWaypoint;
       const p = projectPt(wp.x, wp.z);
@@ -1354,25 +1641,40 @@ export class WorldMapController {
       const dy = ty - R;
       const dist = Math.hypot(dx, dy);
       const maxRim = R * 0.85;
-      if (dist > maxRim && dist > 1e-4) {
+      const isOffRadar = dist > maxRim && dist > 1e-4;
+      if (isOffRadar) {
         tx = R + (dx / dist) * maxRim;
         ty = R + (dy / dist) * maxRim;
       }
 
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(tx, ty, 11.5, 0, Math.PI * 2);
-      ctx.fillStyle = '#09222c';
-      ctx.fill();
-      ctx.lineWidth = 3.2;
-      ctx.strokeStyle = '#18e4ff';
-      ctx.stroke();
+      const wpDx = wp.x - carPos.x;
+      const wpDz = wp.z - carPos.z;
+      const wpLf = wpDx * fwdX + wpDz * fwdZ;
+      const wpLr = wpDx * rightX + wpDz * rightZ;
+      const raceFlagVisibleOnRadar =
+        wp.type === 'race' &&
+        wp.x >= cullMinX && wp.x <= cullMaxX &&
+        wp.z >= cullMinZ && wp.z <= cullMaxZ &&
+        wpLf >= -95.0 && wpLf <= 480.0 &&
+        Math.abs(wpLr) <= 310.0 &&
+        dist <= R * 0.78;
 
-      ctx.beginPath();
-      ctx.arc(tx, ty, 4.8, 0, Math.PI * 2);
-      ctx.fillStyle = '#ffffff';
-      ctx.fill();
-      ctx.restore();
+      if (!raceFlagVisibleOnRadar) {
+        ctx.save();
+        ctx.translate(tx, ty);
+        ctx.rotate(Math.PI * 0.25);
+
+        // Sharp Cool Yellow Pixel Diamond Destination Marker
+        ctx.fillStyle = '#090c12';
+        ctx.fillRect(-10, -10, 20, 20);
+
+        ctx.fillStyle = '#ffd54f';
+        ctx.fillRect(-7.5, -7.5, 15, 15);
+
+        ctx.fillStyle = '#090c12';
+        ctx.fillRect(-3, -3, 6, 6);
+        ctx.restore();
+      }
     }
 
     // PASS 7: Perspective-Skewed Notched White Player Delta Arrow at (cx, cy) matching the tilted road plane

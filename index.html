@@ -9,7 +9,7 @@
     <link rel="apple-touch-icon" href="/favicon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Jersey+25&family=JetBrains+Mono:wght@500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
     <style>
       * {
         box-sizing: border-box;
@@ -1136,7 +1136,9 @@
       }
 
       .pause-menu-shell.tab-online .pause-main-view,
-      .pause-menu-shell.tab-online .pause-subview {
+      .pause-menu-shell.tab-online .pause-subview,
+      .pause-menu-shell.tab-customize .pause-main-view,
+      .pause-menu-shell.tab-customize .pause-subview {
         visibility: hidden;
         pointer-events: none;
       }
@@ -1158,6 +1160,22 @@
       }
 
       .pause-menu-shell.tab-online .pause-online-view {
+        visibility: visible;
+        pointer-events: auto;
+      }
+
+      .pause-customize-view {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        visibility: hidden;
+        pointer-events: none;
+        z-index: 2;
+      }
+
+      .pause-menu-shell.tab-customize .pause-customize-view {
         visibility: visible;
         pointer-events: auto;
       }
@@ -3096,8 +3114,13 @@
             </div>
             <div id="title-actions" class="title-actions">
               <button id="title-start-btn" class="title-start-btn" type="button" disabled>
-                <svg class="title-start-icon" viewBox="0 0 16 16" aria-hidden="true">
-                  <polygon points="3,1.5 14,8 3,14.5" />
+                <svg class="title-start-icon" width="14" height="14" viewBox="0 0 14 14" shape-rendering="crispEdges" aria-hidden="true">
+                  <rect x="2" y="1" width="2" height="12"/>
+                  <rect x="4" y="2" width="2" height="10"/>
+                  <rect x="6" y="3" width="2" height="8"/>
+                  <rect x="8" y="4" width="2" height="6"/>
+                  <rect x="10" y="5" width="2" height="4"/>
+                  <rect x="12" y="6" width="1" height="2"/>
                 </svg>
                 <span id="title-start-btn-label">LOADING</span>
               </button>
@@ -3144,6 +3167,7 @@
             <div class="pause-header-center">
               <nav class="pause-tabs" aria-label="Pause Menu Tabs">
                 <button id="pause-tab-home" class="pause-tab-btn active" type="button">HOME</button>
+                <button id="pause-tab-customize" class="pause-tab-btn" type="button">CUSTOMIZE</button>
                 <button id="pause-tab-online" class="pause-tab-btn" type="button">ONLINE</button>
               </nav>
             </div>
@@ -3178,7 +3202,7 @@
                     <div class="pause-tile-car-name" id="pause-garage-current-name">JDM SUPRA GT</div>
                     <div class="pause-tile-action-prompt">
                       <span>SWAP</span>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                      <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" shape-rendering="crispEdges"><path d="M2 7h8V5h2v2h2v2h-2v2h-2V9H2V7z"/></svg>
                     </div>
                   </div>
                 </div>
@@ -3188,7 +3212,7 @@
               <div class="pause-glass-tile pause-tile-reset" id="pause-tile-reset" tabindex="0">
                 <div class="pause-tile-reset-content">
                   <div class="pause-reset-icon-wrap">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                    <svg width="24" height="24" viewBox="0 0 16 16" fill="currentColor" shape-rendering="crispEdges"><path d="M6 2h5v2H6V2zm5 2h2v2h-2V4zm2 2h1v4h-2V6h1zm-2 4h2v2h-2v-2zm-5 2h5v2H6v-2zm-2-2h2v2H4v-2zM2 2h2v2h2v2H2V2zm2 4h2v2H4V6z"/></svg>
                   </div>
                   <div class="pause-reset-text-wrap">
                     <div class="pause-tile-title">RESET CAR</div>
@@ -3259,7 +3283,7 @@
                 </div>
                 <div class="pause-tile-camera-content">
                   <div class="pause-cam-icon-wrap">
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                    <svg width="34" height="34" viewBox="0 0 16 16" fill="currentColor" shape-rendering="crispEdges"><path d="M5 2h6v2H5V2zM1 4h14v10H1V4zm2 2v6h10V6H3zm3 1h4v1h1v2h-1v1H6v-1H5V8h1V7zm1 1v2h2V8H7zm5-1h1v1h-1V7z"/></svg>
                   </div>
                   <div class="pause-cam-info">
                     <div class="pause-tile-title" id="pause-cam-current-name">Chase Near</div>
@@ -3273,7 +3297,7 @@
               <div class="pause-glass-tile pause-tile-settings" id="pause-tile-settings" tabindex="0">
                 <div class="pause-tile-settings-content">
                   <div class="pause-settings-icon-wrap">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                    <svg width="24" height="24" viewBox="0 0 16 16" fill="currentColor" shape-rendering="crispEdges"><path d="M6 1h4v2H6V1zm0 12h4v2H6v-2zM1 6h2v4H1V6zm12 0h2v4h-2V6zM3 3h2v2H3V3zm8 8h2v2h-2v-2zm0-8h2v2h-2V3zM3 11h2v2H3v-2zm2-7h6v1h1v6h-1v1H5v-1H4V5h1V4zm1 2v4h4V6H6z"/></svg>
                   </div>
                   <div class="pause-settings-text-wrap">
                     <div class="pause-tile-title">SETTINGS</div>
@@ -3284,7 +3308,7 @@
             </div>
           </div>
 
-          <!-- Sub-View: Cars Showroom (Slides in over tiles) -->
+          <!-- Sub-View: Cars Showroom (Split-View Hero + Spacious 2-Column Roster) -->
           <div class="pause-subview pause-cars-view hidden" id="pause-cars-view">
             <div class="pause-subview-header">
               <div>
@@ -3295,7 +3319,42 @@
                 <kbd>ESC</kbd>
               </button>
             </div>
-            <div class="pause-cars-grid" id="pause-cars-grid"></div>
+            <div class="garage-split-layout">
+              <div class="garage-hero-panel" id="garage-hero-panel">
+                <div class="garage-hero-stage">
+                  <img id="garage-hero-img" class="garage-hero-img" src="" alt="Selected Car" />
+                </div>
+                <div class="garage-hero-header">
+                  <div id="garage-hero-name" class="garage-hero-name">JDM SUPRA GT</div>
+                </div>
+                <div class="garage-hero-stats">
+                  <div class="garage-stat-block">
+                    <div class="pause-car-stat-row">
+                      <span class="pause-car-stat-label">TOP SPEED</span>
+                      <span id="garage-stat-speed-val" class="pause-car-stat-val">112 MPH</span>
+                    </div>
+                    <div class="pause-car-stat-bar">
+                      <div id="garage-stat-speed-fill" class="pause-car-stat-fill" style="width: 80%;"></div>
+                    </div>
+                  </div>
+                  <div class="garage-stat-block">
+                    <div class="pause-car-stat-row">
+                      <span class="pause-car-stat-label">ACCELERATION</span>
+                      <span id="garage-stat-accel-val" class="pause-car-stat-val">7.3</span>
+                    </div>
+                    <div class="pause-car-stat-bar">
+                      <div id="garage-stat-accel-fill" class="pause-car-stat-fill" style="width: 72%;"></div>
+                    </div>
+                  </div>
+                  <div class="garage-stat-meta-row">
+                    <span class="pause-car-stat-label">WEIGHT</span>
+                    <span id="garage-stat-weight-val" class="pause-car-stat-val">1,320 KG</span>
+                  </div>
+                </div>
+                <button type="button" id="garage-equip-btn" class="garage-equip-btn">EQUIP CAR</button>
+              </div>
+              <div class="pause-cars-grid" id="pause-cars-grid"></div>
+            </div>
           </div>
 
           <!-- Sub-View: Settings (Slides in over tiles) -->
@@ -3369,6 +3428,7 @@
                   <div class="pause-keybind-item"><span class="pause-kbadge">A D</span> Steer</div>
                   <div class="pause-keybind-item"><span class="pause-kbadge">SPACE</span> Drift</div>
                   <div class="pause-keybind-item"><span class="pause-kbadge">C</span> Camera</div>
+                  <div class="pause-keybind-item"><span class="pause-kbadge">Q</span> Look Back</div>
                   <div class="pause-keybind-item"><span class="pause-kbadge">F</span> Free Cam</div>
                   <div class="pause-keybind-item"><span class="pause-kbadge">M</span> Map</div>
                   <div class="pause-keybind-item"><span class="pause-kbadge">R</span> Reset</div>
@@ -3379,6 +3439,52 @@
           </div>
 
           <!-- Online Tab Panels -->
+          <!-- Customize Tab View (Single Full Panel: Pixelated 3D Turntable + Paint Controls) -->
+          <div class="pause-customize-view" id="pause-customize-view">
+            <div class="pause-glass-tile pause-customize-card">
+              <div class="pause-tile-tag">
+                <span class="pause-tag-dot"></span>CUSTOMIZE
+              </div>
+              <div class="pause-customize-body">
+                <div class="pause-customize-stage">
+                  <canvas id="pause-customize-canvas" class="pause-customize-canvas"></canvas>
+                </div>
+                <div class="pause-customize-paint-dock">
+                  <div class="customize-dock-section">
+                    <div class="customize-dock-label">PAINT ZONE</div>
+                    <div id="customize-zone-row" class="customize-zone-row"></div>
+                  </div>
+                  <div class="customize-dock-section">
+                    <div class="customize-mode-row">
+                      <button type="button" id="customize-mode-swatches" class="customize-mode-btn active">SWATCHES</button>
+                      <button type="button" id="customize-mode-gradient" class="customize-mode-btn">GRADIENT</button>
+                    </div>
+                  </div>
+                  <div id="customize-swatch-panel" class="customize-picker-panel">
+                    <div id="customize-swatch-grid" class="customize-swatch-grid"></div>
+                  </div>
+                  <div id="customize-gradient-panel" class="customize-picker-panel hidden">
+                    <div class="customize-sv-wrap" id="customize-sv-wrap">
+                      <canvas id="customize-sv-canvas" width="240" height="150"></canvas>
+                      <div id="customize-sv-cursor" class="customize-sv-cursor"></div>
+                    </div>
+                    <div class="customize-hue-wrap" id="customize-hue-wrap">
+                      <canvas id="customize-hue-canvas" width="240" height="18"></canvas>
+                      <div id="customize-hue-cursor" class="customize-hue-cursor"></div>
+                    </div>
+                    <div class="customize-readout-row">
+                      <span id="customize-color-preview" class="customize-color-preview"></span>
+                      <span id="customize-color-hex" class="customize-color-hex">#FFFFFF</span>
+                    </div>
+                  </div>
+                  <div class="customize-dock-footer">
+                    <button type="button" id="customize-paint-reset-btn" class="customize-reset-btn">RESET STOCK</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div class="pause-online-view" id="pause-online-view">
             <!-- Left Column: Create Session -->
             <div class="pause-col pause-col-left">
@@ -3389,7 +3495,7 @@
                 </div>
                 <div class="pause-online-panel-hero">
                   <div class="pause-online-icon-wrap">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg>
+                    <svg width="24" height="24" viewBox="0 0 16 16" fill="currentColor" shape-rendering="crispEdges"><path d="M7 2h2v5h5v2H9v5H7V9H2V7h5V2z"/></svg>
                   </div>
                   <div class="pause-online-hero-text">
                     <div class="pause-tile-title">CREATE CONVOY</div>
@@ -3427,7 +3533,7 @@
                 </div>
                 <div class="pause-online-panel-hero">
                   <div class="pause-online-icon-wrap">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+                    <svg width="24" height="24" viewBox="0 0 16 16" fill="currentColor" shape-rendering="crispEdges"><path d="M9 2h5v12H9v-2h3V4H9V2zM2 7h6V5h2v2h1v2h-1v2H8V9H2V7z"/></svg>
                   </div>
                   <div class="pause-online-hero-text">
                     <div class="pause-tile-title">JOIN CONVOY</div>
@@ -3514,24 +3620,148 @@
         </div>
       </div>
 
+      <!-- ===================================================================
+           RACE SYSTEM OVERLAYS (Dwell Prompt, Forza Entry Menu, HUD & Results)
+           =================================================================== -->
+      <!-- 1. Freeroam Start-Zone Drive-In Dwell Progress Pill -->
+      <div id="race-dwell-banner" class="race-dwell-banner hidden" role="status" aria-live="polite">
+        <div class="race-dwell-top">
+          <span class="race-dwell-dot"></span>
+          <span class="race-dwell-title" id="race-dwell-title">ENTERING RACE EVENT...</span>
+        </div>
+        <div class="race-dwell-track">
+          <div class="race-dwell-fill" id="race-dwell-fill"></div>
+        </div>
+      </div>
+
+      <!-- 2. Forza-Style Pre-Race Event Entry Modal (RACE vs TIME TRIAL) -->
+      <div id="race-entry-modal" class="race-entry-modal hidden" role="dialog" aria-modal="true" aria-labelledby="race-entry-title">
+        <div class="race-entry-card">
+          <div class="race-entry-header">
+            <span class="race-entry-eyebrow" id="race-entry-type">HORIZON CIRCUIT EVENT</span>
+            <h2 class="race-entry-title" id="race-entry-title">EXPRESS LOOP</h2>
+            <div class="race-entry-meta" id="race-entry-meta">3 LAPS • 2.18 MI • 38 CHECKPOINTS</div>
+          </div>
+
+          <div class="race-entry-modes">
+            <!-- Option 1: RACE (Active) -->
+            <button type="button" class="race-mode-card race-mode-primary" id="race-entry-start-btn">
+              <div class="race-mode-tag">RECOMMENDED</div>
+              <div class="race-mode-name">RACE</div>
+              <div class="race-mode-desc">8-Car Starting Grid vs. Similar Garage Rivals with Pro Cornering AI</div>
+              <div class="race-mode-cta">START RACE <span>→</span></div>
+            </button>
+
+            <!-- Option 2: TIME TRIAL (Locked) -->
+            <button type="button" class="race-mode-card race-mode-secondary race-mode-locked" id="race-entry-tt-btn" disabled aria-disabled="true">
+              <div class="race-mode-top-row">
+                <div class="race-mode-tag race-mode-tag-muted">SOLO</div>
+                <span class="race-mode-lock-icon" aria-hidden="true">
+                  <svg width="20" height="22" viewBox="0 0 15 16" fill="none" shape-rendering="crispEdges">
+                    <rect x="5" y="1" width="5" height="2" fill="currentColor"/>
+                    <rect x="4" y="2" width="2" height="5" fill="currentColor"/>
+                    <rect x="9" y="2" width="2" height="5" fill="currentColor"/>
+                    <rect x="2" y="7" width="11" height="8" fill="currentColor"/>
+                    <rect x="6" y="9" width="3" height="2" fill="#090c12"/>
+                    <rect x="7" y="11" width="1" height="2" fill="#090c12"/>
+                  </svg>
+                </span>
+              </div>
+              <div class="race-mode-name">TIME TRIAL</div>
+              <div class="race-mode-desc">Solo Hotlap &amp; Sector Split Timers against Personal Best</div>
+              <div class="race-mode-cta">LOCKED (COMING SOON)</div>
+            </button>
+          </div>
+
+          <div class="race-entry-footer">
+            <button type="button" class="race-entry-close-btn" id="race-entry-close-btn">BACK TO FREEROAM (ESC)</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. Active Race Telemetry HUD (Forza × Arcade Pixel Top-Right Cluster — Zero Bulky Box!) -->
+      <div id="race-active-hud" class="race-active-hud hidden">
+        <!-- Hero Position Row (Huge Slanted Arcade Pixel Rank) -->
+        <div class="race-px-pos-row">
+          <div class="race-px-pos-meta">
+            <span class="race-px-pos-lbl">POS</span>
+            <span class="race-px-track-tag" id="race-hud-track-name">EXPRESS LOOP</span>
+          </div>
+          <div class="race-px-pos-hero pos-8" id="race-hud-pos-wrap">
+            <span class="race-px-pos-num" id="race-hud-pos">8TH</span>
+            <span class="race-px-pos-total" id="race-hud-total">/8</span>
+          </div>
+        </div>
+
+        <!-- Crisp Pixel Checkered Racing Accent Bar -->
+        <div class="race-px-checker-bar"></div>
+
+        <!-- Lap / Progress + Segmented Arcade Pixel Bar -->
+        <div class="race-px-progress-row">
+          <span class="race-px-lap-val" id="race-hud-lap">LAP 1/3</span>
+          <span class="race-px-gate-val" id="race-hud-cp">GATE 1/38</span>
+        </div>
+        <div class="race-px-prog-track">
+          <div class="race-px-prog-fill" id="race-hud-prog-fill"></div>
+        </div>
+
+        <!-- Live Timer Ribbon & Compact Pixel Exit Button -->
+        <div class="race-px-bottom-row">
+          <div class="race-px-time-pill">
+            <span class="race-px-time-lbl">TIME</span>
+            <span class="race-px-time-val" id="race-hud-time">00:00.00</span>
+          </div>
+          <button type="button" class="race-px-quit-btn" id="race-hud-quit-btn" title="Exit Race to Freeroam">EXIT</button>
+        </div>
+      </div>
+
+      <!-- 4. Center 3-2-1-GO Countdown & Missed Checkpoint Warning -->
+      <div id="race-countdown-banner" class="race-countdown-banner hidden">
+        <div class="race-countdown-text" id="race-countdown-text">3</div>
+      </div>
+
+      <div id="race-missed-cp-banner" class="race-missed-cp-banner hidden">
+        <span>MISSED CHECKPOINT — RETURN TO GATE OR PRESS <strong>[R]</strong> TO RESET</span>
+      </div>
+
+      <!-- 5. Post-Race Standings & Podium Results Modal -->
+      <div id="race-results-modal" class="race-results-modal hidden" role="dialog" aria-modal="true" aria-labelledby="race-results-title">
+        <div class="race-results-card">
+          <div class="race-results-badge" id="race-results-badge">1ST PLACE</div>
+          <h2 class="race-results-title" id="race-results-title">VICTORY!</h2>
+          <div class="race-results-sub" id="race-results-sub">EXPRESS LOOP • TIME 02:14.50</div>
+
+          <div class="race-results-standings" id="race-results-standings"></div>
+
+          <div class="race-results-actions">
+            <button type="button" class="race-res-btn race-res-btn-primary" id="race-results-retry-btn">RACE AGAIN</button>
+            <button type="button" class="race-res-btn" id="race-results-freeroam-btn">FREEROAM</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Forza Horizon Fullscreen Interactive World Map Overlay -->
       <div id="world-map-overlay" class="world-map-overlay hidden">
-        <!-- Floating Top HUD Bar (Apple-Glass Motorsport Header) -->
+        <!-- Floating Top HUD Bar (Arcade Pixel Motorsport Header) -->
         <div class="map-hud-top">
           <div class="map-header-left">
             <div class="map-brand-badge">
+              <span class="map-brand-pill"></span>
               <span class="map-brand-title">WORLD MAP</span>
-              <span class="map-brand-sub">ISLA CIRCUIT</span>
             </div>
+            <button type="button" class="map-race-builder-btn hidden" id="map-race-builder-btn" title="Design custom race circuits on the existing roads">
+              <span class="rb-btn-dot"></span>
+              <span>CIRCUIT BUILDER</span>
+            </button>
             <!-- Active GPS Destination Badge -->
             <div class="map-gps-hud hidden" id="map-gps-hud">
-              <span class="gps-route-pill">GPS ROUTE ACTIVE</span>
+              <span class="gps-route-pill">ROUTE</span>
               <span class="gps-target-name" id="gps-target-name">WAYPOINT</span>
               <span class="gps-target-dist" id="gps-target-dist">0 FT</span>
-              <button class="gps-cancel-btn" id="map-gps-cancel-btn" title="Cancel Route (X)">✕ CANCEL</button>
+              <button class="gps-cancel-btn" id="map-gps-cancel-btn" title="Clear Route (X)">✕</button>
             </div>
           </div>
-          <div class="map-header-right">
+          <div class="map-header-right hidden">
             <div class="pause-telemetry-chip">
               <span class="pause-chip-label">COORDINATES</span>
               <span class="pause-chip-val" id="map-coord-val">0 ft, 0 ft</span>
@@ -3568,6 +3798,8 @@
               </defs>
               <g id="map-roads-group"></g>
               <g id="map-gps-group"></g>
+              <g id="map-race-preview-group"></g>
+              <g id="map-race-builder-group"></g>
             </svg>
 
             <!-- 3. Floating Landmark POI Badges -->
@@ -3601,58 +3833,141 @@
           </div>
         </div>
 
+        <!-- Floating Race Circuit Builder Side Panel (Toggled from World Map Header) -->
+        <aside class="race-builder-panel hidden" id="race-builder-panel" aria-label="Race Circuit Builder">
+          <div class="rb-head">
+            <div class="rb-title-group">
+              <span class="rb-eyebrow">ROUTE CREATOR</span>
+              <h3 class="rb-title">CIRCUIT BUILDER</h3>
+            </div>
+            <div class="rb-status-toast" id="rb-status-toast"></div>
+          </div>
+
+          <p class="rb-hint" id="rb-hint-text">Click any road on the map to place the START line.</p>
+
+          <div class="rb-field">
+            <label class="rb-label" for="rb-track-name">RACE NAME</label>
+            <input id="rb-track-name" class="rb-input" type="text" maxlength="48" placeholder="e.g. Coastal Grand Circuit" autocomplete="off" spellcheck="false" />
+          </div>
+
+          <div class="rb-field">
+            <span class="rb-label">FORMAT</span>
+            <div class="rb-seg-row">
+              <button type="button" class="rb-seg-btn rb-type-btn active" data-rb-type="circuit">CIRCUIT (LOOP)</button>
+              <button type="button" class="rb-seg-btn rb-type-btn" data-rb-type="sprint">SPRINT (P2P)</button>
+            </div>
+          </div>
+
+          <div class="rb-field" id="rb-laps-row">
+            <span class="rb-label">LAPS</span>
+            <div class="rb-seg-row rb-seg-4">
+              <button type="button" class="rb-seg-btn rb-lap-btn" data-rb-laps="1">1</button>
+              <button type="button" class="rb-seg-btn rb-lap-btn" data-rb-laps="2">2</button>
+              <button type="button" class="rb-seg-btn rb-lap-btn active" data-rb-laps="3">3</button>
+              <button type="button" class="rb-seg-btn rb-lap-btn" data-rb-laps="5">5</button>
+            </div>
+          </div>
+
+          <div class="rb-field">
+            <span class="rb-label">RACE TYPE TAG</span>
+            <div class="rb-seg-row rb-seg-3">
+              <button type="button" class="rb-seg-btn rb-mode-btn active" data-rb-mode="both">BOTH</button>
+              <button type="button" class="rb-seg-btn rb-mode-btn" data-rb-mode="time_trial">TIME TRIAL</button>
+              <button type="button" class="rb-seg-btn rb-mode-btn" data-rb-mode="ai_race">AI RACE</button>
+            </div>
+          </div>
+
+          <div class="rb-stats-row">
+            <div class="rb-stat">
+              <span class="rb-stat-lbl">LENGTH</span>
+              <span class="rb-stat-val" id="rb-stat-dist">0.00 MI</span>
+            </div>
+            <div class="rb-stat">
+              <span class="rb-stat-lbl">POINTS</span>
+              <span class="rb-stat-val" id="rb-stat-anchors">0</span>
+            </div>
+            <div class="rb-stat">
+              <span class="rb-stat-lbl">GATES</span>
+              <span class="rb-stat-val" id="rb-stat-checkpoints">0</span>
+            </div>
+          </div>
+
+          <div class="rb-btn-row rb-btn-3">
+            <button type="button" class="rb-btn" id="rb-undo-btn">UNDO</button>
+            <button type="button" class="rb-btn" id="rb-reverse-btn">REVERSE</button>
+            <button type="button" class="rb-btn rb-btn-danger" id="rb-clear-btn">CLEAR</button>
+          </div>
+
+          <div class="rb-btn-row rb-btn-2">
+            <button type="button" class="rb-btn" id="rb-test-drive-btn">TEST DRIVE</button>
+            <button type="button" class="rb-btn rb-btn-primary" id="rb-save-btn">SAVE TRACK</button>
+          </div>
+
+          <div class="rb-saved-section">
+            <div class="rb-saved-head">
+              <span class="rb-label">SAVED TRACKS (<span id="rb-saved-count">0</span>)</span>
+            </div>
+            <div class="rb-saved-list" id="rb-saved-list"></div>
+          </div>
+
+          <div class="rb-export-row">
+            <button type="button" class="rb-btn rb-btn-accent" id="rb-copy-json-btn">COPY JSON</button>
+            <button type="button" class="rb-btn rb-btn-accent" id="rb-download-json-btn">DOWNLOAD races.json</button>
+          </div>
+        </aside>
+
         <!-- Floating Bottom HUD Action Bar -->
         <div class="map-hud-bottom">
-          <!-- Collapsible Vertical Controls Card (Bottom-Left) -->
-          <div class="map-controls-card" id="map-controls-card">
-            <button class="map-controls-header-btn" id="map-controls-toggle-btn" title="Toggle Controls Help">
+          <!-- Collapsible Controls Card (Bottom-Left, collapsed by default for clean view!) -->
+          <div class="map-controls-card collapsed" id="map-controls-card">
+            <button class="map-controls-header-btn" id="map-controls-toggle-btn" title="Toggle Controls">
               <div class="map-controls-title-wrap">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                <span>CONTROLS</span>
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" shape-rendering="crispEdges"><path d="M5 2h6v2h2v3h-2v2H9v2H7V8h2V6h2V4H5v2H3V4h2V2zm2 10h2v2H7v-2z"/></svg>
+                <span>KEYS</span>
               </div>
               <span class="map-controls-caret" id="map-controls-caret">▼</span>
             </button>
             <div class="map-controls-list" id="map-controls-list">
               <div class="map-control-item">
-                <span class="map-keycap">L-DRAG</span>
-                <span class="map-control-text">Pan Map</span>
+                <span class="map-keycap">DRAG</span>
+                <span class="map-control-text">Pan</span>
               </div>
               <div class="map-control-item">
                 <span class="map-keycap">SCROLL</span>
                 <span class="map-control-text">Zoom</span>
               </div>
               <div class="map-control-item">
-                <span class="map-keycap">CLICK ROAD</span>
-                <span class="map-control-text">Set Route</span>
+                <span class="map-keycap">CLICK</span>
+                <span class="map-control-text">Route</span>
               </div>
               <div class="map-control-item">
                 <span class="map-keycap">SPACE</span>
-                <span class="map-control-text">Recenter Car</span>
+                <span class="map-control-text">Center</span>
               </div>
               <div class="map-control-item">
                 <span class="map-keycap">X</span>
-                <span class="map-control-text">Clear Route</span>
+                <span class="map-control-text">Clear</span>
               </div>
               <div class="map-control-item">
-                <span class="map-keycap">ESC / M</span>
-                <span class="map-control-text">Close Map</span>
+                <span class="map-keycap">M</span>
+                <span class="map-control-text">Close</span>
               </div>
             </div>
           </div>
 
-          <!-- Bottom-Right Apple-Glass Action Controls -->
+          <!-- Bottom-Right Action Controls -->
           <div class="map-actions-group">
-            <button class="map-glass-btn" id="map-center-btn" title="Center camera on player car (Space)">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#e5a93c" stroke-width="2.5"><circle cx="12" cy="12" r="7"/><line x1="12" y1="2" x2="12" y2="7"/><line x1="12" y1="17" x2="12" y2="22"/><line x1="2" y1="12" x2="7" y2="12"/><line x1="17" y1="12" x2="22" y2="12"/></svg>
-              <span>RECENTER CAR</span>
+            <button class="map-glass-btn" id="map-center-btn" title="Center on Car (Space)">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="#ffd54f" shape-rendering="crispEdges"><path d="M7 1h2v3H7V1zm0 11h2v3H7v-3zM1 7h3v2H1V7zm11 0h3v2h-3V7zM5 5h6v6H5V5zm2 2v2h2V7H7z"/></svg>
+              <span>CENTER</span>
               <kbd class="map-keycap">SPACE</kbd>
             </button>
             <div class="map-zoom-group">
-              <button class="map-zoom-btn" id="map-zoom-out" title="Zoom Out (−)">−</button>
+              <button class="map-zoom-btn" id="map-zoom-out" title="Zoom Out">−</button>
               <span class="map-zoom-label" id="map-zoom-label">100%</span>
-              <button class="map-zoom-btn" id="map-zoom-in" title="Zoom In (+)">+</button>
+              <button class="map-zoom-btn" id="map-zoom-in" title="Zoom In">+</button>
             </div>
-            <button class="map-glass-btn" id="map-close-btn" title="Close Map (Esc / M)">
+            <button class="map-glass-btn" id="map-close-btn" title="Close Map (Esc)">
               <span>CLOSE</span>
               <kbd class="map-keycap">ESC</kbd>
             </button>
@@ -3661,13 +3976,16 @@
       </div>
       <!-- In-Game HUD GPS Waypoint Indicator -->
       <div id="hud-gps-indicator" class="hud-gps-indicator hidden">
-        <svg class="hud-gps-reticle" width="16" height="16" viewBox="0 0 24 24" fill="none">
-          <circle cx="12" cy="12" r="8.5" stroke="#e5a93c" stroke-width="2.2" opacity="0.9" />
-          <circle cx="12" cy="12" r="3" fill="#e5a93c" />
-          <line x1="12" y1="1" x2="12" y2="4.5" stroke="#e5a93c" stroke-width="2" stroke-linecap="round" />
-          <line x1="12" y1="19.5" x2="12" y2="23" stroke="#e5a93c" stroke-width="2" stroke-linecap="round" />
-          <line x1="1" y1="12" x2="4.5" y2="12" stroke="#e5a93c" stroke-width="2" stroke-linecap="round" />
-          <line x1="19.5" y1="12" x2="23" y2="12" stroke="#e5a93c" stroke-width="2" stroke-linecap="round" />
+        <svg class="hud-gps-reticle" width="16" height="16" viewBox="0 0 16 16" fill="none" shape-rendering="crispEdges">
+          <rect x="7" y="0" width="2" height="3" fill="#ffd54f"/>
+          <rect x="7" y="13" width="2" height="3" fill="#ffd54f"/>
+          <rect x="0" y="7" width="3" height="2" fill="#ffd54f"/>
+          <rect x="13" y="7" width="3" height="2" fill="#ffd54f"/>
+          <rect x="4" y="2" width="8" height="2" fill="#ffd54f"/>
+          <rect x="4" y="12" width="8" height="2" fill="#ffd54f"/>
+          <rect x="2" y="4" width="2" height="8" fill="#ffd54f"/>
+          <rect x="12" y="4" width="2" height="8" fill="#ffd54f"/>
+          <rect x="6" y="6" width="4" height="4" fill="#ffd54f"/>
         </svg>
         <div class="hud-gps-info">
           <span class="hud-gps-name" id="hud-gps-name">DESTINATION</span>

@@ -1540,7 +1540,7 @@ export class TrafficSystem {
       this._updateRemoteFrame(dt, focusPos);
       return;
     }
-    if (!this.isReady || !playerVehicle || !playerVehicle.rigidBody) return;
+    if (!this.isReady || !playerVehicle || !playerVehicle.rigidBody || this.raceSuspended) return;
 
     const playerPos = playerVehicle.rigidBody.translation();
     const playerVel = playerVehicle.rigidBody.linvel();
@@ -1687,6 +1687,24 @@ export class TrafficSystem {
       } else {
         slot.spot.intensity = 0.0;
       }
+    }
+  }
+
+  setSuspendedForRace(suspended) {
+    const next = Boolean(suspended);
+    if (this.raceSuspended === next) return;
+    this.raceSuspended = next;
+    if (next) {
+      while (this.agents.length > 0) {
+        this._despawnAgentAt(this.agents.length - 1);
+      }
+      if (this._headlightPool) {
+        for (let i = 0; i < this._headlightPool.length; i++) {
+          this._headlightPool[i].spot.intensity = 0.0;
+        }
+      }
+    } else {
+      this._spawnCooldown = 0.05;
     }
   }
 

@@ -1,3 +1,5 @@
+import { getSavedCarPaint } from './carPaintSystem.js';
+
 // Paste your deployed Render WebSocket URL here (e.g. 'wss://average-car-game-relay.onrender.com')
 const PROD_RELAY_URL = 'wss://average-car-game.onrender.com';
 const LOCAL_RELAY_URL = 'ws://localhost:8080';
@@ -335,6 +337,7 @@ export class OnlineSessionManager {
         name: p.name,
         carName: p.carName,
         carThumb: p.carThumb,
+        carPaint: p.carPaint || null,
         isHost: p.isHost,
       })),
     });
@@ -394,6 +397,7 @@ export class OnlineSessionManager {
         name: this.localName,
         carName: car?.name || 'Unknown Car',
         carThumb: car?.thumb || '',
+        carPaint: car?.id ? getSavedCarPaint(car.id) : null,
         isHost: true,
       },
     ];
@@ -449,6 +453,7 @@ export class OnlineSessionManager {
             name: msg.player.name || 'Guest',
             carName: msg.player.carName || 'Unknown Car',
             carThumb: msg.player.carThumb || '',
+            carPaint: msg.player.carPaint || null,
             isHost: false,
           };
           this.players.push(target);
@@ -457,6 +462,7 @@ export class OnlineSessionManager {
           target.carIdx = msg.player.carIdx ?? target.carIdx;
           target.carName = msg.player.carName || target.carName;
           target.carThumb = msg.player.carThumb || target.carThumb;
+          if (msg.player.carPaint !== undefined) target.carPaint = msg.player.carPaint;
         }
 
         const initSnapshot =
@@ -472,6 +478,7 @@ export class OnlineSessionManager {
             name: p.name,
             carName: p.carName,
             carThumb: p.carThumb,
+            carPaint: p.carPaint || null,
             isHost: p.isHost,
           })),
           hostState: initSnapshot.hostState || null,
@@ -486,6 +493,7 @@ export class OnlineSessionManager {
           target.carIdx = msg.carIdx ?? target.carIdx;
           target.carName = msg.carName || target.carName;
           target.carThumb = msg.carThumb || target.carThumb;
+          if (msg.carPaint !== undefined) target.carPaint = msg.carPaint;
           this._broadcastPlayers();
           this._emitChange();
         }
@@ -584,6 +592,7 @@ export class OnlineSessionManager {
             name: this.localName,
             carName: car?.name || 'Unknown Car',
             carThumb: car?.thumb || '',
+            carPaint: car?.id ? getSavedCarPaint(car.id) : null,
           },
         });
       } else if (msg.type === 'world-init') {
@@ -671,15 +680,18 @@ export class OnlineSessionManager {
     }
   }
 
-  updateLocalCar(car, carIdx = 0) {
+  updateLocalCar(car, carIdx = 0, paintMap = null) {
     if (!this.isActive() || !car) return;
+    const carPaint = paintMap || (car.id ? getSavedCarPaint(car.id) : null);
     if (this.isHost) {
       const localPlayer = this.players.find((p) => p.id === this.localId);
       if (localPlayer) {
         localPlayer.carIdx = carIdx;
         localPlayer.carName = car.name || 'Unknown Car';
         localPlayer.carThumb = car.thumb || '';
+        localPlayer.carPaint = carPaint;
         this._broadcastPlayers();
+        this._emitChange();
       }
     } else {
       this._sendJson({
@@ -688,6 +700,7 @@ export class OnlineSessionManager {
         carIdx,
         carName: car.name || 'Unknown Car',
         carThumb: car.thumb || '',
+        carPaint,
       });
     }
   }

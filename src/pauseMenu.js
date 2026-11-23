@@ -12,6 +12,16 @@
  */
 
 import { OnlineSessionManager, formatSessionCode } from './onlineSession.js';
+import { CustomizeShowroom } from './customizeShowroom.js';
+import {
+  PAINT_SWATCHES,
+  getCarPaintZones,
+  getSavedCarPaint,
+  setSavedCarPaint,
+  resetSavedCarPaint,
+  hsvToHex,
+  hexToHsv,
+} from './carPaintSystem.js';
 
 // Optional: Paste a Formspree endpoint (https://formspree.io/f/YOUR_ID) or Discord Webhook URL
 // to receive player bug reports & feedback silently in-game. When empty, opens a pre-filled GitHub Issue.
@@ -37,7 +47,8 @@ export class PauseMenuController {
     getOutlinesEnabledFn,
     setTimeOfDayFn,
     getTimeOfDayFn,
-    resetVehicleFn
+    resetVehicleFn,
+    applyCarPaintFn
   }) {
     this.vehicle = vehicle;
     this.input = input;
@@ -57,6 +68,7 @@ export class PauseMenuController {
     this.setTimeOfDayFn = setTimeOfDayFn;
     this.getTimeOfDayFn = getTimeOfDayFn;
     this.resetVehicleFn = resetVehicleFn;
+    this.applyCarPaintFn = applyCarPaintFn;
 
     this.isOpen = false;
     this.currentView = 'main'; // 'main' | 'cars' | 'settings'
@@ -79,7 +91,19 @@ export class PauseMenuController {
     this.overlayEl = document.getElementById('pause-menu-overlay');
     this.shellEl = this.overlayEl ? this.overlayEl.querySelector('.pause-menu-shell') : null;
     this.tabHomeEl = document.getElementById('pause-tab-home');
+    this.tabCustomizeEl = document.getElementById('pause-tab-customize');
     this.tabOnlineEl = document.getElementById('pause-tab-online');
+    this.customizeCanvasEl = document.getElementById('pause-customize-canvas');
+    this.customizeCarNameEl = document.getElementById('pause-customize-car-name');
+    this.customizeShowroom = this.customizeCanvasEl
+      ? new CustomizeShowroom(this.customizeCanvasEl, this.customizeCarNameEl)
+      : null;
+    this._dynamicThumbs = {};
+    this._onlinePaintThumbs = {};
+    this._thumbsWarmed = false;
+    this._thumbDebounceTimer = null;
+    this._pendingThumbCarId = null;
+    this._initCustomizePaintUI();
     this.activeTab = 'home';
     this.onlineSession = new OnlineSessionManager(() => {
       this.updateOnlineView();
@@ -106,6 +130,9 @@ export class PauseMenuController {
     this.onOnlinePlayersChangedFn = null;
     if (this.tabHomeEl) {
       this.tabHomeEl.addEventListener('click', () => this.setTab('home'));
+    }
+    if (this.tabCustomizeEl) {
+      this.tabCustomizeEl.addEventListener('click', () => this.setTab('customize'));
     }
     if (this.tabOnlineEl) {
       this.tabOnlineEl.addEventListener('click', () => this.setTab('online'));
@@ -240,33 +267,37 @@ export class PauseMenuController {
 
     const activeIdx = this.getActiveCarIndexFn ? this.getActiveCarIndexFn() : 0;
 
-    this.carRoster.forEach((car, idx) => {
-      const stats = car.stats || {};
-      const topSpeedMph = stats.topSpeedMph || 138;
-      const speedRating = Math.max(10, Math.min(100, stats.speedRating || 78));
+    if (!this._garageHeroBound) {
+      this._garageHeroBound = true;
+      this.garageHeroImgEl = document.getElementById('garage-hero-img');
+      this.garageHeroNameEl = document.getElementById('garage-hero-name');
+      this.garageHeroSubEl = document.getElementById('garage-hero-sub');
+      this.garageStatSpeedValEl = document.getElementById('garage-stat-speed-val');
+      this.garageStatSpeedFillEl = document.getElementById('garage-stat-speed-fill');
+      this.garageStatAccelValEl = document.getElementById('garage-stat-accel-val');
+      this.garageStatAccelFillEl = document.getElementById('garage-stat-accel-fill');
+      this.garageStatWeightValEl = document.getElementById('garage-stat-weight-val');
+      this.garageEquipBtnEl = document.getElementById('garage-equip-btn');
+      if (this.garageEquipBtnEl) {
+        this.garageEquipBtnEl.addEventListener('click', () => {
+          this.selectCar(this.focusedCarIndex);
+        });
+      }
+    }
 
+    this.carRoster.forEach((car, idx) => {
       const card = document.createElement('div');
       card.className = `pause-car-card ${idx === activeIdx ? 'active' : ''}`;
       card.dataset.carIndex = idx;
       card.innerHTML = `
         <div class="pause-car-thumb-wrap">
-          <img class="pause-car-thumb" src="${car.thumb}" alt="${car.name}" />
+          <img class="pause-car-thumb" data-car-id="${car.id}" src="${this.getCarThumbSrc(car)}" alt="${car.name}" />
         </div>
         <div class="pause-car-info">
+          <div class="pause-car-category">${car.category || 'STREET'}</div>
           <div class="pause-car-name">${car.name}</div>
-          <div class="pause-car-stats-panel">
-            <div class="pause-car-stat-row">
-              <span class="pause-car-stat-label">TOP SPEED</span>
-              <span class="pause-car-stat-val">${topSpeedMph} MPH</span>
-            </div>
-            <div class="pause-car-stat-bar">
-              <div class="pause-car-stat-fill" style="width: ${speedRating}%;"></div>
-            </div>
-          </div>
-          <div class="pause-car-badge ${idx === activeIdx ? 'active' : ''}">
-            ${idx === activeIdx ? 'DRIVING' : 'SELECT'}
-          </div>
         </div>
+        ${idx === activeIdx ? '<span class="pause-car-badge active">DRIVING</span>' : ''}
       `;
 
       card.addEventListener('mouseenter', () => {
@@ -279,6 +310,40 @@ export class PauseMenuController {
 
       this.carsGridEl.appendChild(card);
     });
+
+    this.updateGarageHero(this.focusedCarIndex);
+  }
+
+  updateGarageHero(index) {
+    if (!this.carRoster || !this.carRoster.length) return;
+    const safeIdx = Math.max(0, Math.min(this.carRoster.length - 1, index));
+    const car = this.carRoster[safeIdx];
+    if (!car) return;
+    const activeIdx = this.getActiveCarIndexFn ? this.getActiveCarIndexFn() : 0;
+    const isDriving = safeIdx === activeIdx;
+    const stats = car.stats || {};
+    const topSpeedMph = stats.topSpeedMph || 100;
+    const speedPct = Math.max(15, Math.min(100, Math.round((topSpeedMph / 145) * 100)));
+    const pwrRatio = (stats.maxEngineForce || 7500) / Math.max(800, stats.mass || 1400);
+    const accelScore = Math.min(9.9, Math.max(3.0, pwrRatio * 1.15));
+    const accelPct = Math.max(18, Math.min(100, Math.round((accelScore / 10) * 100)));
+    const massKg = stats.mass || 1400;
+
+    if (this.garageHeroImgEl) {
+      this.garageHeroImgEl.dataset.carId = car.id;
+      this.garageHeroImgEl.src = this.getCarThumbSrc(car);
+      this.garageHeroImgEl.alt = car.name;
+    }
+    if (this.garageHeroNameEl) this.garageHeroNameEl.textContent = car.name;
+    if (this.garageStatSpeedValEl) this.garageStatSpeedValEl.textContent = `${topSpeedMph} MPH`;
+    if (this.garageStatSpeedFillEl) this.garageStatSpeedFillEl.style.width = `${speedPct}%`;
+    if (this.garageStatAccelValEl) this.garageStatAccelValEl.textContent = `${accelScore.toFixed(1)} / 10`;
+    if (this.garageStatAccelFillEl) this.garageStatAccelFillEl.style.width = `${accelPct}%`;
+    if (this.garageStatWeightValEl) this.garageStatWeightValEl.textContent = `${massKg.toLocaleString()} KG`;
+    if (this.garageEquipBtnEl) {
+      this.garageEquipBtnEl.textContent = isDriving ? 'CURRENTLY DRIVING' : 'EQUIP CAR';
+      this.garageEquipBtnEl.classList.toggle('is-driving', isDriving);
+    }
   }
 
   buildCameraDots() {
@@ -713,11 +778,13 @@ export class PauseMenuController {
   updateCarFocus(index) {
     if (!this.carRoster) return;
     this.focusedCarIndex = Math.max(0, Math.min(this.carRoster.length - 1, index));
-    if (!this.carsGridEl) return;
-    const cards = this.carsGridEl.querySelectorAll('.pause-car-card');
-    cards.forEach((c, idx) => {
-      c.classList.toggle('keyboard-focused', idx === this.focusedCarIndex);
-    });
+    if (this.carsGridEl) {
+      const cards = this.carsGridEl.querySelectorAll('.pause-car-card');
+      cards.forEach((c, idx) => {
+        c.classList.toggle('keyboard-focused', idx === this.focusedCarIndex);
+      });
+    }
+    this.updateGarageHero(this.focusedCarIndex);
   }
 
   handleKeyDown(e) {
@@ -743,6 +810,16 @@ export class PauseMenuController {
         case 'ArrowRight':
         case 'KeyD':
           this.updateCarFocus((this.focusedCarIndex + 1) % this.carRoster.length);
+          e.preventDefault();
+          return true;
+        case 'ArrowUp':
+        case 'KeyW':
+          this.updateCarFocus((this.focusedCarIndex - 2 + this.carRoster.length) % this.carRoster.length);
+          e.preventDefault();
+          return true;
+        case 'ArrowDown':
+        case 'KeyS':
+          this.updateCarFocus((this.focusedCarIndex + 2) % this.carRoster.length);
           e.preventDefault();
           return true;
         case 'Enter':
@@ -890,6 +967,67 @@ export class PauseMenuController {
     return this.carRoster[activeIdx] || null;
   }
 
+  getCarThumbSrc(car) {
+    if (!car) return '';
+    return this._dynamicThumbs[car.id] || car.thumb || 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+  }
+
+  async _refreshSingleCarThumbnail(carId, paintMap = null) {
+    if (!this.customizeShowroom || !carId) return;
+    const car = this.carRoster.find((c) => c.id === carId);
+    if (!car) return;
+    const dataUrl = await this.customizeShowroom.renderPixelThumbnail(car, paintMap);
+    if (!dataUrl) return;
+    this._dynamicThumbs[car.id] = dataUrl;
+
+    const activeCar = this.getActiveCar();
+    if (activeCar && activeCar.id === car.id && this.tileGarageImgEl) {
+      this.tileGarageImgEl.src = dataUrl;
+    }
+    if (this.carsGridEl) {
+      const img = this.carsGridEl.querySelector(`.pause-car-thumb[data-car-id="${car.id}"]`);
+      if (img) img.src = dataUrl;
+    }
+    if (this.garageHeroImgEl && this.garageHeroImgEl.dataset.carId === car.id) {
+      this.garageHeroImgEl.src = dataUrl;
+    }
+    if (this.onlineSession && this.onlineSession.isActive() && activeCar && activeCar.id === car.id) {
+      const activeIdx = this.getActiveCarIndexFn ? this.getActiveCarIndexFn() : 0;
+      this.onlineSession.updateLocalCar(activeCar, activeIdx, paintMap || getSavedCarPaint(car.id));
+    }
+  }
+
+  _scheduleCarThumbnailRefresh(carId, paintMap = null, immediate = false) {
+    if (this._thumbDebounceTimer) {
+      clearTimeout(this._thumbDebounceTimer);
+      this._thumbDebounceTimer = null;
+    }
+    this._pendingThumbCarId = carId;
+    if (immediate) {
+      this._pendingThumbCarId = null;
+      this._refreshSingleCarThumbnail(carId, paintMap);
+      return;
+    }
+    this._thumbDebounceTimer = setTimeout(() => {
+      this._thumbDebounceTimer = null;
+      const id = this._pendingThumbCarId;
+      this._pendingThumbCarId = null;
+      if (id) this._refreshSingleCarThumbnail(id);
+    }, 150);
+  }
+
+  async _warmAllCarThumbnails() {
+    if (this._thumbsWarmed || !this.customizeShowroom || !this.carRoster.length) return;
+    this._thumbsWarmed = true;
+    const activeCar = this.getActiveCar();
+    const ordered = activeCar
+      ? [activeCar, ...this.carRoster.filter((c) => c.id !== activeCar.id)]
+      : [...this.carRoster];
+    for (const car of ordered) {
+      await this._refreshSingleCarThumbnail(car.id);
+    }
+  }
+
   updateTilePreviews() {
     const currentCar = this.getActiveCar();
 
@@ -898,7 +1036,7 @@ export class PauseMenuController {
       if (this.headerCarNameEl) this.headerCarNameEl.textContent = currentCar.fullName;
       if (this.tileGarageNameEl) this.tileGarageNameEl.textContent = currentCar.name;
       if (this.tileGarageImgEl) {
-        this.tileGarageImgEl.src = currentCar.thumb;
+        this.tileGarageImgEl.src = this.getCarThumbSrc(currentCar);
         this.tileGarageImgEl.alt = currentCar.name;
       }
       this.onlineSession.updateLocalCar(currentCar, carIdx);
@@ -1074,7 +1212,11 @@ export class PauseMenuController {
       this.setTab('home');
       this.showView('main');
       this.updateTilePreviews();
+      this._warmAllCarThumbnails();
     } else {
+      if (this.customizeShowroom) {
+        this.customizeShowroom.stop();
+      }
       if (this.input) {
         this.input.handbrake = false;
       }
@@ -1082,12 +1224,16 @@ export class PauseMenuController {
   }
 
   setTab(tab) {
-    this.activeTab = tab === 'online' ? 'online' : 'home';
+    this.activeTab = tab === 'online' ? 'online' : (tab === 'customize' ? 'customize' : 'home');
     if (this.shellEl) {
       this.shellEl.classList.toggle('tab-online', this.activeTab === 'online');
+      this.shellEl.classList.toggle('tab-customize', this.activeTab === 'customize');
     }
     if (this.tabHomeEl) {
       this.tabHomeEl.classList.toggle('active', this.activeTab === 'home');
+    }
+    if (this.tabCustomizeEl) {
+      this.tabCustomizeEl.classList.toggle('active', this.activeTab === 'customize');
     }
     if (this.tabOnlineEl) {
       this.tabOnlineEl.classList.toggle('active', this.activeTab === 'online');
@@ -1098,6 +1244,266 @@ export class PauseMenuController {
     if (this.activeTab === 'online') {
       this.updateOnlineView();
     }
+    if (this.customizeShowroom) {
+      if (this.isOpen && this.activeTab === 'customize') {
+        const carIdx = this.getActiveCarIndexFn ? this.getActiveCarIndexFn() : 0;
+        const currentCar = this.carRoster[carIdx] || this.carRoster[0];
+        this.customizeShowroom.start(currentCar);
+        if (currentCar) this._syncCustomizePaintUI(currentCar.id);
+      } else {
+        this.customizeShowroom.stop();
+        if (this._pendingThumbCarId) {
+          const id = this._pendingThumbCarId;
+          this._pendingThumbCarId = null;
+          if (this._thumbDebounceTimer) {
+            clearTimeout(this._thumbDebounceTimer);
+            this._thumbDebounceTimer = null;
+          }
+          this._refreshSingleCarThumbnail(id);
+        }
+      }
+    }
+  }
+
+  _initCustomizePaintUI() {
+    this.paintZoneRowEl = document.getElementById('customize-zone-row');
+    this.paintModeSwatchesBtn = document.getElementById('customize-mode-swatches');
+    this.paintModeGradientBtn = document.getElementById('customize-mode-gradient');
+    this.paintSwatchPanelEl = document.getElementById('customize-swatch-panel');
+    this.paintGradientPanelEl = document.getElementById('customize-gradient-panel');
+    this.paintSwatchGridEl = document.getElementById('customize-swatch-grid');
+    this.paintSvWrapEl = document.getElementById('customize-sv-wrap');
+    this.paintSvCanvasEl = document.getElementById('customize-sv-canvas');
+    this.paintSvCursorEl = document.getElementById('customize-sv-cursor');
+    this.paintHueWrapEl = document.getElementById('customize-hue-wrap');
+    this.paintHueCanvasEl = document.getElementById('customize-hue-canvas');
+    this.paintHueCursorEl = document.getElementById('customize-hue-cursor');
+    this.paintColorPreviewEl = document.getElementById('customize-color-preview');
+    this.paintColorHexEl = document.getElementById('customize-color-hex');
+    this.paintResetBtnEl = document.getElementById('customize-paint-reset-btn');
+
+    this._paintCarId = null;
+    this._paintZoneKey = 'primary';
+    this._paintMode = 'swatches'; // 'swatches' | 'gradient'
+    this._paintHsv = { h: 45, s: 0.7, v: 1.0 };
+
+    // Build Swatch Buttons
+    if (this.paintSwatchGridEl) {
+      this.paintSwatchGridEl.innerHTML = '';
+      for (const sw of PAINT_SWATCHES) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'customize-swatch-btn';
+        btn.style.background = sw.hex;
+        btn.dataset.hex = sw.hex.toLowerCase();
+        btn.title = sw.name;
+        btn.addEventListener('click', () => {
+          this._applySelectedPaintHex(sw.hex, true);
+        });
+        this.paintSwatchGridEl.appendChild(btn);
+      }
+    }
+
+    // Draw Rainbow Hue Bar once
+    if (this.paintHueCanvasEl) {
+      const hctx = this.paintHueCanvasEl.getContext('2d');
+      const hw = this.paintHueCanvasEl.width;
+      const hh = this.paintHueCanvasEl.height;
+      const grad = hctx.createLinearGradient(0, 0, hw, 0);
+      grad.addColorStop(0.0, '#ff0000');
+      grad.addColorStop(1 / 6, '#ffff00');
+      grad.addColorStop(2 / 6, '#00ff00');
+      grad.addColorStop(3 / 6, '#00ffff');
+      grad.addColorStop(4 / 6, '#0000ff');
+      grad.addColorStop(5 / 6, '#ff00ff');
+      grad.addColorStop(1.0, '#ff0000');
+      hctx.fillStyle = grad;
+      hctx.fillRect(0, 0, hw, hh);
+    }
+
+    // Mode Switcher (SWATCHES | GRADIENT)
+    const setMode = (mode) => {
+      this._paintMode = mode;
+      if (this.paintModeSwatchesBtn) this.paintModeSwatchesBtn.classList.toggle('active', mode === 'swatches');
+      if (this.paintModeGradientBtn) this.paintModeGradientBtn.classList.toggle('active', mode === 'gradient');
+      if (this.paintSwatchPanelEl) this.paintSwatchPanelEl.classList.toggle('hidden', mode !== 'swatches');
+      if (this.paintGradientPanelEl) this.paintGradientPanelEl.classList.toggle('hidden', mode !== 'gradient');
+      if (mode === 'gradient') {
+        this._redrawSvCanvas();
+        this._syncGradientCursors();
+      }
+    };
+    if (this.paintModeSwatchesBtn) this.paintModeSwatchesBtn.addEventListener('click', () => setMode('swatches'));
+    if (this.paintModeGradientBtn) this.paintModeGradientBtn.addEventListener('click', () => setMode('gradient'));
+
+    // 2D SV Gradient Drag
+    if (this.paintSvWrapEl) {
+      let draggingSv = false;
+      const pickSv = (e) => {
+        const rect = this.paintSvWrapEl.getBoundingClientRect();
+        const s = Math.max(0, Math.min(1, (e.clientX - rect.left) / Math.max(1, rect.width)));
+        const v = Math.max(0, Math.min(1, 1 - (e.clientY - rect.top) / Math.max(1, rect.height)));
+        this._paintHsv.s = s;
+        this._paintHsv.v = v;
+        const hex = hsvToHex(this._paintHsv.h, s, v);
+        this._applySelectedPaintHex(hex, false);
+      };
+      this.paintSvWrapEl.addEventListener('pointerdown', (e) => {
+        draggingSv = true;
+        try { this.paintSvWrapEl.setPointerCapture(e.pointerId); } catch (_) {}
+        pickSv(e);
+      });
+      this.paintSvWrapEl.addEventListener('pointermove', (e) => {
+        if (draggingSv) pickSv(e);
+      });
+      const stopSv = (e) => {
+        if (!draggingSv) return;
+        draggingSv = false;
+        try { this.paintSvWrapEl.releasePointerCapture(e.pointerId); } catch (_) {}
+      };
+      this.paintSvWrapEl.addEventListener('pointerup', stopSv);
+      this.paintSvWrapEl.addEventListener('pointercancel', stopSv);
+    }
+
+    // Hue Bar Drag
+    if (this.paintHueWrapEl) {
+      let draggingHue = false;
+      const pickHue = (e) => {
+        const rect = this.paintHueWrapEl.getBoundingClientRect();
+        const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / Math.max(1, rect.width)));
+        this._paintHsv.h = frac * 359.9;
+        this._redrawSvCanvas();
+        const hex = hsvToHex(this._paintHsv.h, this._paintHsv.s, this._paintHsv.v);
+        this._applySelectedPaintHex(hex, false);
+      };
+      this.paintHueWrapEl.addEventListener('pointerdown', (e) => {
+        draggingHue = true;
+        try { this.paintHueWrapEl.setPointerCapture(e.pointerId); } catch (_) {}
+        pickHue(e);
+      });
+      this.paintHueWrapEl.addEventListener('pointermove', (e) => {
+        if (draggingHue) pickHue(e);
+      });
+      const stopHue = (e) => {
+        if (!draggingHue) return;
+        draggingHue = false;
+        try { this.paintHueWrapEl.releasePointerCapture(e.pointerId); } catch (_) {}
+      };
+      this.paintHueWrapEl.addEventListener('pointerup', stopHue);
+      this.paintHueWrapEl.addEventListener('pointercancel', stopHue);
+    }
+
+    // Reset Stock Paint
+    if (this.paintResetBtnEl) {
+      this.paintResetBtnEl.addEventListener('click', () => {
+        if (!this._paintCarId) return;
+        const paintMap = resetSavedCarPaint(this._paintCarId);
+        if (this.customizeShowroom) this.customizeShowroom.updatePaint(this._paintCarId, paintMap);
+        if (this.applyCarPaintFn) this.applyCarPaintFn(this._paintCarId, paintMap);
+        this._syncCustomizePaintUI(this._paintCarId, this._paintZoneKey);
+        this._scheduleCarThumbnailRefresh(this._paintCarId, paintMap, true);
+      });
+    }
+  }
+
+  _redrawSvCanvas() {
+    if (!this.paintSvCanvasEl) return;
+    const ctx = this.paintSvCanvasEl.getContext('2d');
+    const w = this.paintSvCanvasEl.width;
+    const h = this.paintSvCanvasEl.height;
+    const pureHue = hsvToHex(this._paintHsv.h, 1, 1);
+
+    ctx.fillStyle = pureHue;
+    ctx.fillRect(0, 0, w, h);
+
+    const whiteGrad = ctx.createLinearGradient(0, 0, w, 0);
+    whiteGrad.addColorStop(0, '#ffffff');
+    whiteGrad.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = whiteGrad;
+    ctx.fillRect(0, 0, w, h);
+
+    const blackGrad = ctx.createLinearGradient(0, 0, 0, h);
+    blackGrad.addColorStop(0, 'rgba(0,0,0,0)');
+    blackGrad.addColorStop(1, '#000000');
+    ctx.fillStyle = blackGrad;
+    ctx.fillRect(0, 0, w, h);
+  }
+
+  _syncGradientCursors() {
+    if (this.paintSvCursorEl) {
+      this.paintSvCursorEl.style.left = `${(this._paintHsv.s * 100).toFixed(1)}%`;
+      this.paintSvCursorEl.style.top = `${((1 - this._paintHsv.v) * 100).toFixed(1)}%`;
+    }
+    if (this.paintHueCursorEl) {
+      this.paintHueCursorEl.style.left = `${((this._paintHsv.h / 360) * 100).toFixed(1)}%`;
+    }
+  }
+
+  _syncCustomizePaintUI(carId, preferredZone = null) {
+    if (!carId) return;
+    this._paintCarId = carId;
+    const zones = getCarPaintZones(carId);
+    const paintMap = getSavedCarPaint(carId);
+
+    const validPreferred = preferredZone && zones.some((z) => z.key === preferredZone);
+    this._paintZoneKey = validPreferred ? preferredZone : zones[0].key;
+
+    // Render Paint Zone buttons (1 button for single-color cars, 2+ buttons for multi-color cars)
+    if (this.paintZoneRowEl) {
+      this.paintZoneRowEl.innerHTML = '';
+      for (const z of zones) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'customize-zone-btn' + (z.key === this._paintZoneKey ? ' active' : '');
+        btn.dataset.zoneKey = z.key;
+        const curHex = paintMap[z.key] || z.defaultHex;
+        btn.innerHTML = `<span class="customize-zone-chip" style="background:${curHex}"></span><span>${z.label}</span>`;
+        btn.addEventListener('click', () => {
+          this._syncCustomizePaintUI(carId, z.key);
+        });
+        this.paintZoneRowEl.appendChild(btn);
+      }
+    }
+
+    const activeHex = (paintMap[this._paintZoneKey] || zones[0].defaultHex).toLowerCase();
+    this._paintHsv = hexToHsv(activeHex);
+    this._redrawSvCanvas();
+    this._syncGradientCursors();
+    this._updatePaintReadoutAndSwatches(activeHex);
+  }
+
+  _updatePaintReadoutAndSwatches(hex) {
+    const cleanHex = String(hex || '#ffffff').toLowerCase();
+    if (this.paintColorPreviewEl) this.paintColorPreviewEl.style.background = cleanHex;
+    if (this.paintColorHexEl) this.paintColorHexEl.textContent = cleanHex.toUpperCase();
+
+    if (this.paintSwatchGridEl) {
+      const btns = this.paintSwatchGridEl.querySelectorAll('.customize-swatch-btn');
+      btns.forEach((b) => b.classList.toggle('active', b.dataset.hex === cleanHex));
+    }
+    if (this.paintZoneRowEl) {
+      const activeBtn = this.paintZoneRowEl.querySelector(`.customize-zone-btn[data-zone-key="${this._paintZoneKey}"] .customize-zone-chip`);
+      if (activeBtn) activeBtn.style.background = cleanHex;
+    }
+  }
+
+  _applySelectedPaintHex(hex, syncHsvFromHex = false) {
+    if (!this._paintCarId || !this._paintZoneKey) return;
+    const paintMap = setSavedCarPaint(this._paintCarId, this._paintZoneKey, hex);
+    if (syncHsvFromHex) {
+      this._paintHsv = hexToHsv(hex);
+      this._redrawSvCanvas();
+    }
+    this._syncGradientCursors();
+    this._updatePaintReadoutAndSwatches(hex);
+
+    if (this.customizeShowroom) {
+      this.customizeShowroom.updatePaint(this._paintCarId, paintMap);
+    }
+    if (this.applyCarPaintFn) {
+      this.applyCarPaintFn(this._paintCarId, paintMap);
+    }
+    this._scheduleCarThumbnailRefresh(this._paintCarId, paintMap, syncHsvFromHex);
   }
 
   updateOnlineView() {
@@ -1199,12 +1605,32 @@ export class PauseMenuController {
       info.appendChild(statusEl);
       row.appendChild(info);
 
-      if (player.carThumb) {
+      if (player.carThumb || Number.isFinite(player.carIdx)) {
         const thumbWrap = document.createElement('div');
         thumbWrap.className = 'pause-online-player-thumb-wrap';
         const img = document.createElement('img');
         img.className = 'pause-online-player-thumb';
-        img.src = player.carThumb;
+        const matchedCar =
+          (Number.isFinite(player.carIdx) && this.carRoster[player.carIdx]) ||
+          this.carRoster.find((c) => c.name === player.carName || c.thumb === player.carThumb);
+
+        if (player.id === this.onlineSession.localId && matchedCar) {
+          img.src = this.getCarThumbSrc(matchedCar);
+        } else if (matchedCar && this.customizeShowroom) {
+          const paintKey = `${matchedCar.id}:${JSON.stringify(player.carPaint || null)}`;
+          if (this._onlinePaintThumbs[paintKey]) {
+            img.src = this._onlinePaintThumbs[paintKey];
+          } else {
+            img.src = player.carThumb || matchedCar.thumb || '';
+            this.customizeShowroom.renderPixelThumbnail(matchedCar, player.carPaint || null).then((dataUrl) => {
+              if (!dataUrl) return;
+              this._onlinePaintThumbs[paintKey] = dataUrl;
+              img.src = dataUrl;
+            });
+          }
+        } else {
+          img.src = player.carThumb || '';
+        }
         img.alt = player.carName;
         thumbWrap.appendChild(img);
         row.appendChild(thumbWrap);

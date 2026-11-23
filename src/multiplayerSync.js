@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { applyPaintToCarRoot } from './carPaintSystem.js';
 
 // Remote player proxies collide ONLY with the local player (0x0008), avoiding terrain/prop solver overhead
 const REMOTE_PLAYER_COLLISION_GROUPS = (0x0004 << 16) | 0x0008;
@@ -106,6 +107,7 @@ export class MultiplayerWorldSync {
           pose: { ...seedPose },
         };
         proxy.rootGroup.name = `Remote_Player_${p.netId}`;
+        proxy.carPaint = p.carPaint || null;
         this._initDynamicProxyBody(proxy);
         this.scene.add(proxy.rootGroup);
         this.remotePlayers.set(p.netId, proxy);
@@ -117,9 +119,17 @@ export class MultiplayerWorldSync {
           proxy.name = nextName;
           if (proxy.nameplatePillEl) proxy.nameplatePillEl.textContent = nextName;
         }
+        const nextPaint = p.carPaint || null;
+        const paintChanged = JSON.stringify(proxy.carPaint || null) !== JSON.stringify(nextPaint);
+        proxy.carPaint = nextPaint;
         if (proxy.carIdx !== carIdx && proxy.loadingCarIdx !== carIdx) {
           proxy.carIdx = carIdx;
           tasks.push(this._loadProxyCarModel(proxy, carIdx));
+        } else if (paintChanged && proxy.loadedCarIdx !== null) {
+          const item = this._getCarItem(proxy.loadedCarIdx);
+          if (item && item.id) {
+            applyPaintToCarRoot(proxy.rootGroup, item.id, proxy.carPaint);
+          }
         }
       }
     }
@@ -300,6 +310,9 @@ export class MultiplayerWorldSync {
         proxy.nameHeight = proxy.chassisLocalOffset.y + bounds.center.y + bounds.size.y * 0.5 + 0.45;
       }
       proxy.rootGroup.add(chassisMesh);
+      if (carItem && carItem.id && proxy.carPaint) {
+        applyPaintToCarRoot(proxy.rootGroup, carItem.id, proxy.carPaint);
+      }
 
       const wheelOrder = ['Wheel_FL', 'Wheel_FR', 'Wheel_RL', 'Wheel_RR'];
       proxy.wheels = wheelOrder.map((id, idx) => {

@@ -149,7 +149,7 @@ export class GPSNavigationSystem {
    * neighbor behind `startNode` so the car's perpendicular projection onto the road
    * is always continuous even when `startNode` is slightly ahead of the car.
    */
-  calculateAStarPath(startPos, targetPos) {
+  calculateAStarPath(startPos, targetPos, prependBehind = true) {
     if (!this.isGraphReady || !this.nodes.length) return [];
     const startNode = this.findClosestNode(startPos.x, startPos.z, startPos.y);
     const goalNode = this.findClosestNode(targetPos.x, targetPos.z, targetPos.y);
@@ -238,7 +238,7 @@ export class GPSNavigationSystem {
 
     // If startNode is slightly ahead of the car, prepend the neighbor behind startNode
     // so segment [prevNeighbor, startNode] straddles the car smoothly!
-    if (path.length >= 2) {
+    if (prependBehind && path.length >= 2) {
       const n0 = this.nodes[path[0].id];
       const n1 = path[1];
       let bestPrev = null;
@@ -422,7 +422,7 @@ export class GPSNavigationSystem {
     geom.rotateX(Math.PI / 2);
 
     const mat = new THREE.MeshBasicMaterial({
-      color: 0x00f3ff,
+      color: 0xffd54f,
       transparent: true,
       opacity: 0.94,
       depthWrite: false,
@@ -529,7 +529,29 @@ export class GPSNavigationSystem {
    * Called every animation frame to continuously update the route from the car's live position,
    * trim completed segments, re-route immediately if you turn onto a new road, and sync the World Map.
    */
+  setRaceOverridePath(pathNodes) {
+    if (Array.isArray(pathNodes) && pathNodes.length >= 2) {
+      this.raceOverridePath = pathNodes;
+      this.activePath = pathNodes;
+      this.roadChevronPath = pathNodes;
+      this.updateChevrons();
+    } else {
+      this.raceOverridePath = null;
+      if (!this.activeWaypoint) {
+        this.activePath = [];
+        this.roadChevronPath = [];
+        if (this.chevronsMesh) {
+          this.chevronsMesh.count = 0;
+          this.chevronsMesh.instanceMatrix.needsUpdate = true;
+        }
+      }
+    }
+  }
+
   update(carPos) {
+    if (this.raceOverridePath && this.raceOverridePath.length >= 2) {
+      return;
+    }
     if (!this.activeWaypoint || !carPos) {
       if (this.chevronsMesh.count > 0) {
         this.chevronsMesh.count = 0;
